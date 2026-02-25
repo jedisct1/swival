@@ -116,3 +116,5 @@ Several caps exist to prevent the agent from overwhelming the context window:
 - Command output: 10 KB inline, larger results saved to `.swival/` for
   pagination (auto-deleted after 10 minutes)
 - URL fetch output: 50 KB inline, larger results saved to files
+- Response history: `.swival/HISTORY.md` capped at 500 KB (new entries skipped
+  once the limit is reached)

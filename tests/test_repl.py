@@ -167,7 +167,12 @@ class TestRunAgentLoop:
                         "tool_call_id": "tc1",
                         "content": "file contents",
                     },
-                    {"name": "read_file", "arguments": {}, "elapsed": 0.0, "succeeded": True},
+                    {
+                        "name": "read_file",
+                        "arguments": {},
+                        "elapsed": 0.0,
+                        "succeeded": True,
+                    },
                 ),
             ),
         ):
@@ -193,7 +198,12 @@ class TestRunAgentLoop:
                 "swival.agent.handle_tool_call",
                 return_value=(
                     {"role": "tool", "tool_call_id": "tc1", "content": "ok"},
-                    {"name": "read_file", "arguments": {}, "elapsed": 0.0, "succeeded": True},
+                    {
+                        "name": "read_file",
+                        "arguments": {},
+                        "elapsed": 0.0,
+                        "succeeded": True,
+                    },
                 ),
             ),
         ):

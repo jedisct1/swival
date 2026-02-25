@@ -6,7 +6,7 @@ import subprocess
 import sys
 import types
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -415,9 +415,7 @@ class TestAgentYolo:
 # Shell string execution (yolo mode)
 # ---------------------------------------------------------------------------
 
-_unix_only = pytest.mark.skipif(
-    sys.platform == "win32", reason="requires /bin/sh"
-)
+_unix_only = pytest.mark.skipif(sys.platform == "win32", reason="requires /bin/sh")
 
 
 class TestShellStringExecution:
@@ -576,7 +574,10 @@ class TestYoloSchema:
         agent.main()
 
         system_msg = captured["messages"][0]
-        assert "shell string" in system_msg["content"].lower() or "pipes" in system_msg["content"].lower()
+        assert (
+            "shell string" in system_msg["content"].lower()
+            or "pipes" in system_msg["content"].lower()
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -672,8 +673,12 @@ class TestKillProcessTreeWindows:
         taskkill_called = []
         killpg_called = []
 
-        monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: taskkill_called.append(cmd))
-        monkeypatch.setattr(os, "killpg", lambda pid, sig: killpg_called.append((pid, sig)))
+        monkeypatch.setattr(
+            subprocess, "run", lambda cmd, **kw: taskkill_called.append(cmd)
+        )
+        monkeypatch.setattr(
+            os, "killpg", lambda pid, sig: killpg_called.append((pid, sig))
+        )
 
         proc = MagicMock()
         proc.pid = 99999

@@ -118,9 +118,7 @@ class ReportCollector:
         turns: int,
         error_message: str | None = None,
     ) -> dict:
-        tool_calls_succeeded = sum(
-            s["succeeded"] for s in self.tool_stats.values()
-        )
+        tool_calls_succeeded = sum(s["succeeded"] for s in self.tool_stats.values())
         tool_calls_failed = sum(s["failed"] for s in self.tool_stats.values())
 
         result: dict = {

@@ -125,6 +125,7 @@ line editing.
 | ---------------- | ------- | ----------------------------------------------------- |
 | `-q` / `--quiet` | off     | Suppress all diagnostics; only print the final result |
 | `--report FILE`  | off     | Write a JSON evaluation report instead of stdout      |
+| `--no-history`   | off     | Don't write responses to `.swival/HISTORY.md`         |
 | `--color`        | auto    | Force ANSI color on stderr                            |
 | `--no-color`     | auto    | Disable ANSI color on stderr                          |
 

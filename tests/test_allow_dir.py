@@ -292,6 +292,7 @@ class TestAllowDirCLIValidation:
         # Let main() get past validation, then capture allowed_dirs
         # by patching discover_model to avoid LM Studio connection
         captured = {}
+
         def fake_run(messages, tools, **kwargs):
             captured["extra_write_roots"] = kwargs.get("extra_write_roots", [])
             return "done", False

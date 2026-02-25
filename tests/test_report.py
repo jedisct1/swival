@@ -52,12 +52,19 @@ class TestReportCollector:
     def test_llm_call_retry(self):
         rc = ReportCollector()
         rc.record_llm_call(
-            1, 0.5, 5000, "context_overflow",
+            1,
+            0.5,
+            5000,
+            "context_overflow",
             is_retry=False,
         )
         rc.record_llm_call(
-            1, 1.0, 3000, "tool_calls",
-            is_retry=True, retry_reason="compact_messages",
+            1,
+            1.0,
+            3000,
+            "tool_calls",
+            is_retry=True,
+            retry_reason="compact_messages",
         )
         assert rc.llm_calls == 2
         assert rc.events[0]["is_retry"] is False
@@ -68,7 +75,9 @@ class TestReportCollector:
     def test_tool_call_tracking(self):
         rc = ReportCollector()
         rc.record_tool_call(1, "read_file", {"path": "a.txt"}, True, 0.01, 500)
-        rc.record_tool_call(1, "read_file", {"path": "b.txt"}, False, 0.02, 30, error="error: not found")
+        rc.record_tool_call(
+            1, "read_file", {"path": "b.txt"}, False, 0.02, 30, error="error: not found"
+        )
         rc.record_tool_call(2, "edit_file", {"path": "a.txt"}, True, 0.05, 200)
 
         assert rc.tool_stats["read_file"] == {"succeeded": 1, "failed": 1}
@@ -76,8 +85,14 @@ class TestReportCollector:
         assert rc.total_tool_time == pytest.approx(0.08)
 
         r = rc.build_report(
-            task="t", model="m", provider="p", settings={},
-            outcome="success", answer="ok", exit_code=0, turns=2,
+            task="t",
+            model="m",
+            provider="p",
+            settings={},
+            outcome="success",
+            answer="ok",
+            exit_code=0,
+            turns=2,
         )
         assert r["stats"]["tool_calls_total"] == 3
         assert r["stats"]["tool_calls_succeeded"] == 2
@@ -112,8 +127,14 @@ class TestReportCollector:
         rc = ReportCollector()
         rc.record_llm_call(1, 0.5, 1000, "context_overflow")
         r = rc.build_report(
-            task="t", model="m", provider="p", settings={},
-            outcome="error", answer=None, exit_code=1, turns=1,
+            task="t",
+            model="m",
+            provider="p",
+            settings={},
+            outcome="error",
+            answer=None,
+            exit_code=1,
+            turns=1,
             error_message="context window exceeded",
         )
         assert r["result"]["outcome"] == "error"
@@ -124,8 +145,14 @@ class TestReportCollector:
         rc = ReportCollector()
         rc.record_llm_call(1, 1.0, 500, "stop")
         rc.finalize(
-            task="test", model="m", provider="p", settings={"a": 1},
-            outcome="success", answer="ok", exit_code=0, turns=1,
+            task="test",
+            model="m",
+            provider="p",
+            settings={"a": 1},
+            outcome="success",
+            answer="ok",
+            exit_code=0,
+            turns=1,
         )
         path = str(tmp_path / "report.json")
         rc.write(path)
@@ -150,6 +177,7 @@ class TestReportCollector:
 class TestHandleToolCallTuple:
     def test_success_returns_tuple(self, tmp_path):
         from swival.thinking import ThinkingState
+
         (tmp_path / "test.txt").write_text("hello")
         tc = MagicMock()
         tc.id = "tc1"
@@ -168,6 +196,7 @@ class TestHandleToolCallTuple:
 
     def test_failure_returns_tuple(self, tmp_path):
         from swival.thinking import ThinkingState
+
         tc = MagicMock()
         tc.id = "tc2"
         tc.function.name = "read_file"
@@ -181,6 +210,7 @@ class TestHandleToolCallTuple:
 
     def test_invalid_json_returns_stable_meta(self, tmp_path):
         from swival.thinking import ThinkingState
+
         tc = MagicMock()
         tc.id = "tc3"
         tc.function.name = "read_file"
@@ -232,6 +262,7 @@ class TestReportCLIValidation:
             args.verbose = True
             # Trigger the validation in main
             from swival import fmt
+
             fmt.init()
             if args.report and args.repl:
                 parser.error("--report is incompatible with --repl")
@@ -262,8 +293,16 @@ class TestOverflowRetrySeed:
         call_count = 0
 
         def mock_call_llm(
-            base_url, model_id, messages, max_output_tokens,
-            temperature, top_p, seed, tools, verbose, **kwargs
+            base_url,
+            model_id,
+            messages,
+            max_output_tokens,
+            temperature,
+            top_p,
+            seed,
+            tools,
+            verbose,
+            **kwargs,
         ):
             nonlocal call_count
             call_count += 1
@@ -380,8 +419,14 @@ class TestErrorReportTurns:
         rc.record_llm_call(3, 0.1, 100, "error")
 
         r = rc.build_report(
-            task="test", model="m", provider="p", settings={},
-            outcome="error", answer=None, exit_code=1, turns=rc.max_turn_seen,
+            task="test",
+            model="m",
+            provider="p",
+            settings={},
+            outcome="error",
+            answer=None,
+            exit_code=1,
+            turns=rc.max_turn_seen,
             error_message="failed",
         )
         assert r["stats"]["turns"] == 3
@@ -460,7 +505,9 @@ class TestReportIntegration:
 
         with (
             patch.object(agent, "build_parser") as mock_parser,
-            patch.object(agent, "discover_model", side_effect=AgentError("connection refused")),
+            patch.object(
+                agent, "discover_model", side_effect=AgentError("connection refused")
+            ),
         ):
             mock_parser.return_value.parse_args.return_value = fake_args
             with pytest.raises(SystemExit) as exc_info:
@@ -515,7 +562,9 @@ class TestReportIntegration:
             agent.main()
 
         # fmt.error should have been called with the write failure message
-        assert any("Failed to write report" in str(c) for c in mock_fmt_error.call_args_list)
+        assert any(
+            "Failed to write report" in str(c) for c in mock_fmt_error.call_args_list
+        )
 
     def test_no_report_prints_to_stdout(self, tmp_path, capsys):
         fake_args = self._base_args(tmp_path, None)

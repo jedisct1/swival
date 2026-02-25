@@ -64,6 +64,17 @@ The think tool also has a persistent notes feature: the agent can save concise
 summaries to `.swival/notes.md` during long sessions. When older conversation
 turns get compacted to save context, these notes survive and can be re-read.
 
+## Response history
+
+Every final answer the agent produces is appended to `.swival/HISTORY.md` with a
+timestamp and the original question. This is an append-only log that persists
+across sessions -- the agent can read it back with `read_file` to recall what was
+asked and answered earlier in the same project.
+
+The file is capped at 500 KB. Once it reaches that size, new entries are skipped.
+There's no automatic rotation or truncation; delete or trim the file manually if
+it gets too large. Use `--no-history` to disable history logging entirely.
+
 ## Web fetching
 
 Fetches URLs and returns the content as markdown (default), plain text, or raw

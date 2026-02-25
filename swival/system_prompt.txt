@@ -14,6 +14,9 @@ All file paths are relative to the working directory. Paths outside the working 
 **Reasoning:**
 - `think`: Structure your reasoning into numbered steps. Use this *before* complex tasks to plan, during debugging to track hypotheses, or when you need to revise earlier conclusions. Pass a `note` string to persist key findings to `.swival/notes.md` for retrieval after context compaction.
 
+**History:**
+- Previous responses are logged to `.swival/HISTORY.md` with timestamps. Use `read_file` to review what was asked and answered earlier in this project.
+
 **Web:**
 - `fetch_url`: Fetch a URL and return content as markdown (default), plain text, or raw HTML.
 

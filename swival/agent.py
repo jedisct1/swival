@@ -30,6 +30,8 @@ MAX_INSTRUCTIONS_CHARS = 10_000
 
 _encoder = tiktoken.get_encoding("cl100k_base")
 
+MAX_HISTORY_SIZE = 500 * 1024  # 500KB
+
 _CONTEXT_OVERFLOW_RE = re.compile(
     r"context.{0,10}(length|window|limit)"
     r"|maximum.{0,10}(context|token)"
@@ -43,6 +45,45 @@ class ContextOverflowError(Exception):
     """Raised when the LLM call fails due to context window overflow."""
 
     pass
+
+
+def _safe_history_path(base_dir: str) -> Path:
+    """Build history path, verify it resolves inside base_dir."""
+    base = Path(base_dir).resolve()
+    history_path = (Path(base_dir) / ".swival" / "HISTORY.md").resolve()
+    if not history_path.is_relative_to(base):
+        raise ValueError(f"history path {history_path} escapes base directory {base}")
+    return history_path
+
+
+def append_history(base_dir: str, question: str, answer: str) -> None:
+    """Append a timestamped Q&A entry to .swival/HISTORY.md."""
+    if not answer or not answer.strip():
+        return
+
+    try:
+        history_path = _safe_history_path(base_dir)
+    except ValueError:
+        fmt.warning("history path escapes base directory, skipping write")
+        return
+
+    try:
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+
+        current_size = history_path.stat().st_size if history_path.exists() else 0
+        if current_size >= MAX_HISTORY_SIZE:
+            fmt.warning("history file at capacity, skipping write")
+            return
+
+        # Truncate question for the header
+        q_display = question[:200] + "..." if len(question) > 200 else question
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        entry = f"---\n\n**{timestamp}** — *{q_display}*\n\n{answer}\n\n"
+
+        with history_path.open("a", encoding="utf-8") as f:
+            f.write(entry)
+    except OSError:
+        fmt.warning("failed to write history entry")
 
 
 def _canonical_error(error: str) -> str:
@@ -308,7 +349,12 @@ def handle_tool_call(
             "tool_call_id": tool_call.id,
             "content": result,
         },
-        {"name": name, "arguments": parsed_args, "elapsed": elapsed, "succeeded": succeeded},
+        {
+            "name": name,
+            "arguments": parsed_args,
+            "elapsed": elapsed,
+            "succeeded": succeeded,
+        },
     )
 
 
@@ -599,6 +645,12 @@ def build_parser():
         help="Disable ANSI color even when stderr is a TTY.",
     )
 
+    parser.add_argument(
+        "--no-history",
+        action="store_true",
+        help="Don't write responses to .swival/HISTORY.md",
+    )
+
     return parser
 
 
@@ -635,20 +687,26 @@ def main():
             "seed": args.seed,
             "max_turns": args.max_turns,
             "max_output_tokens": args.max_output_tokens,
-            "context_length": getattr(args, "_resolved_context_length", args.max_context_tokens),
+            "context_length": getattr(
+                args, "_resolved_context_length", args.max_context_tokens
+            ),
             "yolo": args.yolo,
             "allowed_commands": sorted(
-                c.strip()
-                for c in (args.allowed_commands or "").split(",")
-                if c.strip()
+                c.strip() for c in (args.allowed_commands or "").split(",") if c.strip()
             ),
             "skills_discovered": sorted(skills_catalog or {}),
             "instructions_loaded": instructions_loaded or [],
         }
 
     def _write_report(
-        outcome, answer=None, exit_code=0, turns=None, error_message=None,
-        model_id="unknown", skills_catalog=None, instructions_loaded=None,
+        outcome,
+        answer=None,
+        exit_code=0,
+        turns=None,
+        error_message=None,
+        model_id="unknown",
+        skills_catalog=None,
+        instructions_loaded=None,
     ):
         if not report:
             return
@@ -894,12 +952,16 @@ def _run_main(args, report, _write_report, parser):
         llm_kwargs=llm_kwargs,
     )
 
+    no_history = getattr(args, "no_history", False)
+
     if not args.repl:
         # Single-shot path
         messages.append({"role": "user", "content": args.question})
         answer, exhausted = run_agent_loop(
             messages, tools, **loop_kwargs, report=report
         )
+        if not no_history and answer:
+            append_history(base_dir, args.question, answer)
         if report:
             _write_report(
                 "exhausted" if exhausted else "success",
@@ -922,12 +984,14 @@ def _run_main(args, report, _write_report, parser):
     if args.question:
         messages.append({"role": "user", "content": args.question})
         answer, exhausted = run_agent_loop(messages, tools, **loop_kwargs)
+        if not no_history and answer:
+            append_history(base_dir, args.question, answer)
         if answer is not None:
             print(answer)
         if exhausted:
             fmt.warning("max turns reached for initial question.")
 
-    repl_loop(messages, tools, **loop_kwargs)
+    repl_loop(messages, tools, **loop_kwargs, no_history=no_history)
 
 
 def run_agent_loop(
@@ -978,8 +1042,15 @@ def run_agent_loop(
             )
 
         _llm_args = (
-            api_base, model_id, messages, effective_max_output,
-            temperature, top_p, seed, tools, verbose,
+            api_base,
+            model_id,
+            messages,
+            effective_max_output,
+            temperature,
+            top_p,
+            seed,
+            tools,
+            verbose,
         )
 
         t0 = time.monotonic()
@@ -998,13 +1069,22 @@ def run_agent_loop(
             )
             tokens_after = estimate_tokens(messages, tools)
             if report:
-                report.record_compaction(turns, "compact_messages", tokens_before, tokens_after)
+                report.record_compaction(
+                    turns, "compact_messages", tokens_before, tokens_after
+                )
             if verbose:
                 fmt.context_stats("Context after compaction", tokens_after)
 
             _llm_args = (
-                api_base, model_id, messages, effective_max_output,
-                temperature, top_p, seed, tools, verbose,
+                api_base,
+                model_id,
+                messages,
+                effective_max_output,
+                temperature,
+                top_p,
+                seed,
+                tools,
+                verbose,
             )
             t0 = time.monotonic()
             try:
@@ -1013,8 +1093,12 @@ def run_agent_loop(
                 elapsed = time.monotonic() - t0
                 if report:
                     report.record_llm_call(
-                        turns, elapsed, tokens_after, "context_overflow",
-                        is_retry=True, retry_reason="compact_messages",
+                        turns,
+                        elapsed,
+                        tokens_after,
+                        "context_overflow",
+                        is_retry=True,
+                        retry_reason="compact_messages",
                     )
 
                 fmt.warning("still too large, dropping older turns...")
@@ -1025,13 +1109,22 @@ def run_agent_loop(
                 )
                 tokens_after = estimate_tokens(messages, tools)
                 if report:
-                    report.record_compaction(turns, "drop_middle_turns", tokens_before, tokens_after)
+                    report.record_compaction(
+                        turns, "drop_middle_turns", tokens_before, tokens_after
+                    )
                 if verbose:
                     fmt.context_stats("Context after drop", tokens_after)
 
                 _llm_args = (
-                    api_base, model_id, messages, effective_max_output,
-                    temperature, top_p, seed, tools, verbose,
+                    api_base,
+                    model_id,
+                    messages,
+                    effective_max_output,
+                    temperature,
+                    top_p,
+                    seed,
+                    tools,
+                    verbose,
                 )
                 t0 = time.monotonic()
                 try:
@@ -1040,16 +1133,24 @@ def run_agent_loop(
                     elapsed = time.monotonic() - t0
                     if report:
                         report.record_llm_call(
-                            turns, elapsed, tokens_after, "context_overflow",
-                            is_retry=True, retry_reason="drop_middle_turns",
+                            turns,
+                            elapsed,
+                            tokens_after,
+                            "context_overflow",
+                            is_retry=True,
+                            retry_reason="drop_middle_turns",
                         )
                     raise AgentError("context window exceeded even after compaction")
                 except AgentError:
                     elapsed = time.monotonic() - t0
                     if report:
                         report.record_llm_call(
-                            turns, elapsed, tokens_after, "error",
-                            is_retry=True, retry_reason="drop_middle_turns",
+                            turns,
+                            elapsed,
+                            tokens_after,
+                            "error",
+                            is_retry=True,
+                            retry_reason="drop_middle_turns",
                         )
                     raise
                 else:
@@ -1058,15 +1159,23 @@ def run_agent_loop(
                         fmt.llm_timing(elapsed, finish_reason)
                     if report:
                         report.record_llm_call(
-                            turns, elapsed, tokens_after, finish_reason,
-                            is_retry=True, retry_reason="drop_middle_turns",
+                            turns,
+                            elapsed,
+                            tokens_after,
+                            finish_reason,
+                            is_retry=True,
+                            retry_reason="drop_middle_turns",
                         )
             except AgentError:
                 elapsed = time.monotonic() - t0
                 if report:
                     report.record_llm_call(
-                        turns, elapsed, tokens_after, "error",
-                        is_retry=True, retry_reason="compact_messages",
+                        turns,
+                        elapsed,
+                        tokens_after,
+                        "error",
+                        is_retry=True,
+                        retry_reason="compact_messages",
                     )
                 raise
             else:
@@ -1075,8 +1184,12 @@ def run_agent_loop(
                     fmt.llm_timing(elapsed, finish_reason)
                 if report:
                     report.record_llm_call(
-                        turns, elapsed, tokens_after, finish_reason,
-                        is_retry=True, retry_reason="compact_messages",
+                        turns,
+                        elapsed,
+                        tokens_after,
+                        finish_reason,
+                        is_retry=True,
+                        retry_reason="compact_messages",
                     )
         except AgentError:
             elapsed = time.monotonic() - t0
@@ -1324,6 +1437,7 @@ def repl_loop(
     yolo: bool,
     verbose: bool,
     llm_kwargs: dict,
+    no_history: bool = False,
 ) -> None:
     """Interactive read-eval-print loop."""
     from prompt_toolkit import PromptSession
@@ -1405,6 +1519,8 @@ def repl_loop(
             except KeyboardInterrupt:
                 fmt.warning("interrupted, continuation aborted.")
                 continue
+            if not no_history and answer:
+                append_history(base_dir, "(continued)", answer)
             if answer is not None:
                 print(answer)
             if exhausted:
@@ -1438,6 +1554,8 @@ def repl_loop(
             fmt.warning("interrupted, question aborted.")
             continue
 
+        if not no_history and answer:
+            append_history(base_dir, line, answer)
         if answer is not None:
             print(answer)
         if exhausted:
