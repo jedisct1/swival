@@ -3,20 +3,20 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Swival — A CLI coding agent for open models</title>
-    <meta name="description" content="A small, powerful, open-source CLI coding agent that works with open models. Auto-discovers your loaded model, gives it sandboxed file access, and gets out of the way.">
+    <title>Swival — A coding agent for open models</title>
+    <meta name="description" content="Swival connects to LM Studio or HuggingFace Inference API, sends your task, and runs an autonomous tool loop until it produces an answer. A few thousand lines of Python, no framework.">
 
     <!-- Open Graph -->
     <meta property="og:type" content="website">
-    <meta property="og:title" content="Swival — A CLI coding agent for open models">
-    <meta property="og:description" content="A small, powerful, open-source CLI coding agent that works with open models.">
+    <meta property="og:title" content="Swival — A coding agent for open models">
+    <meta property="og:description" content="Swival connects to LM Studio or HuggingFace Inference API and runs an autonomous tool loop until it produces an answer.">
     <meta property="og:image" content="https://swival.github.io/swival/img/logo.png">
     <meta property="og:url" content="https://swival.github.io/swival/">
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="Swival — A CLI coding agent for open models">
-    <meta name="twitter:description" content="A small, powerful, open-source CLI coding agent that works with open models.">
+    <meta name="twitter:title" content="Swival — A coding agent for open models">
+    <meta name="twitter:description" content="Swival connects to LM Studio or HuggingFace Inference API and runs an autonomous tool loop until it produces an answer.">
     <meta name="twitter:image" content="https://swival.github.io/swival/img/logo.png">
 
     <link rel="icon" href="favicon.ico">
@@ -37,11 +37,13 @@
 
     <main>
         <section class="hero">
-            <h1>A small, powerful CLI coding agent for open models</h1>
+            <h1>A coding agent for open models</h1>
             <p class="tagline">
-                Swival connects to LM Studio or HuggingFace, sends your task,
-                and runs an autonomous tool-calling loop until it produces an answer.
-                No configuration needed.
+                Swival connects to LM Studio or HuggingFace Inference API,
+                sends your task, and runs an autonomous tool loop until it
+                produces an answer. With LM Studio it auto-discovers your
+                loaded model, so there's nothing to configure. A few thousand
+                lines of Python, no framework.
             </p>
             <div class="terminal">
                 <div class="terminal-titlebar">
@@ -61,24 +63,28 @@
                 <h2>Why Swival</h2>
                 <div class="features-grid">
                     <div class="feature-card">
-                        <h3>Works with open models</h3>
-                        <p>LM Studio auto-discovery, HuggingFace Inference API support.
-                        Use whatever model fits your hardware.</p>
+                        <h3>Your models, your way</h3>
+                        <p>Auto-discovers your LM Studio model, or point it at
+                        any HuggingFace model or dedicated endpoint. You pick
+                        the model and the infrastructure.</p>
                     </div>
                     <div class="feature-card">
-                        <h3>Sandboxed by default</h3>
-                        <p>File access is scoped to your project directory.
-                        Commands are off unless you opt in.</p>
+                        <h3>Small and hackable</h3>
+                        <p>A few thousand lines of Python, no framework.
+                        Read the whole agent in an afternoon. Modify it to
+                        fit your workflow.</p>
                     </div>
                     <div class="feature-card">
-                        <h3>Tool-calling loop</h3>
-                        <p>File ops, grep, edit, web fetch, structured thinking.
-                        The agent keeps going until the task is done.</p>
+                        <h3>Portable skills</h3>
+                        <p>Drop a SKILL.md in a directory and the agent learns
+                        new capabilities on demand. Easy to write, share, and
+                        version.</p>
                     </div>
                     <div class="feature-card">
-                        <h3>Zero config</h3>
-                        <p>Install, load a model, go.
-                        Swival finds the server and connects automatically.</p>
+                        <h3>Built for benchmarking</h3>
+                        <p>JSON evaluation reports capture timing, tool usage,
+                        and context events. Compare models systematically on
+                        real coding tasks.</p>
                     </div>
                 </div>
             </div>
@@ -86,11 +92,15 @@
 
         <section class="quickstart">
             <h2>Quickstart</h2>
+            <h3>LM Studio</h3>
             <ol>
                 <li>
                     Install <a href="https://lmstudio.ai/">LM Studio</a> and load
                     a model with tool-calling support.
-                    Start the LM Studio server.
+                    Recommended first model:
+                    <a href="https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF">qwen3-coder-next</a>
+                    (great quality/speed tradeoff on local hardware).
+                    Start the server.
                 </li>
                 <li>
                     Install Swival:
@@ -100,11 +110,13 @@
                     Run:
                     <pre><code>swival "Refactor the error handling in src/api.py"</code></pre>
                 </li>
-                <li>
-                    For interactive sessions:
-                    <pre><code>swival --repl</code></pre>
-                </li>
             </ol>
+            <h3>HuggingFace</h3>
+            <pre><code>export HF_TOKEN=hf_...
+uv tool install swival
+swival "Refactor the error handling in src/api.py" \
+    --provider huggingface --model meta-llama/Llama-3.3-70B-Instruct</code></pre>
+            <p>For interactive sessions, use <code>swival --repl</code>.</p>
         </section>
     </main>
 

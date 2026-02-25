@@ -2,22 +2,22 @@
 
 # Swival
 
-A small, powerful, open-source CLI coding agent that works with open models.
+A coding agent for open models.
 
 Swival connects to [LM Studio](https://lmstudio.ai/) or
 [HuggingFace Inference API](https://huggingface.co/inference-api), sends your
-task, and runs an autonomous tool-calling loop until it produces an answer. No
-configuration needed.
-
-It auto-discovers your loaded model, gives it sandboxed file access, and gets out of the way.
-
-It's what I use every day. Try it and see if you like it too.
+task, and runs an autonomous tool loop until it produces an answer. With LM
+Studio it auto-discovers your loaded model, so there's nothing to configure.
+A few thousand lines of Python, no framework.
 
 ## Quickstart
 
+### LM Studio
+
 1. Install [LM Studio](https://lmstudio.ai/) and load a model with tool-calling
-   support (I recommend
-   [qwen3-coder-next](https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF)).
+   support. Recommended first model:
+   [qwen3-coder-next](https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF)
+   (great quality/speed tradeoff on local hardware).
    Crank the context size as high as your hardware allows.
 2. Start the LM Studio server.
 3. Install Swival:
@@ -34,23 +34,62 @@ swival "Refactor the error handling in src/api.py"
 
 That's it. Swival finds the model, connects, and goes to work.
 
-For interactive sessions:
+### HuggingFace
+
+```sh
+export HF_TOKEN=hf_...
+uv tool install swival
+swival "Refactor the error handling in src/api.py" \
+    --provider huggingface --model meta-llama/Llama-3.3-70B-Instruct
+```
+
+You can also point it at a dedicated endpoint with `--base-url` and `--api-key`.
+
+### Interactive sessions
 
 ```sh
 swival --repl
 ```
 
-To update to the latest version:
+The REPL carries conversation history across questions, which makes it good for
+exploratory work and longer tasks.
+
+### Updates and uninstall
 
 ```sh
-uv tool upgrade swival
+uv tool upgrade swival    # update
+uv tool uninstall swival  # remove
 ```
 
-To uninstall:
+## What makes it different
 
-```sh
-uv tool uninstall swival
-```
+**Your models, your way.** Swival works with LM Studio and HuggingFace
+Inference API. With LM Studio, it auto-discovers whatever model you have
+loaded. With HuggingFace, point it at any supported model or your own dedicated
+endpoint. You pick the model and the infrastructure.
+
+**Small enough to read and hack.** The whole agent is a few thousand lines of
+Python across a handful of files, with no framework underneath. You can read the
+entire thing in an afternoon. If something doesn't work the way you want, you
+can change it.
+
+**Portable skills.** Drop a `SKILL.md` file in a directory, and the agent
+learns new capabilities on demand. The system prompt only gets a compact catalog
+at startup. Full instructions load when the agent actually needs them. Skills
+are easy to write, share, and version.
+
+**Structured thinking for any model.** The built-in think tool gives any model
+(including local ones) multi-step reasoning with revisions, branches, and
+persistent notes that survive context compaction. It's not locked to a specific
+provider.
+
+**Built for benchmarking.** Pass `--report report.json` and Swival writes a
+machine-readable evaluation report with per-call LLM timing, tool
+success/failure counts, context compaction events, and guardrail interventions.
+Good for comparing models systematically on real coding tasks.
+
+**Unix-native.** stdout is exclusively the final answer. All diagnostics go to
+stderr. You can pipe Swival's output straight into another command or a file.
 
 ## Documentation
 
