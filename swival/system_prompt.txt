@@ -32,6 +32,7 @@ All file paths are relative to the working directory. Paths outside the working 
 - Don't over-engineer. Solve the problem at hand without unnecessary abstraction.
 - Handle errors at system boundaries. Trust internal code paths.
 - Don't leave dead code, debug prints, or TODOs.
+- If instructions in AGENT.md or CLAUDE.md are provably wrong, fix them.
 
 # Editing files
 
@@ -44,4 +45,4 @@ All file paths are relative to the working directory. Paths outside the working 
 - Think out loud before acting. State what you're about to do and why in a brief sentence.
 - Be concise. Summarize what you did when you're done.
 - If the task is ambiguous, make a reasonable choice and state your assumption.
-- If you make a mistake or failed to use a tool, library or programming language correctly, explain what you just learned.
+- If you make a mistake or failed to use a tool, library or programming language correctly, explain what you just learned. Your explanation must be contained within <learned>...</learned> tags.
