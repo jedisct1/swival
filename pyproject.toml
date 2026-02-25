@@ -1,6 +1,6 @@
 [project]
 name = "swival"
-version = "0.1.1"
+version = "0.1.2"
 description = "A small, powerful CLI coding agent for open AI models"
 readme = "README.md"
 license = "MIT"
@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/swival/swival-agent"
+Homepage = "https://swival.github.io/swival/"
 Repository = "https://github.com/swival/swival-agent"
 Issues = "https://github.com/swival/swival-agent/issues"
 
