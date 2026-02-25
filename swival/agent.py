@@ -11,6 +11,12 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
+try:
+    from importlib import metadata
+except ImportError:
+    # Python < 3.8
+    import importlib_metadata as metadata
+
 import tiktoken
 
 from . import fmt
@@ -499,6 +505,11 @@ def build_parser():
         description="A CLI coding agent with tool-calling, sandboxed file access, and multi-provider LLM support.",
     )
     parser.add_argument(
+        "--version",
+        action="store_true",
+        help="Print the version and exit.",
+    )
+    parser.add_argument(
         "question", nargs="?", default=None, help="The question or task for the model."
     )
     parser.add_argument(
@@ -657,6 +668,16 @@ def build_parser():
 def main():
     parser = build_parser()
     args = parser.parse_args()
+
+    # Handle --version first
+    if args.version:
+        try:
+            version = metadata.version("swival")
+        except metadata.PackageNotFoundError:
+            version = "unknown"
+        print(version)
+        sys.exit(0)
+
     args.verbose = not args.quiet
 
     if not args.repl and args.question is None:
@@ -1301,8 +1322,7 @@ def run_agent_loop(
         # Think nudge: if model used edit_file/write_file without thinking first
         if not think_used and not think_nudge_fired:
             has_mutating = any(
-                tc.function.name in ("edit_file", "write_file")
-                for tc in msg.tool_calls
+                tc.function.name in ("edit_file", "write_file") for tc in msg.tool_calls
             )
             if has_mutating:
                 think_nudge_fired = True
