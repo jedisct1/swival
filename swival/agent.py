@@ -530,8 +530,8 @@ def build_parser():
     parser.add_argument(
         "--max-turns",
         type=int,
-        default=50,
-        help="Maximum agent loop iterations (default: 50).",
+        default=100,
+        help="Maximum agent loop iterations (default: 100).",
     )
     parser.add_argument(
         "--base-dir",
@@ -1051,6 +1051,7 @@ def _repl_help() -> None:
         "  /compact [--drop]  Compress context (--drop removes middle turns)\n"
         "  /add-dir <path>    Grant read+write access to a directory\n"
         "  /extend [N]        Double max turns, or set to N\n"
+        "  /continue          Reset turn counter and continue the agent loop\n"
         "  /exit, /quit       Exit the REPL"
     )
 
@@ -1213,6 +1214,38 @@ def repl_loop(
             continue
         elif cmd == "/extend":
             _repl_extend(cmd_arg, turn_state)
+            continue
+        elif cmd == "/continue":
+            fmt.info("continuing agent loop...")
+            try:
+                answer, exhausted = run_agent_loop(
+                    messages,
+                    tools,
+                    api_base=api_base,
+                    model_id=model_id,
+                    max_turns=turn_state["max_turns"],
+                    max_output_tokens=max_output_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    seed=seed,
+                    context_length=context_length,
+                    base_dir=base_dir,
+                    thinking_state=thinking_state,
+                    resolved_commands=resolved_commands,
+                    skills_catalog=skills_catalog,
+                    skill_read_roots=skill_read_roots,
+                    extra_write_roots=extra_write_roots,
+                    yolo=yolo,
+                    verbose=verbose,
+                    llm_kwargs=llm_kwargs,
+                )
+            except KeyboardInterrupt:
+                fmt.warning("interrupted, continuation aborted.")
+                continue
+            if answer is not None:
+                print(answer)
+            if exhausted:
+                fmt.warning("max turns reached for this question.")
             continue
 
         messages.append({"role": "user", "content": line})

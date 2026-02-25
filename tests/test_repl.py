@@ -371,6 +371,7 @@ class TestHelpCommand:
         assert "/clear" in captured.err
         assert "/compact" in captured.err
         assert "/add-dir" in captured.err
+        assert "/continue" in captured.err
         assert "/exit" in captured.err
 
     def test_help_in_repl(self, tmp_path):
@@ -717,6 +718,143 @@ class TestExtendCommand:
         ):
             repl_loop(messages, [], **_loop_kwargs(tmp_path, max_turns=5))
 
+        assert call_kwargs == [5, 20]
+
+
+# ---------------------------------------------------------------------------
+# /continue command
+# ---------------------------------------------------------------------------
+
+
+class TestContinueCommand:
+    def _mock_session(self, inputs):
+        mock_session = MagicMock()
+        side = []
+        for v in inputs:
+            if v is EOFError:
+                side.append(EOFError())
+            elif v is KeyboardInterrupt:
+                side.append(KeyboardInterrupt())
+            else:
+                side.append(v)
+        mock_session.prompt.side_effect = side
+        return mock_session
+
+    def test_continue_does_not_add_user_message(self, tmp_path):
+        """/continue calls run_agent_loop without appending a new user message."""
+        messages = [_sys("system")]
+
+        call_snapshots = []
+
+        def fake_run(msgs, tools, **kwargs):
+            call_snapshots.append(list(msgs))
+            return ("answer", False)
+
+        inputs = ["hello", "/continue", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run),
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        # First call: system + "hello"
+        assert len(call_snapshots[0]) == 2
+        assert call_snapshots[0][1]["content"] == "hello"
+        # Second call (/continue): no new user message added
+        assert len(call_snapshots[1]) == 2
+        assert call_snapshots[1][1]["content"] == "hello"
+
+    def test_continue_invokes_loop(self, tmp_path):
+        """/continue triggers run_agent_loop."""
+        messages = [_sys("system")]
+
+        inputs = ["q1", "/continue", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch(
+                "swival.agent.run_agent_loop", return_value=("answer", False)
+            ) as mock_loop,
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        # Two calls: one for "q1", one for /continue
+        assert mock_loop.call_count == 2
+
+    def test_continue_prints_answer(self, tmp_path, capsys):
+        """/continue prints the answer from the continued loop."""
+        messages = [_sys("system")]
+
+        call_count = 0
+
+        def fake_run(msgs, tools, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return (None, True)  # exhausted, no answer
+            return ("continued answer", False)
+
+        inputs = ["q1", "/continue", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run),
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        captured = capsys.readouterr()
+        assert "continued answer" in captured.out
+
+    def test_continue_ctrl_c(self, tmp_path):
+        """KeyboardInterrupt during /continue doesn't crash the REPL."""
+        messages = [_sys("system")]
+
+        call_count = 0
+
+        def fake_run(msgs, tools, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return ("first", False)
+            if call_count == 2:
+                raise KeyboardInterrupt
+            return ("third", False)
+
+        inputs = ["q1", "/continue", "q2", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run),
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        assert call_count == 3
+
+    def test_continue_uses_current_max_turns(self, tmp_path):
+        """/continue respects max_turns changes from /extend."""
+        messages = [_sys("system")]
+
+        call_kwargs = []
+
+        def fake_run(msgs, tools, **kwargs):
+            call_kwargs.append(kwargs["max_turns"])
+            return ("answer", False)
+
+        inputs = ["q1", "/extend 20", "/continue", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run),
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path, max_turns=5))
+
+        # First call: max_turns=5, /continue after /extend 20: max_turns=20
         assert call_kwargs == [5, 20]
 
 

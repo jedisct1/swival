@@ -88,7 +88,7 @@ swival --max-turns 10 "quick task"
 ```
 
 Limits the number of agent loop iterations. Each turn is one LLM call that may
-include multiple tool calls. The default is 50. If the agent hits the limit
+include multiple tool calls. The default is 100. If the agent hits the limit
 without producing a final answer, it exits with code 2.
 
 ### Output tokens

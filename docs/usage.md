@@ -67,6 +67,7 @@ swival --repl "Look at the project structure and tell me what this does"
 - `/add-dir <path>` -- grant read/write access to an additional directory
 - `/extend` -- double the current max turns limit
 - `/extend <N>` -- set max turns to a specific number
+- `/continue` -- reset the turn counter and continue the agent loop
 - `/exit` or `/quit` -- exit (Ctrl-D works too)
 
 The REPL uses `prompt-toolkit`, so you get command history, history search, and
@@ -87,7 +88,7 @@ line editing.
 
 | Flag                   | Default    | Description                                         |
 | ---------------------- | ---------- | --------------------------------------------------- |
-| `--max-turns`          | `50`       | Maximum agent loop iterations                       |
+| `--max-turns`          | `100`      | Maximum agent loop iterations                       |
 | `--max-output-tokens`  | `32768`    | Maximum output tokens per LLM call                  |
 | `--max-context-tokens` | from model | Requested context length (may trigger model reload) |
 | `--temperature`        | `0.55`     | Sampling temperature                                |
