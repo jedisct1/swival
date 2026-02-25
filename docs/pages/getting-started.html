@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Getting Started — Swival</title>
+    <meta name="description" content="Getting Started — Swival documentation">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Getting Started — Swival">
+    <meta property="og:description" content="Getting Started — Swival documentation">
+    <meta property="og:image" content="https://swival.dev/img/logo.png">
+    <meta property="og:url" content="https://swival.dev/docs/getting-started.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Getting Started — Swival">
+    <meta name="twitter:description" content="Getting Started — Swival documentation">
+    <meta name="twitter:image" content="https://swival.dev/img/logo.png">
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="../" class="header-logo">
+                <img src="../img/logo.png" alt="Swival">
+            </a>
+            <nav class="header-nav">
+                <a href="./">Docs</a>
+                <a href="https://github.com/swival/swival-agent">GitHub</a>
+            </nav>
+        </div>
+    </header>
+    <div class="docs-layout">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+<h4>Basics</h4>
+<ul>
+<li><a href="getting-started.html" class="active">Getting Started</a></li>
+<li><a href="usage.html">Usage</a></li>
+<li><a href="tools.html">Tools</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Configuration & Deployment</h4>
+<ul>
+<li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
+<li><a href="skills.html">Skills</a></li>
+<li><a href="customization.html">Customization</a></li>
+<li><a href="providers.html">Providers</a></li>
+<li><a href="reports.html">Reports</a></li>
+<li><a href="agentfs.html">AgentFS</a></li>
+</ul>
+</div>
+        </aside>
+        <article class="docs-content">
+            <h1 id="getting-started">Getting Started</h1>
+<h2 id="prerequisites">Prerequisites</h2>
+<p>You need Python 3.13+ and <a href="https://docs.astral.sh/uv/">uv</a>. If you don't have
+uv yet:</p>
+<pre><code class="language-sh">curl -LsSf https://astral.sh/uv/install.sh | sh
+</code></pre>
+<h2 id="installation">Installation</h2>
+<pre><code class="language-sh">uv tool install swival
+</code></pre>
+<p>This puts the <code>swival</code> command on your PATH. You can now run it from anywhere.</p>
+<p>To update to the latest version:</p>
+<pre><code class="language-sh">uv tool upgrade swival
+</code></pre>
+<p>To uninstall:</p>
+<pre><code class="language-sh">uv tool uninstall swival
+</code></pre>
+<h2 id="running-with-lm-studio-recommended">Running with LM Studio (recommended)</h2>
+<p>LM Studio is the easiest path. Install it from
+<a href="https://lmstudio.ai/">lmstudio.ai</a>, then download a model that supports tool
+calling. My pick is
+<a href="https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF">qwen3-coder-next</a> -- on
+a 64 GB MacBook Pro with a 100k context window, it's genuinely excellent.</p>
+<p>Load the model, start the server (the "Local Server" tab in LM Studio), and
+increase the context size as high as your RAM allows. Bigger context means the
+agent can hold more of your codebase in its head at once.</p>
+<p>Then run:</p>
+<pre><code class="language-sh">swival &quot;Hello world&quot;
+</code></pre>
+<p>Swival connects to LM Studio at <code>http://127.0.0.1:1234</code>, queries the API to
+discover which model is loaded, and sends your prompt. No API keys, no config
+files, no environment variables. It just works.</p>
+<h3 id="what-happens-under-the-hood">What happens under the hood</h3>
+<p>When you run that command, Swival:</p>
+<ol>
+<li>Hits LM Studio's <code>/api/v1/models</code> endpoint to find the loaded model and its
+   context size.</li>
+<li>Builds a system prompt that describes the available tools (file reading,
+   editing, search, etc.) and the working directory.</li>
+<li>Sends your question to the model via LiteLLM.</li>
+<li>Enters the agent loop: the model can call tools, read files, make edits, and
+   reason through the problem across as many turns as it needs.</li>
+<li>When the model produces a final text answer (no more tool calls), Swival
+   prints it to stdout and exits.</li>
+</ol>
+<p>All diagnostic output (turn numbers, tool calls, timing) goes to stderr. The
+final answer goes to stdout. This means you can pipe Swival's output cleanly
+into other tools.</p>
+<h2 id="running-with-huggingface">Running with HuggingFace</h2>
+<p>If you'd rather use a hosted model instead of running one locally:</p>
+<pre><code class="language-sh">export HF_TOKEN=hf_your_token_here
+swival &quot;Hello world&quot; --provider huggingface --model meta-llama/Llama-3.3-70B-Instruct
+</code></pre>
+<p>You need a HuggingFace token with Inference API access. The model must be
+specified in <code>org/model</code> format. For dedicated endpoints, add <code>--base-url</code> and
+<code>--api-key</code>:</p>
+<pre><code class="language-sh">swival &quot;Hello world&quot; \
+    --provider huggingface \
+    --model meta-llama/Llama-3.3-70B-Instruct \
+    --base-url https://xyz.endpoints.huggingface.cloud \
+    --api-key hf_your_key
+</code></pre>
+<p>See <a href="providers.html">Providers</a> for more detail on provider configuration.</p>
+<h2 id="next-steps">Next steps</h2>
+<ul>
+<li><a href="usage.html">Usage</a> covers the two operating modes and all CLI flags.</li>
+<li><a href="tools.html">Tools</a> explains what the agent can do out of the box.</li>
+<li><a href="safety-and-sandboxing.html">Safety and Sandboxing</a> explains how file access is restricted.</li>
+<li><a href="agentfs.html">Using Swival with AgentFS</a> shows how to run the agent in a copy-on-write sandbox so you can review and test changes before applying them.</li>
+</ul>
+        </article>
+    </div>
+    <footer class="site-footer">
+        MIT License &middot;
+        <a href="https://github.com/swival/swival-agent">GitHub</a>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Providers — Swival</title>
+    <meta name="description" content="Providers — Swival documentation">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Providers — Swival">
+    <meta property="og:description" content="Providers — Swival documentation">
+    <meta property="og:image" content="https://swival.dev/img/logo.png">
+    <meta property="og:url" content="https://swival.dev/docs/providers.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Providers — Swival">
+    <meta name="twitter:description" content="Providers — Swival documentation">
+    <meta name="twitter:image" content="https://swival.dev/img/logo.png">
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="../" class="header-logo">
+                <img src="../img/logo.png" alt="Swival">
+            </a>
+            <nav class="header-nav">
+                <a href="./">Docs</a>
+                <a href="https://github.com/swival/swival-agent">GitHub</a>
+            </nav>
+        </div>
+    </header>
+    <div class="docs-layout">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+<h4>Basics</h4>
+<ul>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="usage.html">Usage</a></li>
+<li><a href="tools.html">Tools</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Configuration & Deployment</h4>
+<ul>
+<li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
+<li><a href="skills.html">Skills</a></li>
+<li><a href="customization.html">Customization</a></li>
+<li><a href="providers.html" class="active">Providers</a></li>
+<li><a href="reports.html">Reports</a></li>
+<li><a href="agentfs.html">AgentFS</a></li>
+</ul>
+</div>
+        </aside>
+        <article class="docs-content">
+            <h1 id="providers">Providers</h1>
+<p>Swival supports two providers: LM Studio (local) and HuggingFace Inference API
+(hosted). Under the hood, all LLM calls go through
+<a href="https://docs.litellm.ai/">LiteLLM</a>, which normalizes the API differences.</p>
+<h2 id="lm-studio">LM Studio</h2>
+<p>This is the default and requires no configuration beyond having LM Studio
+running with a model loaded.</p>
+<h3 id="auto-discovery">Auto-discovery</h3>
+<p>Swival queries <code>http://127.0.0.1:1234/api/v1/models</code> at startup to find the
+loaded model. It looks for the first entry with <code>type: "llm"</code> and a non-empty
+<code>loaded_instances</code> array. The model identifier and context length are extracted
+automatically.</p>
+<p>If no model is loaded, Swival exits with an error telling you to load one.</p>
+<h3 id="custom-base-url">Custom base URL</h3>
+<p>If LM Studio is running on a different host or port:</p>
+<pre><code class="language-sh">swival --base-url http://192.168.1.100:1234 &quot;task&quot;
+</code></pre>
+<h3 id="manual-model-selection">Manual model selection</h3>
+<p>If auto-discovery doesn't find the right model (e.g., multiple models loaded),
+you can specify it:</p>
+<pre><code class="language-sh">swival --model &quot;qwen3-coder-next&quot; &quot;task&quot;
+</code></pre>
+<h3 id="context-size-configuration">Context size configuration</h3>
+<p>You can request a specific context length, which may trigger LM Studio to
+reload the model:</p>
+<pre><code class="language-sh">swival --max-context-tokens 131072 &quot;task&quot;
+</code></pre>
+<p>Swival calls LM Studio's <code>/api/v1/models/load</code> endpoint with the new context
+size. If the requested size matches what's already loaded, no reload happens.
+Reloads can be slow depending on the model and hardware.</p>
+<h3 id="how-the-litellm-call-works">How the LiteLLM call works</h3>
+<p>For LM Studio, Swival prefixes the model identifier with <code>openai/</code> and sets
+<code>api_base</code> to <code>{base_url}/v1</code>. The API key is set to <code>"lm-studio"</code> (LM Studio
+doesn't require a real key). This tells LiteLLM to use the OpenAI-compatible
+API format.</p>
+<h2 id="huggingface-inference-api">HuggingFace Inference API</h2>
+<p>For hosted inference without running a local model.</p>
+<h3 id="basic-usage">Basic usage</h3>
+<pre><code class="language-sh">export HF_TOKEN=hf_your_token_here
+swival --provider huggingface --model meta-llama/Llama-3.3-70B-Instruct &quot;task&quot;
+</code></pre>
+<p>The <code>--model</code> flag is required and must be in <code>org/model</code> format. Authentication
+comes from <code>HF_TOKEN</code> in the environment or <code>--api-key</code> on the command line
+(which takes precedence).</p>
+<h3 id="dedicated-endpoints">Dedicated endpoints</h3>
+<p>For HuggingFace dedicated inference endpoints (private deployments):</p>
+<pre><code class="language-sh">swival --provider huggingface \
+    --model meta-llama/Llama-3.3-70B-Instruct \
+    --base-url https://xyz.endpoints.huggingface.cloud \
+    --api-key hf_your_key \
+    &quot;task&quot;
+</code></pre>
+<p>The <code>--base-url</code> points to your endpoint. The model identifier still needs to
+match what's deployed there.</p>
+<h3 id="how-the-litellm-call-works_1">How the LiteLLM call works</h3>
+<p>For HuggingFace, Swival prefixes the model with <code>huggingface/</code> (stripping any
+existing prefix first) and passes the API key directly. If <code>--base-url</code> is set,
+it's passed as <code>api_base</code> to LiteLLM.</p>
+<h2 id="future-providers">Future providers</h2>
+<p>Since Swival uses LiteLLM for the actual API call, adding new providers is
+straightforward -- it's mostly a matter of building the right model string and
+passing the right credentials. The provider-specific logic in <code>call_llm()</code> is
+about 10 lines per provider.</p>
+        </article>
+    </div>
+    <footer class="site-footer">
+        MIT License &middot;
+        <a href="https://github.com/swival/swival-agent">GitHub</a>
+    </footer>
+</body>
+</html>

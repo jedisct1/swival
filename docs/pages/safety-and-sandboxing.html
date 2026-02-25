@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Safety & Sandboxing — Swival</title>
+    <meta name="description" content="Safety & Sandboxing — Swival documentation">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Safety & Sandboxing — Swival">
+    <meta property="og:description" content="Safety & Sandboxing — Swival documentation">
+    <meta property="og:image" content="https://swival.dev/img/logo.png">
+    <meta property="og:url" content="https://swival.dev/docs/safety-and-sandboxing.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Safety & Sandboxing — Swival">
+    <meta name="twitter:description" content="Safety & Sandboxing — Swival documentation">
+    <meta name="twitter:image" content="https://swival.dev/img/logo.png">
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="../" class="header-logo">
+                <img src="../img/logo.png" alt="Swival">
+            </a>
+            <nav class="header-nav">
+                <a href="./">Docs</a>
+                <a href="https://github.com/swival/swival-agent">GitHub</a>
+            </nav>
+        </div>
+    </header>
+    <div class="docs-layout">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+<h4>Basics</h4>
+<ul>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="usage.html">Usage</a></li>
+<li><a href="tools.html">Tools</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Configuration & Deployment</h4>
+<ul>
+<li><a href="safety-and-sandboxing.html" class="active">Safety & Sandboxing</a></li>
+<li><a href="skills.html">Skills</a></li>
+<li><a href="customization.html">Customization</a></li>
+<li><a href="providers.html">Providers</a></li>
+<li><a href="reports.html">Reports</a></li>
+<li><a href="agentfs.html">AgentFS</a></li>
+</ul>
+</div>
+        </aside>
+        <article class="docs-content">
+            <h1 id="safety-and-sandboxing">Safety and Sandboxing</h1>
+<p>Swival's sandboxing is application-level. It validates paths and whitelists
+commands in Python, but it does not use OS-level isolation (namespaces,
+seccomp, pledge, etc.). A sufficiently creative model or a bug in the sandbox
+code could bypass these checks. Don't treat them as a security boundary for
+untrusted models.</p>
+<p>For stronger isolation, use an OS-level sandbox around Swival itself:</p>
+<ul>
+<li><strong><a href="agentfs.html">AgentFS</a></strong> provides a copy-on-write filesystem overlay. The
+  agent can write freely, but your real files don't change until you explicitly
+  copy them back. See <a href="agentfs.html">Using Swival with AgentFS</a> for a full
+  walkthrough.</li>
+<li><strong>sandbox-exec</strong> (macOS) can restrict filesystem, network, and process
+  access at the kernel level. For example, to deny network access:
+  <code>sh
+  sandbox-exec -p '(version 1)(allow default)(deny network*)' \
+      swival "task" --yolo</code></li>
+</ul>
+<p>Both can be combined. AgentFS handles filesystem isolation, sandbox-exec
+handles everything else.</p>
+<p>With that caveat, here's what Swival's built-in sandbox does and how to
+configure it.</p>
+<h2 id="base-directory">Base directory</h2>
+<p>All file paths are resolved relative to <code>--base-dir</code> (defaults to the current
+directory). The resolution function (<code>safe_resolve</code>) works like this:</p>
+<ol>
+<li>Resolve the base directory to an absolute path, following symlinks.</li>
+<li>Resolve the target path the same way.</li>
+<li>Check that the resolved target is inside the resolved base directory.</li>
+</ol>
+<p>If the target escapes the base directory at any point -- even through symlinks
+-- the operation fails with an error. This means a symlink inside your project
+that points to <code>/etc/passwd</code> won't be followed.</p>
+<p>The filesystem root is always blocked, even in unrestricted mode. You can't
+accidentally give the agent access to everything.</p>
+<h2 id="extra-directories">Extra directories</h2>
+<p>Sometimes the agent needs to read or write files outside the base directory. Use
+<code>--allow-dir</code> for that:</p>
+<pre><code class="language-sh">swival --allow-dir ~/shared-data --allow-dir /opt/configs &quot;Update the config&quot;
+</code></pre>
+<p>Each <code>--allow-dir</code> path grants full read/write access. The flag is repeatable.
+The path must exist, must be a directory, and can't be the filesystem root.</p>
+<p>In the REPL, you can add directories on the fly with <code>/add-dir &lt;path&gt;</code>.</p>
+<h2 id="command-execution">Command execution</h2>
+<p>Command execution is disabled by default. The agent has no <code>run_command</code> tool
+unless you explicitly enable it.</p>
+<h3 id="whitelisted-commands">Whitelisted commands</h3>
+<pre><code class="language-sh">swival --allowed-commands ls,git,python3 &quot;task&quot;
+</code></pre>
+<p>At startup, each command name is resolved to its absolute path via <code>which</code>. If a
+command isn't found on PATH, Swival exits with an error. If a command resolves
+to a path inside the base directory, it's also rejected -- this prevents the
+agent from writing a script and then executing it.</p>
+<p>At runtime, only the whitelisted basenames are accepted. Commands are passed as
+arrays (<code>["ls", "-la"]</code>), not shell strings, so there's no shell injection. The
+working directory is set to the base directory.</p>
+<h3 id="yolo-mode">YOLO mode</h3>
+<pre><code class="language-sh">swival --yolo &quot;do whatever you want&quot;
+</code></pre>
+<p>This disables both the filesystem sandbox and the command whitelist. The agent
+can read and write any file (except the filesystem root) and run any command. No
+questions asked.</p>
+<p>Use this when you trust the model and want maximum capability. Combine it with
+<a href="agentfs.html">AgentFS</a> if you want an external safety net.</p>
+<p>In YOLO mode, the <code>run_command</code> tool description changes to indicate any command
+is allowed, and the system prompt is updated accordingly.</p>
+<h2 id="url-fetching-and-ssrf-protection">URL fetching and SSRF protection</h2>
+<p>The <code>fetch_url</code> tool blocks requests to private, loopback, link-local, and
+reserved IP addresses. It resolves the hostname to IP addresses using
+<code>socket.getaddrinfo</code> and checks each address against Python's <code>ipaddress</code>
+module before connecting.</p>
+<p>Redirect chains are handled manually -- each hop is validated against the same
+blocklist. This prevents SSRF attacks where a public URL redirects to an
+internal service. The redirect limit is 10 hops.</p>
+<p>Only HTTP and HTTPS schemes are allowed. Binary content types are rejected.
+Response bodies are capped at 5 MB raw, with the converted output capped at
+50 KB inline (larger responses are saved to files for pagination).</p>
+<h2 id="output-caps">Output caps</h2>
+<p>Several caps exist to prevent the agent from overwhelming the context window:</p>
+<ul>
+<li>File reads: 50 KB per read, with pagination for larger files</li>
+<li>Individual lines: truncated at 2,000 characters</li>
+<li>Directory listings and grep results: 100 entries max</li>
+<li>Command output: 10 KB inline, larger results saved to <code>.swival/</code> for
+  pagination (auto-deleted after 10 minutes)</li>
+<li>URL fetch output: 50 KB inline, larger results saved to files</li>
+<li>Response history: <code>.swival/HISTORY.md</code> capped at 500 KB (new entries skipped
+  once the limit is reached)</li>
+</ul>
+        </article>
+    </div>
+    <footer class="site-footer">
+        MIT License &middot;
+        <a href="https://github.com/swival/swival-agent">GitHub</a>
+    </footer>
+</body>
+</html>

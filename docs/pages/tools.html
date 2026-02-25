@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tools — Swival</title>
+    <meta name="description" content="Tools — Swival documentation">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Tools — Swival">
+    <meta property="og:description" content="Tools — Swival documentation">
+    <meta property="og:image" content="https://swival.dev/img/logo.png">
+    <meta property="og:url" content="https://swival.dev/docs/tools.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Tools — Swival">
+    <meta name="twitter:description" content="Tools — Swival documentation">
+    <meta name="twitter:image" content="https://swival.dev/img/logo.png">
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="../" class="header-logo">
+                <img src="../img/logo.png" alt="Swival">
+            </a>
+            <nav class="header-nav">
+                <a href="./">Docs</a>
+                <a href="https://github.com/swival/swival-agent">GitHub</a>
+            </nav>
+        </div>
+    </header>
+    <div class="docs-layout">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+<h4>Basics</h4>
+<ul>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="usage.html">Usage</a></li>
+<li><a href="tools.html" class="active">Tools</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Configuration & Deployment</h4>
+<ul>
+<li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
+<li><a href="skills.html">Skills</a></li>
+<li><a href="customization.html">Customization</a></li>
+<li><a href="providers.html">Providers</a></li>
+<li><a href="reports.html">Reports</a></li>
+<li><a href="agentfs.html">AgentFS</a></li>
+</ul>
+</div>
+        </aside>
+        <article class="docs-content">
+            <h1 id="tools">Tools</h1>
+<p>Swival gives the model a fixed set of tools. These are always available (except
+<code>run_command</code> and <code>use_skill</code>, which are opt-in). The agent decides when and how
+to use them.</p>
+<h2 id="file-reading">File reading</h2>
+<p>The agent can read any file within the base directory. Files come back with line
+numbers, which helps the agent reference specific locations when editing. Large
+files are automatically paginated at 50 KB per page, with continuation hints so
+the agent can read the next chunk. There's also a <code>tail</code> parameter for reading
+the end of log files or build output.</p>
+<p>Directories can be read too -- the agent gets a listing with subdirectory
+markers.</p>
+<h2 id="file-writing">File writing</h2>
+<p>Creates or overwrites a file. Parent directories are created automatically. The
+agent uses this when it needs to create something from scratch. For modifying
+existing files, it prefers <code>edit_file</code> (below), which is less destructive.</p>
+<h2 id="file-editing">File editing</h2>
+<p>This is the agent's primary tool for modifying code. It works by string
+replacement: the agent specifies the exact text to find and what to replace it
+with. Behind the scenes, the edit engine uses a 3-pass matching strategy:</p>
+<ol>
+<li>Exact match first.</li>
+<li>If that fails, line-trimmed matching (ignores leading/trailing whitespace per
+   line).</li>
+<li>If that fails too, Unicode-normalized matching (converts smart quotes, em
+   dashes, and ellipsis to their ASCII equivalents before comparing).</li>
+</ol>
+<p>This makes edits robust even when the model's output has slightly different
+whitespace or punctuation than the original file. If multiple matches are found,
+the edit fails unless <code>replace_all</code> is set -- this prevents accidental bulk
+changes.</p>
+<h2 id="directory-listing">Directory listing</h2>
+<p>Recursively lists files matching a glob pattern (like <code>`/*.py</code> or
+<code>src/</code>/*.ts`), sorted by modification time with newest first. Results are
+capped at 100 entries. The agent uses this to orient itself in unfamiliar
+codebases.</p>
+<h2 id="grep">Grep</h2>
+<p>Searches file contents with regex patterns, returning matches grouped by file
+with line numbers. Supports filename filtering with globs (e.g., only search
+<code>*.py</code> files) and directory scoping. Results are sorted by file modification
+time and capped at 100 matches.</p>
+<h2 id="thinking">Thinking</h2>
+<p>A structured reasoning tool. The agent uses this to break complex problems into
+numbered steps, track hypotheses during debugging, and revise earlier
+conclusions when new information surfaces. It supports revisions (correcting a
+specific earlier thought) and branches (exploring alternative approaches in
+parallel).</p>
+<p>The think tool also has a persistent notes feature: the agent can save concise
+summaries to <code>.swival/notes.md</code> during long sessions. When older conversation
+turns get compacted to save context, these notes survive and can be re-read.</p>
+<h2 id="response-history">Response history</h2>
+<p>Every final answer the agent produces is appended to <code>.swival/HISTORY.md</code> with a
+timestamp and the original question. This is an append-only log that persists
+across sessions -- the agent can read it back with <code>read_file</code> to recall what was
+asked and answered earlier in the same project.</p>
+<p>The file is capped at 500 KB. Once it reaches that size, new entries are skipped.
+There's no automatic rotation or truncation; delete or trim the file manually if
+it gets too large. Use <code>--no-history</code> to disable history logging entirely.</p>
+<h2 id="web-fetching">Web fetching</h2>
+<p>Fetches URLs and returns the content as markdown (default), plain text, or raw
+HTML. The agent uses this to read documentation, check API references, or pull
+in information from the web. Output is capped at 50 KB; larger responses are
+saved to a file for paginated reading.</p>
+<p>URL fetching has built-in SSRF protection -- it blocks requests to private,
+loopback, and link-local addresses, checking every hop in the redirect chain.
+See <a href="safety-and-sandboxing.html">Safety and Sandboxing</a> for details.</p>
+<h2 id="command-execution">Command execution</h2>
+<p>Not available by default. You enable it with <code>--allowed-commands</code>:</p>
+<pre><code class="language-sh">swival --allowed-commands ls,git,python3 &quot;Run the tests&quot;
+</code></pre>
+<p>Commands are passed as arrays (not shell strings), so there's no shell
+injection risk. Each command is resolved to its absolute path at startup, and
+only whitelisted basenames are allowed. Commands that resolve to paths inside
+the base directory are rejected -- this prevents the model from modifying a
+script and then running it.</p>
+<p>Command output over 10 KB is saved to <code>.swival/</code> and the agent paginates
+through it with <code>read_file</code>. Timeout defaults to 30 seconds (max 120).</p>
+<p>For unrestricted command access, see <code>--yolo</code> in
+<a href="safety-and-sandboxing.html">Safety and Sandboxing</a>.</p>
+<h2 id="skills">Skills</h2>
+<p>When skills are discovered (see <a href="skills.html">Skills</a>), the agent gets a
+<code>use_skill</code> tool that loads detailed instructions for a specific task on
+demand. The system prompt includes a compact catalog of available skills, and
+the agent calls <code>use_skill</code> when it encounters a task that matches one.</p>
+        </article>
+    </div>
+    <footer class="site-footer">
+        MIT License &middot;
+        <a href="https://github.com/swival/swival-agent">GitHub</a>
+    </footer>
+</body>
+</html>

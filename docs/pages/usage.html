@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Usage — Swival</title>
+    <meta name="description" content="Usage — Swival documentation">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Usage — Swival">
+    <meta property="og:description" content="Usage — Swival documentation">
+    <meta property="og:image" content="https://swival.dev/img/logo.png">
+    <meta property="og:url" content="https://swival.dev/docs/usage.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Usage — Swival">
+    <meta name="twitter:description" content="Usage — Swival documentation">
+    <meta name="twitter:image" content="https://swival.dev/img/logo.png">
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="../" class="header-logo">
+                <img src="../img/logo.png" alt="Swival">
+            </a>
+            <nav class="header-nav">
+                <a href="./">Docs</a>
+                <a href="https://github.com/swival/swival-agent">GitHub</a>
+            </nav>
+        </div>
+    </header>
+    <div class="docs-layout">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+<h4>Basics</h4>
+<ul>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="usage.html" class="active">Usage</a></li>
+<li><a href="tools.html">Tools</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Configuration & Deployment</h4>
+<ul>
+<li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
+<li><a href="skills.html">Skills</a></li>
+<li><a href="customization.html">Customization</a></li>
+<li><a href="providers.html">Providers</a></li>
+<li><a href="reports.html">Reports</a></li>
+<li><a href="agentfs.html">AgentFS</a></li>
+</ul>
+</div>
+        </aside>
+        <article class="docs-content">
+            <h1 id="usage">Usage</h1>
+<p>Swival operates in two modes: one-shot (the default) and interactive (REPL).</p>
+<h2 id="one-shot-mode">One-shot mode</h2>
+<p>Give it a task, let it work, get the result:</p>
+<pre><code class="language-sh">swival &quot;Review this codebase for security issues&quot;
+</code></pre>
+<p>The agent loops through tool calls -- reading files, searching code, reasoning
+-- until it has a final answer. That answer is printed to stdout. Everything else
+(turn headers, tool call logs, timing) goes to stderr.</p>
+<p>This separation is intentional. You can pipe the output:</p>
+<pre><code class="language-sh">swival -q &quot;Summarize the API surface of src/&quot; &gt; api-summary.txt
+</code></pre>
+<p>The <code>-q</code> (or <code>--quiet</code>) flag suppresses all diagnostic output on stderr, so you
+get just the answer.</p>
+<h3 id="giving-the-agent-more-power">Giving the agent more power</h3>
+<p>By default, Swival can read, write, and search files within the current
+directory. If you want it to run commands too:</p>
+<pre><code class="language-sh">swival --allowed-commands ls,git,python3 \
+    &quot;Create a tool that returns a random number between 0 and 42&quot;
+</code></pre>
+<p>The available commands influence the agent's behavior -- if you allow <code>bun</code> and
+<code>node</code>, it'll lean toward JavaScript. Allow <code>python3</code> and it'll write Python.</p>
+<h3 id="exit-codes">Exit codes</h3>
+<ul>
+<li><code>0</code> -- success, the agent produced an answer</li>
+<li><code>1</code> -- error (couldn't connect to LM Studio, invalid arguments, etc.)</li>
+<li><code>2</code> -- max turns exhausted without a final answer</li>
+</ul>
+<h2 id="interactive-mode-repl">Interactive mode (REPL)</h2>
+<pre><code class="language-sh">swival --repl
+</code></pre>
+<p>This gives you an interactive session with conversation history that carries
+across questions. It works like Claude Code or Codex -- ask a question, watch it
+work, ask a follow-up.</p>
+<p>You can also start a REPL with an initial question:</p>
+<pre><code class="language-sh">swival --repl &quot;Look at the project structure and tell me what this does&quot;
+</code></pre>
+<h3 id="repl-commands">REPL commands</h3>
+<ul>
+<li><code>/help</code> -- show available commands</li>
+<li><code>/clear</code> -- reset conversation history (keeps system prompt)</li>
+<li><code>/compact</code> -- compress context by truncating old tool results</li>
+<li><code>/compact --drop</code> -- more aggressive: drops entire middle turns</li>
+<li><code>/add-dir &lt;path&gt;</code> -- grant read/write access to an additional directory</li>
+<li><code>/extend</code> -- double the current max turns limit</li>
+<li><code>/extend &lt;N&gt;</code> -- set max turns to a specific number</li>
+<li><code>/continue</code> -- reset the turn counter and continue the agent loop</li>
+<li><code>/exit</code> or <code>/quit</code> -- exit (Ctrl-D works too)</li>
+</ul>
+<p>The REPL uses <code>prompt-toolkit</code>, so you get command history, history search, and
+line editing.</p>
+<h2 id="cli-flags">CLI flags</h2>
+<h3 id="model-and-provider">Model and provider</h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--provider</code></td>
+<td><code>lmstudio</code></td>
+<td>LLM provider (<code>lmstudio</code> or <code>huggingface</code>)</td>
+</tr>
+<tr>
+<td><code>--model</code></td>
+<td>auto-discovered</td>
+<td>Override model identifier</td>
+</tr>
+<tr>
+<td><code>--base-url</code></td>
+<td><code>http://127.0.0.1:1234</code></td>
+<td>Server base URL</td>
+</tr>
+<tr>
+<td><code>--api-key</code></td>
+<td>from env</td>
+<td>API key (overrides <code>HF_TOKEN</code>)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="behavior-tuning">Behavior tuning</h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--max-turns</code></td>
+<td><code>100</code></td>
+<td>Maximum agent loop iterations</td>
+</tr>
+<tr>
+<td><code>--max-output-tokens</code></td>
+<td><code>32768</code></td>
+<td>Maximum output tokens per LLM call</td>
+</tr>
+<tr>
+<td><code>--max-context-tokens</code></td>
+<td>from model</td>
+<td>Requested context length (may trigger model reload)</td>
+</tr>
+<tr>
+<td><code>--temperature</code></td>
+<td><code>0.55</code></td>
+<td>Sampling temperature</td>
+</tr>
+<tr>
+<td><code>--top-p</code></td>
+<td><code>1.0</code></td>
+<td>Top-p (nucleus) sampling</td>
+</tr>
+<tr>
+<td><code>--seed</code></td>
+<td>none</td>
+<td>Random seed for reproducible outputs</td>
+</tr>
+</tbody>
+</table>
+<h3 id="sandboxing">Sandboxing</h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--base-dir</code></td>
+<td><code>.</code></td>
+<td>Base directory for file tools</td>
+</tr>
+<tr>
+<td><code>--allowed-commands</code></td>
+<td>none</td>
+<td>Comma-separated command whitelist</td>
+</tr>
+<tr>
+<td><code>--allow-dir</code></td>
+<td>none</td>
+<td>Grant access to extra directories (repeatable)</td>
+</tr>
+<tr>
+<td><code>--yolo</code></td>
+<td>off</td>
+<td>Disable sandbox and command whitelist entirely</td>
+</tr>
+</tbody>
+</table>
+<h3 id="system-prompt-and-instructions">System prompt and instructions</h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--system-prompt</code></td>
+<td>built-in</td>
+<td>Custom system prompt (replaces default)</td>
+</tr>
+<tr>
+<td><code>--no-system-prompt</code></td>
+<td>off</td>
+<td>Omit system message entirely</td>
+</tr>
+<tr>
+<td><code>--no-instructions</code></td>
+<td>off</td>
+<td>Don't load CLAUDE.md or AGENT.md</td>
+</tr>
+</tbody>
+</table>
+<h3 id="skills">Skills</h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--skills-dir</code></td>
+<td>none</td>
+<td>Additional skill directory (repeatable)</td>
+</tr>
+<tr>
+<td><code>--no-skills</code></td>
+<td>off</td>
+<td>Disable skill discovery</td>
+</tr>
+</tbody>
+</table>
+<h3 id="output-and-reporting">Output and reporting</h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-q</code> / <code>--quiet</code></td>
+<td>off</td>
+<td>Suppress all diagnostics; only print the final result</td>
+</tr>
+<tr>
+<td><code>--report FILE</code></td>
+<td>off</td>
+<td>Write a JSON evaluation report instead of stdout</td>
+</tr>
+<tr>
+<td><code>--no-history</code></td>
+<td>off</td>
+<td>Don't write responses to <code>.swival/HISTORY.md</code></td>
+</tr>
+<tr>
+<td><code>--color</code></td>
+<td>auto</td>
+<td>Force ANSI color on stderr</td>
+</tr>
+<tr>
+<td><code>--no-color</code></td>
+<td>auto</td>
+<td>Disable ANSI color on stderr</td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="reports.html">Reports</a> for the full report schema, timeline event types, and
+benchmarking workflows.</p>
+        </article>
+    </div>
+    <footer class="site-footer">
+        MIT License &middot;
+        <a href="https://github.com/swival/swival-agent">GitHub</a>
+    </footer>
+</body>
+</html>

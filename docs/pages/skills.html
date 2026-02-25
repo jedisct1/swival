@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Skills — Swival</title>
+    <meta name="description" content="Skills — Swival documentation">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Skills — Swival">
+    <meta property="og:description" content="Skills — Swival documentation">
+    <meta property="og:image" content="https://swival.dev/img/logo.png">
+    <meta property="og:url" content="https://swival.dev/docs/skills.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Skills — Swival">
+    <meta name="twitter:description" content="Skills — Swival documentation">
+    <meta name="twitter:image" content="https://swival.dev/img/logo.png">
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="../" class="header-logo">
+                <img src="../img/logo.png" alt="Swival">
+            </a>
+            <nav class="header-nav">
+                <a href="./">Docs</a>
+                <a href="https://github.com/swival/swival-agent">GitHub</a>
+            </nav>
+        </div>
+    </header>
+    <div class="docs-layout">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+<h4>Basics</h4>
+<ul>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="usage.html">Usage</a></li>
+<li><a href="tools.html">Tools</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Configuration & Deployment</h4>
+<ul>
+<li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
+<li><a href="skills.html" class="active">Skills</a></li>
+<li><a href="customization.html">Customization</a></li>
+<li><a href="providers.html">Providers</a></li>
+<li><a href="reports.html">Reports</a></li>
+<li><a href="agentfs.html">AgentFS</a></li>
+</ul>
+</div>
+        </aside>
+        <article class="docs-content">
+            <h1 id="skills">Skills</h1>
+<p>Skills are reusable instruction sets that teach the agent how to handle
+specific tasks. Instead of cramming everything into the system prompt, Swival
+uses progressive disclosure: the agent sees a compact catalog of available
+skills, and loads the full instructions only when it actually needs one.</p>
+<h2 id="creating-a-skill">Creating a skill</h2>
+<p>A skill lives in a directory with a <code>SKILL.md</code> file. The file starts with YAML
+frontmatter that defines the skill's name and description, followed by the full
+instructions:</p>
+<pre><code>skills/
+  deploy/
+    SKILL.md
+    scripts/
+      deploy.sh
+</code></pre>
+<p>Here's what <code>skills/deploy/SKILL.md</code> might look like:</p>
+<pre><code class="language-markdown">---
+name: deploy
+description: Deploy the application to production using the deploy script.
+---
+
+To deploy the application:
+
+1. Run `scripts/deploy.sh` from the skill directory.
+2. Check the output for any errors.
+3. Verify the deployment by hitting the health endpoint.
+
+The deploy script expects the `DEPLOY_ENV` environment variable to be set.
+Use `production` for prod deploys, `staging` for staging.
+</code></pre>
+<h3 id="frontmatter-rules">Frontmatter rules</h3>
+<p>The frontmatter requires exactly two fields:</p>
+<ul>
+<li><code>name</code>: lowercase alphanumeric with hyphens (like <code>my-skill</code>). Must match
+  the directory name. Max 64 characters. No leading, trailing, or consecutive
+  hyphens.</li>
+<li><code>description</code>: a short summary (max 1024 characters). This is what the agent
+  sees in the catalog to decide whether to activate the skill.</li>
+</ul>
+<p>The body after the frontmatter closing <code>---</code> is the full instruction text. It
+can be up to 20,000 characters. Anything beyond that is truncated.</p>
+<h2 id="where-to-put-skills">Where to put skills</h2>
+<p>Swival looks for skills in two places:</p>
+<p><code>Project-local skills</code> live in a <code>skills/</code> directory inside the base
+directory. Each subdirectory with a <code>SKILL.md</code> file is a skill. These take
+precedence over external skills.</p>
+<p><code>External skills</code> are specified with <code>--skills-dir</code>:</p>
+<pre><code class="language-sh">swival --skills-dir ~/my-skills &quot;task&quot;
+</code></pre>
+<p>The <code>--skills-dir</code> flag is repeatable. Each path can be either a directory
+containing <code>SKILL.md</code> directly (a single skill) or a parent directory whose
+subdirectories contain <code>SKILL.md</code> files.</p>
+<p>If the same skill name appears in both project-local and external locations,
+the project-local one wins. Among external directories, first occurrence wins.</p>
+<p>Disable skill discovery entirely with <code>--no-skills</code>.</p>
+<h2 id="how-progressive-disclosure-works">How progressive disclosure works</h2>
+<p>At startup, Swival scans for skills and builds a catalog. The catalog -- just
+names and descriptions, one line each -- is appended to the system prompt inside
+<code>&lt;available-skills&gt;</code> tags. The agent also gets a <code>use_skill</code> tool.</p>
+<p>When the agent encounters a task that matches a skill's description, it calls
+<code>use_skill</code> with the skill name. Swival loads the full <code>SKILL.md</code> body and
+returns it as a tool result wrapped in <code>&lt;skill-instructions&gt;</code> tags, along with
+the skill's directory path.</p>
+<p>This means the full instructions only enter the context window when actually
+needed. For a project with many skills, this keeps the system prompt lean.</p>
+<h2 id="file-access-for-external-skills">File access for external skills</h2>
+<p>Project-local skills (under <code>base_dir/skills/</code>) can access files through the
+normal sandbox -- they're already inside the base directory.</p>
+<p>External skills get their directory added to a read-only allowlist when
+activated. The agent can read supporting files in the skill directory (scripts,
+templates, examples) using absolute paths, but can't write to them.</p>
+        </article>
+    </div>
+    <footer class="site-footer">
+        MIT License &middot;
+        <a href="https://github.com/swival/swival-agent">GitHub</a>
+    </footer>
+</body>
+</html>
