@@ -11,11 +11,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-try:
-    from importlib import metadata
-except ImportError:
-    # Python < 3.8
-    import importlib_metadata as metadata
+from importlib import metadata
 
 import tiktoken
 
@@ -798,7 +794,7 @@ def _run_main(args, report, _write_report, parser):
         bare_model = args.model.removeprefix("huggingface/")
         if "/" not in bare_model:
             parser.error(
-                "HuggingFace model must be in org/model format (e.g. Qwen/Qwen3.5-397B-A17B)"
+                "HuggingFace model must be in org/model format (e.g. zai-org/GLM-5)"
             )
         api_base = args.base_url  # None unless user set it (dedicated endpoint)
         model_id = args.model

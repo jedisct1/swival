@@ -84,8 +84,8 @@ whitespace or punctuation than the original file. If multiple matches are found,
 the edit fails unless <code>replace_all</code> is set -- this prevents accidental bulk
 changes.</p>
 <h2 id="directory-listing">Directory listing</h2>
-<p>Recursively lists files matching a glob pattern (like <code>`/*.py</code> or
-<code>src/</code>/*.ts`), sorted by modification time with newest first. Results are
+<p>Recursively lists files matching a glob pattern (like <code>**/*.py</code> or
+<code>src/**/*.ts</code>), sorted by modification time with newest first. Results are
 capped at 100 entries. The agent uses this to orient itself in unfamiliar
 codebases.</p>
 <h2 id="grep">Grep</h2>

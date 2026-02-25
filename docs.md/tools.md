@@ -40,8 +40,8 @@ changes.
 
 ## Directory listing
 
-Recursively lists files matching a glob pattern (like ``/*.py` or
-`src/`/*.ts`), sorted by modification time with newest first. Results are
+Recursively lists files matching a glob pattern (like `**/*.py` or
+`src/**/*.ts`), sorted by modification time with newest first. Results are
 capped at 100 entries. The agent uses this to orient itself in unfamiliar
 codebases.
 
