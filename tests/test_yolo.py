@@ -21,6 +21,7 @@ from swival.tools import (
     _run_command,
     _run_shell_command,
     _kill_process_tree,
+    _split_absolute_glob,
     dispatch,
 )
 from swival.agent import build_parser
@@ -202,6 +203,151 @@ class TestGrepOutsideBase:
         base, outside = setup_dirs
         result = _grep("outside", str(outside), str(base))
         assert result.startswith("error:")
+
+
+# ---------------------------------------------------------------------------
+# Absolute patterns in unrestricted mode
+# ---------------------------------------------------------------------------
+
+
+class TestSplitAbsoluteGlob:
+    def test_deep_path_with_double_star(self):
+        root, pattern = _split_absolute_glob("/opt/zig/lib/std/**/*.zig")
+        assert root == "/opt/zig/lib/std"
+        assert pattern == "**/*.zig"
+
+    def test_single_star(self):
+        root, pattern = _split_absolute_glob("/foo/bar/*.txt")
+        assert root == "/foo/bar"
+        assert pattern == "*.txt"
+
+    def test_glob_in_middle(self):
+        root, pattern = _split_absolute_glob("/a/b/*/c.txt")
+        assert root == "/a/b"
+        assert pattern == "*/c.txt"
+
+    def test_root_glob(self):
+        root, pattern = _split_absolute_glob("/*.txt")
+        assert root == "/"
+        assert pattern == "*.txt"
+
+    def test_windows_drive_letter(self):
+        root, pattern = _split_absolute_glob(r"C:\Users\alice\*.py")
+        assert root == r"C:\Users\alice"
+        assert pattern == "*.py"
+
+    def test_windows_deep_glob(self):
+        root, pattern = _split_absolute_glob(r"D:\projects\src\**\*.ts")
+        assert root == r"D:\projects\src"
+        assert pattern == "**/*.ts"
+
+    def test_windows_unc_path(self):
+        root, pattern = _split_absolute_glob(r"\\server\share\docs\*.pdf")
+        assert root == r"\\server\share\docs"
+        assert pattern == "*.pdf"
+
+
+class TestAbsolutePatternUnrestricted:
+    """In yolo mode, absolute glob patterns should work for list_files and grep."""
+
+    def test_list_files_absolute_pattern(self, setup_dirs):
+        base, outside = setup_dirs
+        result = _list_files(
+            f"{outside}/*.txt", ".", str(base), unrestricted=True
+        )
+        assert "out.txt" in result
+        assert not result.startswith("error:")
+
+    def test_list_files_absolute_pattern_blocked_without_yolo(self, setup_dirs):
+        base, outside = setup_dirs
+        result = _list_files(f"{outside}/*.txt", ".", str(base), unrestricted=False)
+        assert result.startswith("error:")
+        assert "outside base directory" in result
+
+    def test_list_files_absolute_pattern_deep_glob(self, setup_dirs):
+        base, outside = setup_dirs
+        sub = outside / "deep"
+        sub.mkdir()
+        (sub / "nested.py").write_text("x = 1")
+        result = _list_files(
+            f"{outside}/**/*.py", ".", str(base), unrestricted=True
+        )
+        assert "nested.py" in result
+
+    def test_grep_absolute_include_unrestricted(self, setup_dirs):
+        base, outside = setup_dirs
+        # grep's include parameter should accept absolute-looking patterns in yolo
+        result = _grep(
+            "outside", str(outside), str(base),
+            include="/some/abs/*.txt",  # would normally be rejected
+            unrestricted=True,
+        )
+        # The include won't actually match filenames (it's a fnmatch against
+        # basenames), but the point is it doesn't error out.
+        assert not result.startswith("error:")
+
+    def test_grep_absolute_include_blocked_without_yolo(self, setup_dirs):
+        base, outside = setup_dirs
+        result = _grep(
+            "outside", str(base), str(base),
+            include="/abs/*.txt",
+        )
+        assert result.startswith("error:")
+        assert "must be relative" in result
+
+
+# ---------------------------------------------------------------------------
+# Absolute patterns with --allow-dir (non-yolo)
+# ---------------------------------------------------------------------------
+
+
+class TestAbsolutePatternAllowDir:
+    """Absolute glob patterns should work when the path is within extra roots."""
+
+    def test_list_files_absolute_pattern_via_allow_dir(self, setup_dirs):
+        base, outside = setup_dirs
+        result = _list_files(
+            f"{outside}/*.txt", ".", str(base),
+            extra_write_roots=[outside],
+        )
+        assert "out.txt" in result
+        assert not result.startswith("error:")
+
+    def test_list_files_absolute_pattern_unauthorized(self, setup_dirs):
+        """Absolute pattern pointing outside all roots should be rejected."""
+        base, outside = setup_dirs
+        result = _list_files(
+            f"{outside}/*.txt", ".", str(base),
+            extra_write_roots=[],  # no extra roots
+        )
+        assert result.startswith("error:")
+
+    def test_list_files_absolute_pattern_via_read_roots(self, setup_dirs):
+        base, outside = setup_dirs
+        result = _list_files(
+            f"{outside}/*.txt", ".", str(base),
+            extra_read_roots=[outside],
+        )
+        assert "out.txt" in result
+        assert not result.startswith("error:")
+
+    def test_grep_path_via_allow_dir(self, setup_dirs):
+        base, outside = setup_dirs
+        result = _grep(
+            "outside", str(outside), str(base),
+            extra_write_roots=[outside],
+        )
+        assert "outside base" in result
+        assert not result.startswith("error:")
+
+    def test_grep_path_via_read_roots(self, setup_dirs):
+        base, outside = setup_dirs
+        result = _grep(
+            "outside", str(outside), str(base),
+            extra_read_roots=[outside],
+        )
+        assert "outside base" in result
+        assert not result.startswith("error:")
 
 
 # ---------------------------------------------------------------------------

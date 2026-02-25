@@ -135,7 +135,7 @@ class TestListFiles:
     def test_absolute_pattern_rejected(self, sandbox):
         result = _list_files("/etc/*", ".", str(sandbox))
         assert "error" in result
-        assert "absolute" in result
+        assert "outside base directory" in result
 
     def test_path_escape_rejected(self, sandbox):
         result = _list_files("*.py", "../outside", str(sandbox))

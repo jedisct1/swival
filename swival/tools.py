@@ -428,9 +428,10 @@ def _is_within_base(
     path: Path,
     base: Path,
     unrestricted: bool = False,
+    extra_read_roots: list[Path] = (),
     extra_write_roots: list[Path] = (),
 ) -> bool:
-    """Check that a resolved path is within the base directory or extra write roots."""
+    """Check that a resolved path is within the base directory or extra roots."""
     if unrestricted:
         return True
     try:
@@ -439,29 +440,68 @@ def _is_within_base(
         return False
     if resolved.is_relative_to(base.resolve()):
         return True
-    # extra_write_roots are already resolved at startup, no need to resolve again
+    # extra roots are already resolved at startup, no need to resolve again
+    for root in extra_read_roots:
+        if resolved.is_relative_to(root):
+            return True
     for root in extra_write_roots:
         if resolved.is_relative_to(root):
             return True
     return False
 
 
+def _split_absolute_glob(pattern: str) -> tuple[str, str]:
+    """Split an absolute glob into (directory_root, relative_pattern).
+
+    Walks the pattern parts until we hit a component with glob metacharacters,
+    then splits there.  E.g. "/opt/zig/lib/std/**/*.zig" → ("/opt/zig/lib/std", "**/*.zig").
+
+    Handles both POSIX and Windows paths: r"C:\\Users\\alice\\*.py" →
+    ("C:\\Users\\alice", "*.py").
+    """
+    # Pick the right PurePath class based on which style recognises this as absolute.
+    if PureWindowsPath(pattern).is_absolute() and not PurePosixPath(pattern).is_absolute():
+        cls = PureWindowsPath
+    else:
+        cls = PurePosixPath
+
+    parts = cls(pattern).parts
+    root_parts: list[str] = []
+    glob_start = len(parts)
+    for i, part in enumerate(parts):
+        if any(c in part for c in ("*", "?", "[", "]")):
+            glob_start = i
+            break
+        root_parts.append(part)
+    root = str(cls(*root_parts)) if root_parts else str(cls(parts[0]))
+    rel = str(PurePosixPath(*parts[glob_start:])) if glob_start < len(parts) else "*"
+    return root, rel
+
+
 def _list_files(
     pattern: str,
     path: str,
     base_dir: str,
+    extra_read_roots: list[Path] = (),
     extra_write_roots: list[Path] = (),
     unrestricted: bool = False,
 ) -> str:
     """Recursively list files matching a glob pattern."""
-    err = _check_pattern(pattern)
-    if err:
-        return err
+    # When the pattern is an absolute glob, split it into a root directory
+    # and a relative pattern.  safe_resolve() will then authorize the root
+    # against base_dir / extra roots (or skip checks in unrestricted mode).
+    if PurePosixPath(pattern).is_absolute() or PureWindowsPath(pattern).is_absolute():
+        path, pattern = _split_absolute_glob(pattern)
+    else:
+        err = _check_pattern(pattern)
+        if err:
+            return err
 
     try:
         root = safe_resolve(
             path,
             base_dir,
+            extra_read_roots=extra_read_roots,
             extra_write_roots=extra_write_roots,
             unrestricted=unrestricted,
         )
@@ -490,6 +530,7 @@ def _list_files(
                 filepath,
                 base,
                 unrestricted=unrestricted,
+                extra_read_roots=extra_read_roots,
                 extra_write_roots=extra_write_roots,
             ):
                 continue
@@ -534,12 +575,13 @@ def _grep(
     path: str,
     base_dir: str,
     include: str | None = None,
+    extra_read_roots: list[Path] = (),
     extra_write_roots: list[Path] = (),
     unrestricted: bool = False,
 ) -> str:
     """Search file contents for a regex pattern."""
-    # Validate include pattern
-    if include is not None:
+    # Validate include pattern — only enforce in sandboxed mode
+    if include is not None and not unrestricted:
         err = _check_pattern(include)
         if err:
             return err
@@ -554,6 +596,7 @@ def _grep(
         root = safe_resolve(
             path,
             base_dir,
+            extra_read_roots=extra_read_roots,
             extra_write_roots=extra_write_roots,
             unrestricted=unrestricted,
         )
@@ -586,6 +629,7 @@ def _grep(
                 filepath,
                 base,
                 unrestricted=unrestricted,
+                extra_read_roots=extra_read_roots,
                 extra_write_roots=extra_write_roots,
             ):
                 continue
@@ -1241,6 +1285,7 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
             pattern=args["pattern"],
             path=args.get("path", "."),
             base_dir=base_dir,
+            extra_read_roots=kwargs.get("skill_read_roots", ()),
             extra_write_roots=extra_write_roots,
             unrestricted=yolo,
         )
@@ -1250,6 +1295,7 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
             path=args.get("path", "."),
             base_dir=base_dir,
             include=args.get("include"),
+            extra_read_roots=kwargs.get("skill_read_roots", ()),
             extra_write_roots=extra_write_roots,
             unrestricted=yolo,
         )
