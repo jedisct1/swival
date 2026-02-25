@@ -47,6 +47,7 @@
 <li><a href="customization.html">Customization</a></li>
 <li><a href="providers.html" class="active">Providers</a></li>
 <li><a href="reports.html">Reports</a></li>
+<li><a href="reviews.html">Reviews</a></li>
 <li><a href="agentfs.html">AgentFS</a></li>
 </ul>
 </div>
@@ -96,6 +97,10 @@ swival --provider huggingface --model zai-org/GLM-5 &quot;task&quot;
 <p>The <code>--model</code> flag is required and must be in <code>org/model</code> format. Authentication
 comes from <code>HF_TOKEN</code> in the environment or <code>--api-key</code> on the command line
 (which takes precedence).</p>
+<p>Serverless endpoints typically have a 32k token context limit, which can be
+restrictive for agentic workloads that accumulate
+tool calls and file contents over many turns. If you're hitting context limits,
+consider a dedicated endpoint instead.</p>
 <h3 id="dedicated-endpoints">Dedicated endpoints</h3>
 <p>For HuggingFace dedicated inference endpoints (private deployments):</p>
 <pre><code class="language-sh">swival --provider huggingface \
@@ -105,7 +110,9 @@ comes from <code>HF_TOKEN</code> in the environment or <code>--api-key</code> on
     &quot;task&quot;
 </code></pre>
 <p>The <code>--base-url</code> points to your endpoint. The model identifier still needs to
-match what's deployed there.</p>
+match what's deployed there. Dedicated endpoints don't have the context size
+limits of serverless -- you control the deployment, so the full model context
+window is available.</p>
 <h3 id="how-the-litellm-call-works_1">How the LiteLLM call works</h3>
 <p>For HuggingFace, Swival prefixes the model with <code>huggingface/</code> (stripping any
 existing prefix first) and passes the API key directly. If <code>--base-url</code> is set,

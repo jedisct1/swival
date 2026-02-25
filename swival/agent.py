@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 import urllib.request
@@ -496,6 +497,39 @@ def call_llm(
     return choice.message, choice.finish_reason
 
 
+MAX_REVIEW_ROUNDS = 5
+
+
+def run_reviewer(
+    reviewer_cmd: str,
+    base_dir: str,
+    answer: str,
+    verbose: bool,
+    timeout: int = 120,
+) -> tuple[int, str]:
+    """Run the reviewer executable.
+
+    Returns (exit_code, stdout_text).
+    Never raises — all failures return (2, "") with a warning on stderr.
+    """
+    try:
+        proc = subprocess.run(
+            [reviewer_cmd, base_dir],
+            input=answer.encode(),
+            capture_output=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        if verbose:
+            fmt.warning(f"reviewer timed out after {timeout}s, accepting answer as-is")
+        return 2, ""
+    except OSError as e:
+        if verbose:
+            fmt.warning(f"reviewer failed to run: {e}")
+        return 2, ""
+    return proc.returncode, proc.stdout.decode("utf-8", errors="replace")
+
+
 def build_parser():
     """Build and return the argument parser."""
     parser = argparse.ArgumentParser(
@@ -642,6 +676,13 @@ def build_parser():
         metavar="FILE",
         help="Write a JSON evaluation report to FILE. Incompatible with --repl.",
     )
+    parser.add_argument(
+        "--reviewer",
+        metavar="EXECUTABLE",
+        default=None,
+        help="Path to reviewer executable. Called after each answer with base_dir as argument "
+        "and answer on stdin. Exit 0=accept, 1=retry with stdout as feedback, 2=reviewer error.",
+    )
 
     color_group = parser.add_mutually_exclusive_group()
     color_group.add_argument(
@@ -688,6 +729,8 @@ def main():
         parser.error("question is required (or use --repl)")
     if args.report and args.repl:
         parser.error("--report is incompatible with --repl")
+    if args.reviewer and args.repl:
+        parser.error("--reviewer is incompatible with --repl")
 
     fmt.init(color=args.color, no_color=args.no_color)
 
@@ -732,6 +775,7 @@ def main():
         model_id="unknown",
         skills_catalog=None,
         instructions_loaded=None,
+        review_rounds=0,
     ):
         if not report:
             return
@@ -746,6 +790,7 @@ def main():
             exit_code=exit_code,
             turns=effective_turns,
             error_message=error_message,
+            review_rounds=review_rounds,
         )
         try:
             report.write(args.report)
@@ -766,6 +811,7 @@ def main():
             model_id=getattr(args, "_resolved_model_id", args.model or "unknown"),
             skills_catalog=getattr(args, "_resolved_skills", None),
             instructions_loaded=getattr(args, "_resolved_instructions", None),
+            review_rounds=getattr(args, "_review_rounds", 0),
         )
         sys.exit(1)
 
@@ -956,7 +1002,9 @@ def _run_main(args, report, _write_report, parser):
     atexit.register(cleanup_old_cmd_outputs, base_dir)
 
     thinking_state = ThinkingState(verbose=args.verbose, notes_dir=base_dir)
-    file_tracker = None if getattr(args, "no_read_guard", False) else FileAccessTracker()
+    file_tracker = (
+        None if getattr(args, "no_read_guard", False) else FileAccessTracker()
+    )
 
     loop_kwargs = dict(
         api_base=api_base,
@@ -981,12 +1029,70 @@ def _run_main(args, report, _write_report, parser):
 
     no_history = getattr(args, "no_history", False)
 
+    # Validate reviewer executable at startup
+    reviewer_cmd = None
+    if args.reviewer:
+        resolved = shutil.which(args.reviewer)
+        if resolved:
+            reviewer_cmd = resolved
+        else:
+            p = Path(args.reviewer).resolve()
+            if p.is_file() and os.access(p, os.X_OK):
+                reviewer_cmd = str(p)
+            else:
+                raise AgentError(
+                    f"reviewer executable not found or not executable: {args.reviewer}"
+                )
+
     if not args.repl:
         # Single-shot path
         messages.append({"role": "user", "content": args.question})
-        answer, exhausted = run_agent_loop(
-            messages, tools, **loop_kwargs, report=report
-        )
+        review_round = 0
+        turn_offset = 0
+
+        while True:
+            answer, exhausted = run_agent_loop(
+                messages, tools, **loop_kwargs, report=report,
+                turn_offset=turn_offset,
+            )
+
+            if not reviewer_cmd or answer is None or exhausted:
+                break
+
+            review_round += 1
+            args._review_rounds = review_round
+            if args.verbose:
+                fmt.info(f"Review round {review_round}: sending answer to reviewer")
+
+            exit_code, review_text = run_reviewer(
+                reviewer_cmd, base_dir, answer, args.verbose
+            )
+
+            if exit_code == 0:
+                if args.verbose:
+                    fmt.info("Reviewer accepted the answer")
+                break
+            elif exit_code == 1:
+                if review_round >= MAX_REVIEW_ROUNDS:
+                    if args.verbose:
+                        fmt.warning(
+                            f"Max review rounds ({MAX_REVIEW_ROUNDS}) reached, accepting answer"
+                        )
+                    break
+                if args.verbose:
+                    fmt.info(f"Reviewer requested changes:\n{review_text[:500]}")
+                messages.append({"role": "user", "content": review_text})
+                if report:
+                    turn_offset = report.max_turn_seen
+                loop_kwargs["max_turns"] = args.max_turns
+                continue
+            else:
+                if args.verbose:
+                    fmt.warning(
+                        f"Reviewer exited with code {exit_code}, accepting answer as-is"
+                    )
+                break
+
         if not no_history and answer:
             append_history(base_dir, args.question, answer)
         if answer is not None:
@@ -1000,6 +1106,7 @@ def _run_main(args, report, _write_report, parser):
                 model_id=model_id,
                 skills_catalog=skills_catalog,
                 instructions_loaded=instructions_loaded,
+                review_rounds=review_round,
             )
         if exhausted:
             fmt.warning("max turns reached, agent stopped.")
@@ -1043,6 +1150,7 @@ def run_agent_loop(
     llm_kwargs: dict,
     file_tracker: FileAccessTracker | None = None,
     report: ReportCollector | None = None,
+    turn_offset: int = 0,
 ) -> tuple[str | None, bool]:
     """Run the tool-calling loop until a final answer or max turns.
 
@@ -1088,7 +1196,7 @@ def run_agent_loop(
         except ContextOverflowError:
             elapsed = time.monotonic() - t0
             if report:
-                report.record_llm_call(turns, elapsed, token_est, "context_overflow")
+                report.record_llm_call(turns + turn_offset, elapsed, token_est, "context_overflow")
 
             fmt.warning("context window exceeded, compacting history...")
             tokens_before = estimate_tokens(messages, tools)
@@ -1099,7 +1207,7 @@ def run_agent_loop(
             tokens_after = estimate_tokens(messages, tools)
             if report:
                 report.record_compaction(
-                    turns, "compact_messages", tokens_before, tokens_after
+                    turns + turn_offset, "compact_messages", tokens_before, tokens_after
                 )
             if verbose:
                 fmt.context_stats("Context after compaction", tokens_after)
@@ -1122,7 +1230,7 @@ def run_agent_loop(
                 elapsed = time.monotonic() - t0
                 if report:
                     report.record_llm_call(
-                        turns,
+                        turns + turn_offset,
                         elapsed,
                         tokens_after,
                         "context_overflow",
@@ -1139,7 +1247,7 @@ def run_agent_loop(
                 tokens_after = estimate_tokens(messages, tools)
                 if report:
                     report.record_compaction(
-                        turns, "drop_middle_turns", tokens_before, tokens_after
+                        turns + turn_offset, "drop_middle_turns", tokens_before, tokens_after
                     )
                 if verbose:
                     fmt.context_stats("Context after drop", tokens_after)
@@ -1162,7 +1270,7 @@ def run_agent_loop(
                     elapsed = time.monotonic() - t0
                     if report:
                         report.record_llm_call(
-                            turns,
+                            turns + turn_offset,
                             elapsed,
                             tokens_after,
                             "context_overflow",
@@ -1174,7 +1282,7 @@ def run_agent_loop(
                     elapsed = time.monotonic() - t0
                     if report:
                         report.record_llm_call(
-                            turns,
+                            turns + turn_offset,
                             elapsed,
                             tokens_after,
                             "error",
@@ -1188,7 +1296,7 @@ def run_agent_loop(
                         fmt.llm_timing(elapsed, finish_reason)
                     if report:
                         report.record_llm_call(
-                            turns,
+                            turns + turn_offset,
                             elapsed,
                             tokens_after,
                             finish_reason,
@@ -1199,7 +1307,7 @@ def run_agent_loop(
                 elapsed = time.monotonic() - t0
                 if report:
                     report.record_llm_call(
-                        turns,
+                        turns + turn_offset,
                         elapsed,
                         tokens_after,
                         "error",
@@ -1213,7 +1321,7 @@ def run_agent_loop(
                     fmt.llm_timing(elapsed, finish_reason)
                 if report:
                     report.record_llm_call(
-                        turns,
+                        turns + turn_offset,
                         elapsed,
                         tokens_after,
                         finish_reason,
@@ -1223,14 +1331,14 @@ def run_agent_loop(
         except AgentError:
             elapsed = time.monotonic() - t0
             if report:
-                report.record_llm_call(turns, elapsed, token_est, "error")
+                report.record_llm_call(turns + turn_offset, elapsed, token_est, "error")
             raise
         else:
             elapsed = time.monotonic() - t0
             if verbose:
                 fmt.llm_timing(elapsed, finish_reason)
             if report:
-                report.record_llm_call(turns, elapsed, token_est, finish_reason)
+                report.record_llm_call(turns + turn_offset, elapsed, token_est, finish_reason)
         messages.append(msg)
 
         # Log intermediate assistant text (reasoning before tool calls, or truncated responses)
@@ -1242,7 +1350,7 @@ def run_agent_loop(
                 # Output was truncated before the model could finish;
                 # nudge it to continue using tools instead of quitting.
                 if report:
-                    report.record_truncated_response(turns)
+                    report.record_truncated_response(turns + turn_offset)
                 if verbose:
                     fmt.info(
                         "Response truncated (finish_reason=length), prompting continuation."
@@ -1280,7 +1388,7 @@ def run_agent_loop(
 
             if report:
                 report.record_tool_call(
-                    turns,
+                    turns + turn_offset,
                     tool_meta["name"],
                     tool_meta["arguments"],
                     tool_meta["succeeded"],
@@ -1321,7 +1429,7 @@ def run_agent_loop(
                             "If you cannot use this tool correctly, use a different approach."
                         )
                     if report:
-                        report.record_guardrail(turns, tool_name, level)
+                        report.record_guardrail(turns + turn_offset, tool_name, level)
                     if verbose:
                         fmt.guardrail(tool_name, count, canonical_error)
             else:

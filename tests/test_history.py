@@ -272,6 +272,7 @@ class TestIntegration:
             verbose=True,
             version=False,
             no_read_guard=False,
+            reviewer=None,
         )
         defaults.update(overrides)
         return types.SimpleNamespace(**defaults)

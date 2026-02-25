@@ -57,6 +57,7 @@ def _base_args(tmp_path, **overrides):
         no_color=False,
         yolo=False,
         report=None,
+        reviewer=None,
         version=False,
         no_read_guard=False,
     )

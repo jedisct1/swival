@@ -121,13 +121,15 @@ line editing.
 
 ### Output and reporting
 
-| Flag             | Default | Description                                           |
-| ---------------- | ------- | ----------------------------------------------------- |
-| `-q` / `--quiet` | off     | Suppress all diagnostics; only print the final result |
-| `--report FILE`  | off     | Write a JSON evaluation report instead of stdout      |
-| `--no-history`   | off     | Don't write responses to `.swival/HISTORY.md`         |
-| `--color`        | auto    | Force ANSI color on stderr                            |
-| `--no-color`     | auto    | Disable ANSI color on stderr                          |
+| Flag             | Default | Description                                                         |
+| ---------------- | ------- | ------------------------------------------------------------------- |
+| `-q` / `--quiet` | off     | Suppress all diagnostics; only print the final result               |
+| `--report FILE`  | off     | Write a JSON evaluation report instead of stdout                    |
+| `--reviewer EXE` | off     | Run external reviewer after each answer (see [Reviews](reviews.md)) |
+| `--no-history`   | off     | Don't write responses to `.swival/HISTORY.md`                       |
+| `--color`        | auto    | Force ANSI color on stderr                                          |
+| `--no-color`     | auto    | Disable ANSI color on stderr                                        |
 
 See [Reports](reports.md) for the full report schema, timeline event types, and
-benchmarking workflows.
+benchmarking workflows. See [Reviews](reviews.md) for the reviewer protocol and
+how to build a reviewer script.

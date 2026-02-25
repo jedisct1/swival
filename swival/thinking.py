@@ -215,9 +215,13 @@ class ThinkingState:
         """Return a one-line usage summary, or None if think was never called."""
         if self.think_calls == 0:
             return None
-        parts = [f"think: {self.think_calls} call{'s' if self.think_calls != 1 else ''}"]
+        parts = [
+            f"think: {self.think_calls} call{'s' if self.think_calls != 1 else ''}"
+        ]
         if self.note_saves:
-            parts.append(f"{self.note_saves} note{'s' if self.note_saves != 1 else ''} saved")
+            parts.append(
+                f"{self.note_saves} note{'s' if self.note_saves != 1 else ''} saved"
+            )
         return ", ".join(parts)
 
     def _log(self, entry: ThoughtEntry) -> None:

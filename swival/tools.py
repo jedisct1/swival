@@ -460,7 +460,10 @@ def _split_absolute_glob(pattern: str) -> tuple[str, str]:
     ("C:\\Users\\alice", "*.py").
     """
     # Pick the right PurePath class based on which style recognises this as absolute.
-    if PureWindowsPath(pattern).is_absolute() and not PurePosixPath(pattern).is_absolute():
+    if (
+        PureWindowsPath(pattern).is_absolute()
+        and not PurePosixPath(pattern).is_absolute()
+    ):
         cls = PureWindowsPath
     else:
         cls = PurePosixPath

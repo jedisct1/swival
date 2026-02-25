@@ -104,6 +104,8 @@ class TestArgumentParsing:
                 color=False,
                 no_color=False,
                 version=False,
+                report=None,
+                reviewer=None,
             )
             mock_parser.parse_args.return_value = mock_args
             mock_parser.error.side_effect = SystemExit(2)

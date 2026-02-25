@@ -38,6 +38,7 @@ NAV = [
         ("customization", "Customization", "Project instructions, system prompt overrides, tuning parameters"),
         ("providers", "Providers", "LM Studio and HuggingFace configuration"),
         ("reports", "Reports", "JSON reports for benchmarking and evaluation"),
+        ("reviews", "Reviews", "External reviewer scripts for automated QA gates"),
         ("agentfs", "AgentFS", "Copy-on-write filesystem sandboxing"),
     ]),
 ]

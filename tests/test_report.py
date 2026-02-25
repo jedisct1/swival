@@ -469,6 +469,7 @@ class TestReportIntegration:
             verbose=True,
             version=False,
             no_read_guard=False,
+            reviewer=None,
         )
 
     def test_report_written_on_success(self, tmp_path):

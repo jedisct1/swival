@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Reviews — Swival</title>
+    <meta name="description" content="Reviews — Swival documentation">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Reviews — Swival">
+    <meta property="og:description" content="Reviews — Swival documentation">
+    <meta property="og:image" content="https://swival.github.io/swival/img/logo.png">
+    <meta property="og:url" content="https://swival.github.io/swival/pages/reviews.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Reviews — Swival">
+    <meta name="twitter:description" content="Reviews — Swival documentation">
+    <meta name="twitter:image" content="https://swival.github.io/swival/img/logo.png">
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="../" class="header-logo">
+                <img src="../img/logo.png" alt="Swival">
+            </a>
+            <nav class="header-nav">
+                <a href="./">Docs</a>
+                <a href="https://github.com/swival/swival">GitHub</a>
+            </nav>
+        </div>
+    </header>
+    <div class="docs-layout">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+<h4>Basics</h4>
+<ul>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="usage.html">Usage</a></li>
+<li><a href="tools.html">Tools</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Configuration & Deployment</h4>
+<ul>
+<li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
+<li><a href="skills.html">Skills</a></li>
+<li><a href="customization.html">Customization</a></li>
+<li><a href="providers.html">Providers</a></li>
+<li><a href="reports.html">Reports</a></li>
+<li><a href="reviews.html" class="active">Reviews</a></li>
+<li><a href="agentfs.html">AgentFS</a></li>
+</ul>
+</div>
+        </aside>
+        <article class="docs-content">
+            <h1 id="reviews">Reviews</h1>
+<p>The <code>--reviewer</code> flag hooks an external program into the agent loop. After the
+agent produces an answer, Swival pipes it to your reviewer script, and the
+script decides whether the answer is good enough or needs another pass.</p>
+<pre><code class="language-sh">swival &quot;Refactor the error handling in src/api.py&quot; --reviewer ./review.sh
+</code></pre>
+<p>This is useful for automated QA gates (run tests, check linting, validate
+output format), for LLM-as-a-judge evaluation (have a second model score the
+answer), and for running benchmarks where you need a programmatic pass/fail
+signal. The reviewer is just an executable. It can do anything from a simple
+<code>pytest</code> run to a full evaluation pipeline.</p>
+<p><code>--reviewer</code> is incompatible with <code>--repl</code>.</p>
+<h2 id="the-protocol">The protocol</h2>
+<p>The reviewer executable receives:</p>
+<ul>
+<li><strong>Argument 1:</strong> the base directory (absolute path).</li>
+<li><strong>stdin:</strong> the agent's full text answer.</li>
+</ul>
+<p>It communicates back through its exit code and stdout:</p>
+<table>
+<thead>
+<tr>
+<th>Exit code</th>
+<th>Meaning</th>
+<th>What Swival does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>Accept</td>
+<td>Print the answer and exit normally</td>
+</tr>
+<tr>
+<td>1</td>
+<td>Retry</td>
+<td>Feed the reviewer's stdout back as a new prompt, reset the turn counter, re-enter the agent loop</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Error</td>
+<td>Warn on stderr, accept the answer as-is</td>
+</tr>
+<tr>
+<td>Other</td>
+<td>(same as 2)</td>
+<td>Treated as a reviewer error</td>
+</tr>
+</tbody>
+</table>
+<p>On exit code 1, the reviewer writes its feedback to stdout. Swival appends that
+as a new user message -- the model sees the full conversation history plus the
+review feedback, and gets a fresh turn budget to address it.</p>
+<p>On exit code 0, stdout is ignored. On exit code 2 (or any other code), stdout
+is ignored and Swival accepts the answer without modification.</p>
+<h2 id="writing-a-reviewer-script">Writing a reviewer script</h2>
+<p>A minimal reviewer that checks whether tests pass:</p>
+<pre><code class="language-bash">#!/usr/bin/env bash
+set -euo pipefail
+
+base_dir=&quot;$1&quot;
+cd &quot;$base_dir&quot;
+
+if python3 -m pytest tests/ -q 2&gt;&amp;1; then
+    exit 0
+else
+    echo &quot;Tests are failing. Fix the test failures and try again.&quot;
+    exit 1
+fi
+</code></pre>
+<p>A reviewer that validates JSON output:</p>
+<pre><code class="language-bash">#!/usr/bin/env bash
+set -euo pipefail
+
+# The agent's answer arrives on stdin
+answer=$(cat)
+
+if echo &quot;$answer&quot; | python3 -c &quot;import sys, json; json.load(sys.stdin)&quot; 2&gt;/dev/null; then
+    exit 0
+else
+    echo &quot;Your answer is not valid JSON. Please output only valid JSON.&quot;
+    exit 1
+fi
+</code></pre>
+<p>The script must be executable (<code>chmod +x review.sh</code>). Swival validates this at
+startup and exits with an error if the file doesn't exist or isn't executable.</p>
+<h2 id="retry-behavior">Retry behavior</h2>
+<p>When the reviewer returns exit code 1, Swival:</p>
+<ol>
+<li>Appends the reviewer's stdout as a new <code>user</code> message to the conversation.</li>
+<li>Resets the turn counter (the agent gets a fresh <code>--max-turns</code> budget).</li>
+<li>Re-enters the agent loop with the full conversation history intact.</li>
+</ol>
+<p>The model sees everything from prior rounds -- its own reasoning, tool calls,
+previous answers, and the review feedback -- so it can build on its earlier work
+rather than starting from scratch.</p>
+<p>There is a hard cap of 5 review rounds. If the reviewer keeps returning 1 after
+5 rounds, Swival accepts the last answer with a warning. This prevents infinite
+loops from a misconfigured reviewer.</p>
+<h2 id="failure-handling">Failure handling</h2>
+<p>Swival validates the reviewer executable at startup. If it doesn't exist or
+isn't executable, the run fails immediately with an error.</p>
+<p>After startup, all reviewer failures are non-fatal:</p>
+<ul>
+<li><strong>Timeout</strong> (120 seconds): warns on stderr, accepts the answer.</li>
+<li><strong>Spawn failure</strong> (binary deleted, permissions changed): warns on stderr, accepts the answer.</li>
+<li><strong>Crash</strong> (non-zero exit other than 1): warns on stderr, accepts the answer.</li>
+</ul>
+<p>The agent's work is never lost due to a broken reviewer. If the reviewer can't
+run, you still get the answer.</p>
+<h2 id="interaction-with-other-flags">Interaction with other flags</h2>
+<h3 id="-quiet"><code>--quiet</code></h3>
+<p>Reviewer diagnostics (round numbers, acceptance messages, warnings) go to
+stderr and are gated on the verbose flag. <code>--quiet</code> suppresses all of them.
+Intermediate answers rejected by the reviewer are never printed to stdout --
+only the final accepted answer is.</p>
+<h3 id="-report"><code>--report</code></h3>
+<p>When both <code>--reviewer</code> and <code>--report</code> are active, the JSON report captures the
+full timeline across all review rounds. Turn numbers are cumulative (they don't
+restart at 1 for each round), so the timeline reads as one continuous sequence.</p>
+<p>The <code>stats</code> object includes a <code>review_rounds</code> field counting how many times the
+reviewer was invoked. This is 0 when <code>--reviewer</code> is not used.</p>
+<pre><code class="language-sh"># Check how many review rounds happened
+jq '.stats.review_rounds' report.json
+
+# See the full timeline across rounds
+jq '.timeline[] | {turn, type}' report.json
+</code></pre>
+<p>See <a href="reports.html">Reports</a> for the full report schema.</p>
+<h2 id="example-workflow">Example workflow</h2>
+<p>A CI pipeline that runs the agent and requires tests to pass:</p>
+<pre><code class="language-sh">#!/usr/bin/env bash
+swival &quot;Fix the failing tests in tests/unit/&quot; \
+    --allowed-commands python3,pytest \
+    --reviewer ./ci-review.sh \
+    --report results.json \
+    --quiet
+</code></pre>
+<p>Where <code>ci-review.sh</code> runs the test suite and returns <code>0</code> on green, or<code>1</code> with
+failure details on red. The agent gets up to 5 chances to fix the tests,
+and the full timeline is captured in the report for later analysis.</p>
+        </article>
+    </div>
+    <footer class="site-footer">
+        MIT License &middot;
+        <a href="https://github.com/swival/swival">GitHub</a>
+    </footer>
+</body>
+</html>

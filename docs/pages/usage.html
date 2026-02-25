@@ -47,6 +47,7 @@
 <li><a href="customization.html">Customization</a></li>
 <li><a href="providers.html">Providers</a></li>
 <li><a href="reports.html">Reports</a></li>
+<li><a href="reviews.html">Reviews</a></li>
 <li><a href="agentfs.html">AgentFS</a></li>
 </ul>
 </div>
@@ -280,6 +281,11 @@ line editing.</p>
 <td>Write a JSON evaluation report instead of stdout</td>
 </tr>
 <tr>
+<td><code>--reviewer EXE</code></td>
+<td>off</td>
+<td>Run external reviewer after each answer (see <a href="reviews.html">Reviews</a>)</td>
+</tr>
+<tr>
 <td><code>--no-history</code></td>
 <td>off</td>
 <td>Don't write responses to <code>.swival/HISTORY.md</code></td>
@@ -297,7 +303,8 @@ line editing.</p>
 </tbody>
 </table>
 <p>See <a href="reports.html">Reports</a> for the full report schema, timeline event types, and
-benchmarking workflows.</p>
+benchmarking workflows. See <a href="reviews.html">Reviews</a> for the reviewer protocol and
+how to build a reviewer script.</p>
         </article>
     </div>
     <footer class="site-footer">
