@@ -70,6 +70,11 @@ The `--model` flag is required and must be in `org/model` format. Authentication
 comes from `HF_TOKEN` in the environment or `--api-key` on the command line
 (which takes precedence).
 
+Serverless endpoints typically have a 32k token context limit, which can be
+restrictive for agentic workloads that accumulate
+tool calls and file contents over many turns. If you're hitting context limits,
+consider a dedicated endpoint instead.
+
 ### Dedicated endpoints
 
 For HuggingFace dedicated inference endpoints (private deployments):
@@ -83,7 +88,9 @@ swival --provider huggingface \
 ```
 
 The `--base-url` points to your endpoint. The model identifier still needs to
-match what's deployed there.
+match what's deployed there. Dedicated endpoints don't have the context size
+limits of serverless -- you control the deployment, so the full model context
+window is available.
 
 ### How the LiteLLM call works
 
