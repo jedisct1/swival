@@ -2,7 +2,7 @@
 
 # Swival
 
-A coding agent for open models.
+A coding agent for open models. [Documentation](https://swival.github.io/swival/)
 
 Swival connects to [LM Studio](https://lmstudio.ai/) or
 [HuggingFace Inference API](https://huggingface.co/inference-api), sends your
@@ -87,6 +87,8 @@ Good for comparing models systematically on real coding tasks.
 stderr. You can pipe Swival's output straight into another command or a file.
 
 ## Documentation
+
+Full documentation is available at [swival.github.io/swival](https://swival.github.io/swival/).
 
 - [Getting Started](docs.md/getting-started.md) -- installation, first run, what
   happens under the hood
