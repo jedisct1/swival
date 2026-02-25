@@ -1,3 +1,5 @@
+![Swival Logo](.media/logo.png)
+
 # Swival
 
 A small, powerful, open-source CLI coding agent that works with open models.
