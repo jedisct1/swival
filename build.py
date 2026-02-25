@@ -16,7 +16,7 @@ from PIL import Image
 # Config
 # ---------------------------------------------------------------------------
 
-BASE_URL = "https://swival.dev"
+BASE_URL = "https://swival.github.io/swival"
 REPO_URL = "https://github.com/swival/swival-agent"
 
 ROOT = Path(__file__).parent
@@ -76,7 +76,7 @@ def docs_page_html(title: str, body: str, slug: str) -> str:
     <meta property="og:title" content="{title} — Swival">
     <meta property="og:description" content="{title} — Swival documentation">
     <meta property="og:image" content="{BASE_URL}/img/logo.png">
-    <meta property="og:url" content="{BASE_URL}/docs/{slug}.html">
+    <meta property="og:url" content="{BASE_URL}/pages/{slug}.html">
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="{title} — Swival">
     <meta name="twitter:description" content="{title} — Swival documentation">
@@ -138,7 +138,7 @@ def docs_hub_html() -> str:
     <meta property="og:title" content="Documentation — Swival">
     <meta property="og:description" content="Swival documentation hub">
     <meta property="og:image" content="{BASE_URL}/img/logo.png">
-    <meta property="og:url" content="{BASE_URL}/docs/">
+    <meta property="og:url" content="{BASE_URL}/pages/">
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="Documentation — Swival">
     <meta name="twitter:description" content="Swival documentation hub">
