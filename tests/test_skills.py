@@ -349,6 +349,25 @@ class TestDiscoverSkills:
             assert "child-a" in catalog
             assert "child-b" in catalog
 
+    def test_skills_dir_nested_structure(self, tmp_path):
+        """--skills-dir recurses into subdirectories to find SKILL.md files."""
+        # Mimic plugins/<plugin>/skills/<skill>/SKILL.md layout
+        plugins = tmp_path / "plugins"
+        plugin_a = plugins / "plugin-a" / "skills" / "skill-one"
+        plugin_a.mkdir(parents=True)
+        (plugin_a / "SKILL.md").write_text(
+            "---\nname: skill-one\ndescription: First.\n---\n\nBody",
+        )
+        plugin_b = plugins / "plugin-b" / "skills" / "skill-two"
+        plugin_b.mkdir(parents=True)
+        (plugin_b / "SKILL.md").write_text(
+            "---\nname: skill-two\ndescription: Second.\n---\n\nBody",
+        )
+
+        catalog = discover_skills(str(tmp_path), extra_dirs=[str(plugins)])
+        assert "skill-one" in catalog
+        assert "skill-two" in catalog
+
     def test_skills_dir_direct_with_subdirs_ignored(self, tmp_path):
         """When --skills-dir points at a SKILL.md dir, its subdirectories are not scanned."""
         skill_dir = tmp_path / "my-skill"

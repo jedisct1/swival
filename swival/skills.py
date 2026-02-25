@@ -223,6 +223,32 @@ def _try_load_skill(
     )
 
 
+def _scan_skills_dir(
+    directory: Path,
+    base_resolved: Path,
+    catalog: dict[str, "SkillInfo"],
+    verbose: bool,
+    _depth: int = 0,
+) -> None:
+    """Scan a directory for skills, recursing up to 3 levels deep.
+
+    At each level, if a subdirectory contains SKILL.md it's loaded as a skill.
+    Otherwise we recurse into it to find nested skills (e.g. plugins/<name>/skills/<skill>/).
+    """
+    if _depth > 3:
+        return
+    try:
+        entries = sorted(directory.iterdir())
+    except OSError:
+        return
+    for entry in entries:
+        if entry.is_dir():
+            if (entry / "SKILL.md").is_file():
+                _try_load_skill(entry, base_resolved, catalog, verbose)
+            else:
+                _scan_skills_dir(entry, base_resolved, catalog, verbose, _depth + 1)
+
+
 def discover_skills(
     base_dir: str,
     extra_dirs: list[str] | None = None,
@@ -267,14 +293,8 @@ def discover_skills(
         if (p / "SKILL.md").is_file():
             _try_load_skill(p, base_resolved, catalog, verbose)
         else:
-            # Otherwise scan its subdirectories
-            try:
-                entries = sorted(p.iterdir())
-            except OSError:
-                continue
-            for entry in entries:
-                if entry.is_dir():
-                    _try_load_skill(entry, base_resolved, catalog, verbose)
+            # Otherwise scan its subdirectories (and recurse into skills/ subdirs)
+            _scan_skills_dir(p, base_resolved, catalog, verbose)
 
     if verbose and catalog:
         names = ", ".join(sorted(catalog))
