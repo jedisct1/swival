@@ -95,36 +95,84 @@ else
 fi
 ```
 
-An LLM-as-judge reviewer using a second Swival instance:
+The script must be executable (`chmod +x review.sh`). Swival validates this at
+startup and exits with an error if the file doesn't exist or isn't executable.
+
+## Using Swival as a reviewer
+
+A second Swival instance can act as an LLM-as-judge reviewer. The outer Swival
+does the work, the inner one evaluates the result. Since Swival automatically
+sets `$SWIVAL_TASK` on the reviewer subprocess, the judge knows what the agent
+was supposed to do without you having to repeat the task.
+
+The wrapper script is short — it reads the answer from stdin, asks the judge
+Swival for a verdict, and translates the verdict into an exit code:
 
 ```bash
 #!/usr/bin/env bash
+# judge.sh — use a second Swival instance to review the agent's answer
 set -uo pipefail
 
 base_dir="$1"
 answer=$(cat)
 
+# Ask the judge for a structured verdict.
+# --max-turns 3: gives room for a think step before answering.
+# --quiet:       only the final answer goes to stdout.
+# --no-history:  don't pollute the history file with review prompts.
 judge_output=$(swival "You are reviewing a coding agent's output.
 
 <task>$SWIVAL_TASK</task>
+
 <answer>$answer</answer>
 
-Respond with VERDICT: ACCEPT if the answer is correct, or
-VERDICT: RETRY followed by feedback if it needs work." \
+Evaluate whether the answer correctly and completely addresses the task.
+Respond with exactly one of:
+  VERDICT: ACCEPT
+  VERDICT: RETRY followed by your feedback on the next line." \
     --base-dir "$base_dir" --max-turns 3 --quiet --no-history 2>/dev/null)
+judge_exit=$?
 
+# Swival exit 1 is a real error; exit 2 is max-turns but may still have output.
+if [ $judge_exit -eq 1 ] || [ -z "$judge_output" ]; then
+    exit 2  # reviewer error — accept the answer as-is
+fi
+
+# Parse the verdict
 if echo "$judge_output" | grep -qi "VERDICT: ACCEPT"; then
     exit 0
 elif echo "$judge_output" | grep -qi "VERDICT: RETRY"; then
     echo "$judge_output" | sed '1,/VERDICT: RETRY/d'
     exit 1
 else
+    # Couldn't parse — treat as reviewer error
     exit 2
 fi
 ```
 
-The script must be executable (`chmod +x review.sh`). Swival validates this at
-startup and exits with an error if the file doesn't exist or isn't executable.
+Run it like any other reviewer:
+
+```sh
+swival "Refactor the auth module" --reviewer ./judge.sh
+```
+
+A few things to keep in mind:
+
+- **Both instances share the same LM Studio / HuggingFace backend.** If only one
+  model is loaded, the judge uses the same model as the worker. You can point the
+  judge at a different provider or model by adding `--provider` / `--model` /
+  `--base-url` flags to the inner `swival` call.
+- **Use `--max-turns 3`** for the judge, not 1. Some models use the `think` tool
+  before answering, which consumes a turn. With `--max-turns 1` the judge
+  exhausts its budget before producing a verdict.
+- **Use `-uo pipefail`, not `-euo pipefail`.** The inner Swival exits with code 2
+  when it hits max turns, which is not a real failure (it still produces output).
+  `set -e` would abort the script on that non-zero exit before you get to parse
+  the verdict.
+- **Handle unparseable output gracefully.** Smaller models sometimes emit raw
+  tool-call syntax instead of a clean verdict. The `else` branch exits 2
+  (reviewer error), which tells Swival to accept the answer as-is. The retry
+  mechanism means this usually self-corrects on the next round.
 
 ## Retry behavior
 

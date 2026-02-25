@@ -173,33 +173,76 @@ else
     exit 1
 fi
 </code></pre>
-<p>An LLM-as-judge reviewer using a second Swival instance:</p>
+<p>The script must be executable (<code>chmod +x review.sh</code>). Swival validates this at
+startup and exits with an error if the file doesn't exist or isn't executable.</p>
+<h2 id="using-swival-as-a-reviewer">Using Swival as a reviewer</h2>
+<p>A second Swival instance can act as an LLM-as-judge reviewer. The outer Swival
+does the work, the inner one evaluates the result. Since Swival automatically
+sets <code>$SWIVAL_TASK</code> on the reviewer subprocess, the judge knows what the agent
+was supposed to do without you having to repeat the task.</p>
+<p>The wrapper script is short — it reads the answer from stdin, asks the judge
+Swival for a verdict, and translates the verdict into an exit code:</p>
 <pre><code class="language-bash">#!/usr/bin/env bash
+# judge.sh — use a second Swival instance to review the agent's answer
 set -uo pipefail
 
 base_dir=&quot;$1&quot;
 answer=$(cat)
 
+# Ask the judge for a structured verdict.
+# --max-turns 3: gives room for a think step before answering.
+# --quiet:       only the final answer goes to stdout.
+# --no-history:  don't pollute the history file with review prompts.
 judge_output=$(swival &quot;You are reviewing a coding agent's output.
 
 &lt;task&gt;$SWIVAL_TASK&lt;/task&gt;
+
 &lt;answer&gt;$answer&lt;/answer&gt;
 
-Respond with VERDICT: ACCEPT if the answer is correct, or
-VERDICT: RETRY followed by feedback if it needs work.&quot; \
+Evaluate whether the answer correctly and completely addresses the task.
+Respond with exactly one of:
+  VERDICT: ACCEPT
+  VERDICT: RETRY followed by your feedback on the next line.&quot; \
     --base-dir &quot;$base_dir&quot; --max-turns 3 --quiet --no-history 2&gt;/dev/null)
+judge_exit=$?
 
+# Swival exit 1 is a real error; exit 2 is max-turns but may still have output.
+if [ $judge_exit -eq 1 ] || [ -z &quot;$judge_output&quot; ]; then
+    exit 2  # reviewer error — accept the answer as-is
+fi
+
+# Parse the verdict
 if echo &quot;$judge_output&quot; | grep -qi &quot;VERDICT: ACCEPT&quot;; then
     exit 0
 elif echo &quot;$judge_output&quot; | grep -qi &quot;VERDICT: RETRY&quot;; then
     echo &quot;$judge_output&quot; | sed '1,/VERDICT: RETRY/d'
     exit 1
 else
+    # Couldn't parse — treat as reviewer error
     exit 2
 fi
 </code></pre>
-<p>The script must be executable (<code>chmod +x review.sh</code>). Swival validates this at
-startup and exits with an error if the file doesn't exist or isn't executable.</p>
+<p>Run it like any other reviewer:</p>
+<pre><code class="language-sh">swival &quot;Refactor the auth module&quot; --reviewer ./judge.sh
+</code></pre>
+<p>A few things to keep in mind:</p>
+<ul>
+<li><strong>Both instances share the same LM Studio / HuggingFace backend.</strong> If only one
+  model is loaded, the judge uses the same model as the worker. You can point the
+  judge at a different provider or model by adding <code>--provider</code> / <code>--model</code> /
+  <code>--base-url</code> flags to the inner <code>swival</code> call.</li>
+<li><strong>Use <code>--max-turns 3</code></strong> for the judge, not 1. Some models use the <code>think</code> tool
+  before answering, which consumes a turn. With <code>--max-turns 1</code> the judge
+  exhausts its budget before producing a verdict.</li>
+<li><strong>Use <code>-uo pipefail</code>, not <code>-euo pipefail</code>.</strong> The inner Swival exits with code 2
+  when it hits max turns, which is not a real failure (it still produces output).
+  <code>set -e</code> would abort the script on that non-zero exit before you get to parse
+  the verdict.</li>
+<li><strong>Handle unparseable output gracefully.</strong> Smaller models sometimes emit raw
+  tool-call syntax instead of a clean verdict. The <code>else</code> branch exits 2
+  (reviewer error), which tells Swival to accept the answer as-is. The retry
+  mechanism means this usually self-corrects on the next round.</li>
+</ul>
 <h2 id="retry-behavior">Retry behavior</h2>
 <p>When the reviewer returns exit code 1, Swival:</p>
 <ol>
