@@ -1,9 +1,5 @@
 """Tests for the read-before-write guard (FileAccessTracker)."""
 
-import os
-
-import pytest
-
 from swival.tracker import FileAccessTracker
 from swival.tools import _read_file, _write_file, _edit_file, dispatch
 from swival.agent import _repl_clear, compact_messages, drop_middle_turns
@@ -200,7 +196,9 @@ class TestReadRegistration:
         _read_file("empty.txt", str(tmp_path), tracker=tracker)
         assert str(tmp_path / "empty.txt") in tracker.read_files
         # Write should succeed
-        result = _write_file("empty.txt", "now has content", str(tmp_path), tracker=tracker)
+        result = _write_file(
+            "empty.txt", "now has content", str(tmp_path), tracker=tracker
+        )
         assert result.startswith("Wrote")
 
     def test_binary_file_read_does_not_register(self, tmp_path):
@@ -226,7 +224,9 @@ class TestDispatchIntegration:
         """dispatch('read_file') should pass the tracker through."""
         (tmp_path / "f.txt").write_text("hi")
         tracker = FileAccessTracker()
-        dispatch("read_file", {"file_path": "f.txt"}, str(tmp_path), file_tracker=tracker)
+        dispatch(
+            "read_file", {"file_path": "f.txt"}, str(tmp_path), file_tracker=tracker
+        )
         assert str(tmp_path / "f.txt") in tracker.read_files
 
     def test_dispatch_passes_tracker_to_write(self, tmp_path):
@@ -357,7 +357,7 @@ class TestCompactionPreservesTracker:
 
         # Run compact_messages on a conversation
         messages = self._make_messages_with_read()
-        compacted = compact_messages(messages)
+        compact_messages(messages)
         # Tracker state is completely untouched by compaction
         assert resolved in tracker.read_files
 
@@ -375,7 +375,7 @@ class TestCompactionPreservesTracker:
 
         # Run drop_middle_turns on a conversation
         messages = self._make_messages_with_read()
-        dropped = drop_middle_turns(messages)
+        drop_middle_turns(messages)
         # Tracker state is completely untouched by dropping turns
         assert resolved in tracker.read_files
 
