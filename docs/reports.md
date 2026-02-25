@@ -15,21 +15,96 @@ stdout. Diagnostic output on stderr is unaffected.
 
 `--report` is incompatible with `--repl`.
 
-## Report structure
+## Example
+
+Here's a real report from a simple task. The agent called `python3` to compute
+a square root, then delivered the answer:
 
 ```json
 {
   "version": 1,
-  "timestamp": "2026-02-25T14:30:00.123456+00:00",
-  "task": "Refactor the error handling in src/api.py",
+  "timestamp": "2026-02-25T10:36:28.312457+00:00",
+  "task": "Compute the square root of 23847234",
   "model": "qwen3-coder-next",
   "provider": "lmstudio",
-  "settings": { ... },
-  "result": { ... },
-  "stats": { ... },
-  "timeline": [ ... ]
+  "settings": {
+    "temperature": 0.55,
+    "top_p": 1.0,
+    "seed": null,
+    "max_turns": 100,
+    "max_output_tokens": 32768,
+    "context_length": 100000,
+    "yolo": false,
+    "allowed_commands": [
+      "python3",
+      "ruby"
+    ],
+    "skills_discovered": [],
+    "instructions_loaded": [
+      "CLAUDE.md"
+    ]
+  },
+  "result": {
+    "outcome": "success",
+    "answer": "The square root of 23,847,234 is approximately **4,883.36**.",
+    "exit_code": 0
+  },
+  "stats": {
+    "turns": 2,
+    "tool_calls_total": 1,
+    "tool_calls_succeeded": 1,
+    "tool_calls_failed": 0,
+    "tool_calls_by_name": {
+      "run_command": {
+        "succeeded": 1,
+        "failed": 0
+      }
+    },
+    "compactions": 0,
+    "turn_drops": 0,
+    "guardrail_interventions": 0,
+    "truncated_responses": 0,
+    "llm_calls": 2,
+    "total_llm_time_s": 48.25,
+    "total_tool_time_s": 0.082
+  },
+  "timeline": [
+    {
+      "turn": 1,
+      "type": "llm_call",
+      "duration_s": 43.831,
+      "prompt_tokens_est": 4758,
+      "finish_reason": "tool_calls",
+      "is_retry": false
+    },
+    {
+      "turn": 1,
+      "type": "tool_call",
+      "name": "run_command",
+      "arguments": {
+        "command": [
+          "python3",
+          "-c",
+          "import math; print(math.sqrt(23847234))"
+        ]
+      },
+      "succeeded": true,
+      "duration_s": 0.082,
+      "result_length": 18
+    },
+    {
+      "turn": 2,
+      "type": "llm_call",
+      "duration_s": 4.419,
+      "prompt_tokens_est": 4797,
+      "finish_reason": "stop",
+      "is_retry": false
+    }
+  ]
 }
 ```
+
+## Report structure
 
 ### Top-level fields
 
@@ -102,75 +177,38 @@ Aggregate counters for the entire run.
 An ordered array of every event. Each entry has a `turn` number and a `type`.
 
 **`llm_call`** -- one per LLM API invocation, including failed attempts and
-retries after context overflow.
+retries after context overflow. The example above shows two: the first with
+`finish_reason: "tool_calls"` (the model decided to call a tool) and the second
+with `"stop"` (the model produced its final answer). When a call is a retry
+after compaction, `is_retry` is `true` and `retry_reason` is present
+(`"compact_messages"` or `"drop_middle_turns"`). Failed calls use
+`finish_reason` values like `"context_overflow"` or `"error"`.
+
+**`tool_call`** -- one per tool invocation. The example shows a `run_command`
+call with the full argument list, timing, and result size. `arguments` is `null`
+when the model produced invalid JSON. `error` is present when `succeeded` is
+`false`.
+
+**`compaction`** -- context recovery. Recorded when the context window fills up
+and Swival has to trim history. `strategy` is `"compact_messages"` (truncating
+old tool results) or `"drop_middle_turns"` (removing entire middle turns).
 
 ```json
-{
-  "turn": 3,
-  "type": "llm_call",
-  "duration_s": 2.451,
-  "prompt_tokens_est": 12400,
-  "finish_reason": "stop",
-  "is_retry": false
-}
+{"turn": 15, "type": "compaction", "strategy": "compact_messages",
+ "tokens_before": 128000, "tokens_after": 64000}
 ```
-
-When the call is a retry after compaction, `is_retry` is `true` and
-`retry_reason` is present (`"compact_messages"` or `"drop_middle_turns"`).
-Failed calls use `finish_reason` values like `"context_overflow"` or `"error"`.
-
-**`tool_call`** -- one per tool invocation.
-
-```json
-{
-  "turn": 3,
-  "type": "tool_call",
-  "name": "edit_file",
-  "arguments": {"path": "src/api.py", "old_string": "...", "new_string": "..."},
-  "succeeded": true,
-  "duration_s": 0.004,
-  "result_length": 42
-}
-```
-
-`arguments` is `null` when the model produced invalid JSON. `error` is present
-when `succeeded` is `false`.
-
-**`compaction`** -- context recovery.
-
-```json
-{
-  "turn": 15,
-  "type": "compaction",
-  "strategy": "compact_messages",
-  "tokens_before": 128000,
-  "tokens_after": 64000
-}
-```
-
-Strategy is either `"compact_messages"` (truncating old tool results) or
-`"drop_middle_turns"` (removing entire middle turns).
 
 **`guardrail`** -- injected when the agent repeats the same failing tool call.
+`level` is `"nudge"` (2 consecutive identical errors) or `"stop"` (3+).
 
 ```json
-{
-  "turn": 7,
-  "type": "guardrail",
-  "tool": "edit_file",
-  "level": "nudge"
-}
+{"turn": 7, "type": "guardrail", "tool": "edit_file", "level": "nudge"}
 ```
-
-Level is `"nudge"` (2 consecutive identical errors) or `"stop"` (3+).
 
 **`truncated_response`** -- the LLM hit its output token limit mid-response.
 
 ```json
-{
-  "turn": 4,
-  "type": "truncated_response"
-}
+{"turn": 4, "type": "truncated_response"}
 ```
 
 ## Benchmarking workflow
