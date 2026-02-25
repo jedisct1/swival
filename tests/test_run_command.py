@@ -118,15 +118,16 @@ def test_auto_repair_json_string_runs(tmp_base, unrestricted):
 # ---------- Test 5d: Auto-repair via shlex only in unrestricted mode ----------
 
 
-def test_plain_string_errors_even_in_yolo(tmp_base):
+@pytest.mark.skipif(sys.platform == "win32", reason="requires /bin/sh")
+def test_plain_string_runs_as_shell_in_yolo(tmp_base):
     result = _run_command(
         "echo yolo-repaired",
         tmp_base,
         resolved_commands={},
         unrestricted=True,
     )
-    assert result.startswith('error: "command" must be a JSON array')
-    assert "Shell syntax" in result
+    assert "yolo-repaired" in result
+    assert not result.startswith("error:")
     assert "(auto-corrected:" not in result
 
 

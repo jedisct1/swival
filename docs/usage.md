@@ -65,6 +65,8 @@ uvx swival --repl "Look at the project structure and tell me what this does"
 - `/compact` -- compress context by truncating old tool results
 - `/compact --drop` -- more aggressive: drops entire middle turns
 - `/add-dir <path>` -- grant read/write access to an additional directory
+- `/extend` -- double the current max turns limit
+- `/extend <N>` -- set max turns to a specific number
 - `/exit` or `/quit` -- exit (Ctrl-D works too)
 
 The REPL uses `prompt-toolkit`, so you get command history, history search, and

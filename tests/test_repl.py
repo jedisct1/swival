@@ -14,6 +14,7 @@ from swival.agent import (
     _repl_clear,
     _repl_add_dir,
     _repl_compact,
+    _repl_extend,
 )
 from swival.thinking import ThinkingState
 from swival.tools import dispatch
@@ -632,6 +633,91 @@ class TestCompactCommand:
 # ---------------------------------------------------------------------------
 # Unknown /-prefixed input passes through
 # ---------------------------------------------------------------------------
+
+
+class TestExtendCommand:
+    def test_extend_doubles_by_default(self, capsys):
+        """'/extend' with no arg doubles max_turns."""
+        state = {"max_turns": 50}
+        _repl_extend("", state)
+        assert state["max_turns"] == 100
+        captured = capsys.readouterr()
+        assert "50 -> 100" in captured.err
+
+    def test_extend_sets_explicit_value(self, capsys):
+        """'/extend 200' sets max_turns to 200."""
+        state = {"max_turns": 50}
+        _repl_extend("200", state)
+        assert state["max_turns"] == 200
+        captured = capsys.readouterr()
+        assert "200" in captured.err
+
+    def test_extend_invalid_number(self, capsys):
+        """'/extend abc' prints a warning and doesn't change state."""
+        state = {"max_turns": 50}
+        _repl_extend("abc", state)
+        assert state["max_turns"] == 50
+        captured = capsys.readouterr()
+        assert "invalid number" in captured.err
+
+    def test_extend_zero_rejected(self, capsys):
+        """'/extend 0' is rejected."""
+        state = {"max_turns": 50}
+        _repl_extend("0", state)
+        assert state["max_turns"] == 50
+        captured = capsys.readouterr()
+        assert "at least 1" in captured.err
+
+    def test_extend_negative_rejected(self, capsys):
+        """'/extend -5' is rejected."""
+        state = {"max_turns": 50}
+        _repl_extend("-5", state)
+        assert state["max_turns"] == 50
+
+    def test_extend_in_repl(self, tmp_path):
+        """/extend in REPL affects the max_turns passed to run_agent_loop."""
+        messages = [_sys("system")]
+
+        call_kwargs = []
+
+        def fake_run(msgs, tools, **kwargs):
+            call_kwargs.append(kwargs["max_turns"])
+            return ("answer", False)
+
+        inputs = ["q1", "/extend", "q2", "/exit"]
+        mock_session = MagicMock()
+        mock_session.prompt.side_effect = inputs
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run),
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path, max_turns=5))
+
+        # First call uses original max_turns=5, second uses doubled=10
+        assert call_kwargs == [5, 10]
+
+    def test_extend_explicit_in_repl(self, tmp_path):
+        """/extend 20 in REPL sets max_turns to 20."""
+        messages = [_sys("system")]
+
+        call_kwargs = []
+
+        def fake_run(msgs, tools, **kwargs):
+            call_kwargs.append(kwargs["max_turns"])
+            return ("answer", False)
+
+        inputs = ["q1", "/extend 20", "q2", "/exit"]
+        mock_session = MagicMock()
+        mock_session.prompt.side_effect = inputs
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run),
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path, max_turns=5))
+
+        assert call_kwargs == [5, 20]
 
 
 class TestUnknownSlashCommand:

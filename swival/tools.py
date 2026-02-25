@@ -873,7 +873,7 @@ def _kill_process_tree(proc: subprocess.Popen) -> None:
     """Kill a process and its descendants, then wait for exit.
 
     On Unix, uses process groups (via start_new_session=True) to kill the
-    entire tree. On Windows, only the direct child is killed.
+    entire tree. On Windows, uses taskkill /T /F to kill the process tree.
     """
     if sys.platform != "win32":
         import signal
@@ -882,6 +882,17 @@ def _kill_process_tree(proc: subprocess.Popen) -> None:
             os.killpg(proc.pid, signal.SIGKILL)
         except OSError:
             pass  # already exited
+    else:
+        # taskkill /T kills the entire process tree rooted at the PID
+        try:
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass  # best-effort
     try:
         proc.kill()
     except OSError:
@@ -947,6 +958,104 @@ def _save_large_output(output: str, base_dir: str, was_truncated: bool = False) 
     )
 
 
+def _capture_process(proc: subprocess.Popen, timeout: int, base_dir: str) -> str:
+    """Capture output from a running subprocess with timeout enforcement."""
+    output_chunks: list[bytes] = []
+    output_total = 0
+    output_truncated = False
+
+    def _reader():
+        nonlocal output_total, output_truncated
+        try:
+            while True:
+                chunk = proc.stdout.read(4096)
+                if not chunk:
+                    break
+                if output_truncated:
+                    continue  # keep draining to prevent pipe backpressure
+                remaining = MAX_FILE_OUTPUT - output_total
+                output_chunks.append(chunk[:remaining])
+                output_total += len(output_chunks[-1])
+                if output_total >= MAX_FILE_OUTPUT:
+                    output_truncated = True
+        except (OSError, ValueError):
+            pass  # pipe closed/broken after kill
+
+    reader_thread = threading.Thread(target=_reader, daemon=True)
+    reader_thread.start()
+
+    timed_out = False
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        _kill_process_tree(proc)
+
+    reader_thread.join(timeout=2)
+    proc.stdout.close()
+
+    # Build result
+    raw_output = b"".join(output_chunks).decode("utf-8", errors="replace")
+    parts: list[str] = []
+
+    if timed_out:
+        parts.append(f"error: command timed out after {timeout}s")
+    elif proc.returncode != 0:
+        parts.append(f"Exit code: {proc.returncode}")
+
+    if raw_output:
+        parts.append(raw_output)
+
+    if output_truncated:
+        parts.append("[output truncated at 1MB]")
+
+    result = "\n".join(parts) if parts else "(no output)"
+
+    # Save large output to file instead of stuffing the context
+    if len(result.encode("utf-8")) > MAX_INLINE_OUTPUT:
+        exit_info = ""
+        if timed_out:
+            exit_info = f"\nerror: command timed out after {timeout}s"
+        elif proc.returncode != 0:
+            exit_info = f"\nExit code: {proc.returncode}"
+        saved = _save_large_output(result, base_dir, was_truncated=output_truncated)
+        result = saved + exit_info
+
+    return result
+
+
+def _run_shell_command(command: str, base_dir: str, timeout: int) -> str:
+    """Execute a shell string via sh -c (Unix) or cmd.exe /c (Windows)."""
+    base_path = Path(base_dir)
+    if not base_path.exists():
+        return f"error: base directory does not exist: {base_dir}"
+    if not base_path.is_dir():
+        return f"error: base directory is not a directory: {base_dir}"
+
+    timeout = max(1, min(timeout, MAX_TIMEOUT))
+
+    if sys.platform == "win32":
+        shell_cmd = ["cmd.exe", "/c", command]
+    else:
+        shell_cmd = ["/bin/sh", "-c", command]
+
+    try:
+        popen_kwargs: dict = dict(
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            cwd=base_dir,
+        )
+        if sys.platform != "win32":
+            popen_kwargs["start_new_session"] = True
+
+        proc = subprocess.Popen(shell_cmd, **popen_kwargs)
+    except OSError as e:
+        return f"error: failed to start shell command: {e}"
+
+    return _capture_process(proc, timeout, base_dir)
+
+
 def _run_command(
     command: list[str] | str,
     base_dir: str,
@@ -981,6 +1090,8 @@ def _run_command(
             pass
 
         if repaired_command is None:
+            if unrestricted:
+                return _run_shell_command(command, base_dir, timeout)
             return _finalize(
                 'error: "command" must be a JSON array of strings, not a single string.\n'
                 'Wrong: "command": "grep -n pattern file.py"\n'
@@ -1068,68 +1179,7 @@ def _run_command(
     except OSError as e:
         return _finalize(f"error: failed to start command: {e}", was_repaired)
 
-    output_chunks: list[bytes] = []
-    output_total = 0
-    output_truncated = False
-
-    def _reader():
-        nonlocal output_total, output_truncated
-        try:
-            while True:
-                chunk = proc.stdout.read(4096)
-                if not chunk:
-                    break
-                if output_truncated:
-                    continue  # keep draining to prevent pipe backpressure
-                remaining = MAX_FILE_OUTPUT - output_total
-                output_chunks.append(chunk[:remaining])
-                output_total += len(output_chunks[-1])
-                if output_total >= MAX_FILE_OUTPUT:
-                    output_truncated = True
-        except (OSError, ValueError):
-            pass  # pipe closed/broken after kill
-
-    reader_thread = threading.Thread(target=_reader, daemon=True)
-    reader_thread.start()
-
-    timed_out = False
-    try:
-        proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        _kill_process_tree(proc)
-
-    reader_thread.join(timeout=2)
-    proc.stdout.close()
-
-    # Build result
-    raw_output = b"".join(output_chunks).decode("utf-8", errors="replace")
-    parts: list[str] = []
-
-    if timed_out:
-        parts.append(f"error: command timed out after {timeout}s")
-    elif proc.returncode != 0:
-        parts.append(f"Exit code: {proc.returncode}")
-
-    if raw_output:
-        parts.append(raw_output)
-
-    if output_truncated:
-        parts.append("[output truncated at 1MB]")
-
-    result = "\n".join(parts) if parts else "(no output)"
-
-    # Save large output to file instead of stuffing the context
-    if len(result.encode("utf-8")) > MAX_INLINE_OUTPUT:
-        exit_info = ""
-        if timed_out:
-            exit_info = f"\nerror: command timed out after {timeout}s"
-        elif proc.returncode != 0:
-            exit_info = f"\nExit code: {proc.returncode}"
-        saved = _save_large_output(result, base_dir, was_truncated=output_truncated)
-        result = saved + exit_info
-
-    return _finalize(result, was_repaired)
+    return _finalize(_capture_process(proc, timeout, base_dir), was_repaired)
 
 
 def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:

@@ -2,9 +2,11 @@
 
 import os
 import shutil
+import subprocess
 import sys
 import types
 from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -17,6 +19,8 @@ from swival.tools import (
     _list_files,
     _grep,
     _run_command,
+    _run_shell_command,
+    _kill_process_tree,
     dispatch,
 )
 from swival.agent import build_parser
@@ -405,3 +409,281 @@ class TestAgentYolo:
         assert "Run any command" in system_msg["content"]
         assert "Allowed commands" not in system_msg["content"]
         assert "whitelisted" not in system_msg["content"]
+
+
+# ---------------------------------------------------------------------------
+# Shell string execution (yolo mode)
+# ---------------------------------------------------------------------------
+
+_unix_only = pytest.mark.skipif(
+    sys.platform == "win32", reason="requires /bin/sh"
+)
+
+
+class TestShellStringExecution:
+    @_unix_only
+    def test_shell_string_command(self, tmp_path):
+        result = _run_command(
+            "echo hello && echo world",
+            str(tmp_path),
+            resolved_commands={},
+            unrestricted=True,
+        )
+        assert "hello" in result
+        assert "world" in result
+        assert not result.startswith("error:")
+
+    @_unix_only
+    def test_shell_pipe(self, tmp_path):
+        result = _run_command(
+            "echo abc | tr a-z A-Z",
+            str(tmp_path),
+            resolved_commands={},
+            unrestricted=True,
+        )
+        assert "ABC" in result
+
+    @_unix_only
+    def test_shell_redirect(self, tmp_path):
+        out = tmp_path / "out"
+        result = _run_command(
+            f"echo test > {out} && cat {out}",
+            str(tmp_path),
+            resolved_commands={},
+            unrestricted=True,
+        )
+        assert "test" in result
+
+    @_unix_only
+    def test_shell_string_timeout(self, tmp_path):
+        result = _run_command(
+            "sleep 60",
+            str(tmp_path),
+            resolved_commands={},
+            unrestricted=True,
+            timeout=1,
+        )
+        assert "timed out" in result
+
+    @_unix_only
+    def test_shell_string_nonzero_exit(self, tmp_path):
+        result = _run_command(
+            "exit 42",
+            str(tmp_path),
+            resolved_commands={},
+            unrestricted=True,
+        )
+        assert "Exit code: 42" in result
+
+
+class TestShellStringCompat:
+    def test_json_array_string_repaired_in_yolo(self, tmp_path):
+        """Stringified JSON arrays still take the array path, not sh -c."""
+        result = _run_command(
+            '["echo", "hello"]',
+            str(tmp_path),
+            resolved_commands={},
+            unrestricted=True,
+        )
+        assert "hello" in result
+        assert "(auto-corrected:" in result
+
+    def test_shell_string_sandboxed_rejected(self, tmp_path):
+        """In sandboxed mode, plain strings still error."""
+        result = _run_command(
+            "ls -la",
+            str(tmp_path),
+            resolved_commands={},
+            unrestricted=False,
+        )
+        assert result.startswith('error: "command" must be a JSON array')
+
+    @_unix_only
+    def test_array_still_works_in_yolo(self, tmp_path):
+        """Array form still works in yolo mode."""
+        result = _run_command(
+            ["echo", "hello"],
+            str(tmp_path),
+            resolved_commands={},
+            unrestricted=True,
+        )
+        assert "hello" in result
+        assert not result.startswith("error:")
+
+
+class TestYoloSchema:
+    def test_yolo_schema_has_oneof(self, tmp_path, monkeypatch):
+        """With yolo=True, the tool schema uses oneOf for command."""
+        from swival import agent
+
+        captured = {}
+
+        def fake_call_llm(*args, **kwargs):
+            captured["tools"] = kwargs.get("tools") or args[7]
+            return _make_message(content="Done."), "stop"
+
+        monkeypatch.setattr(agent, "call_llm", fake_call_llm)
+        monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "agent",
+                "hello",
+                "--base-dir",
+                str(tmp_path),
+                "--yolo",
+                "--no-instructions",
+            ],
+        )
+
+        agent.main()
+
+        rc_tool = next(
+            t for t in captured["tools"] if t["function"]["name"] == "run_command"
+        )
+        cmd_prop = rc_tool["function"]["parameters"]["properties"]["command"]
+        assert "oneOf" in cmd_prop
+        types = [s.get("type") for s in cmd_prop["oneOf"]]
+        assert "string" in types
+        assert "array" in types
+
+    def test_yolo_system_prompt_mentions_shell(self, tmp_path, monkeypatch):
+        """Yolo system prompt mentions shell strings."""
+        from swival import agent
+
+        captured = {}
+
+        def fake_call_llm(*args, **kwargs):
+            captured["messages"] = args[2]
+            return _make_message(content="Done."), "stop"
+
+        monkeypatch.setattr(agent, "call_llm", fake_call_llm)
+        monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "agent",
+                "hello",
+                "--base-dir",
+                str(tmp_path),
+                "--yolo",
+                "--no-instructions",
+            ],
+        )
+
+        agent.main()
+
+        system_msg = captured["messages"][0]
+        assert "shell string" in system_msg["content"].lower() or "pipes" in system_msg["content"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Windows shell-string path (mock-based, runs on any platform)
+# ---------------------------------------------------------------------------
+
+
+class TestShellStringWindows:
+    def test_shell_cmd_uses_cmd_exe_on_windows(self, tmp_path, monkeypatch):
+        """On win32, _run_shell_command passes ['cmd.exe', '/c', command]."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        captured_args = {}
+
+        def fake_popen(cmd, **kwargs):
+            captured_args["cmd"] = cmd
+            proc = MagicMock()
+            proc.stdout.read.return_value = b""
+            proc.wait.return_value = 0
+            proc.returncode = 0
+            proc.pid = 12345
+            return proc
+
+        monkeypatch.setattr(subprocess, "Popen", fake_popen)
+        _run_shell_command("echo hello", str(tmp_path), timeout=30)
+
+        assert captured_args["cmd"] == ["cmd.exe", "/c", "echo hello"]
+
+    def test_shell_cmd_uses_sh_on_unix(self, tmp_path, monkeypatch):
+        """On non-win32, _run_shell_command passes ['/bin/sh', '-c', command]."""
+        monkeypatch.setattr(sys, "platform", "linux")
+        captured_args = {}
+
+        def fake_popen(cmd, **kwargs):
+            captured_args["cmd"] = cmd
+            captured_args["kwargs"] = kwargs
+            proc = MagicMock()
+            proc.stdout.read.return_value = b""
+            proc.wait.return_value = 0
+            proc.returncode = 0
+            proc.pid = 12345
+            return proc
+
+        monkeypatch.setattr(subprocess, "Popen", fake_popen)
+        _run_shell_command("echo hello", str(tmp_path), timeout=30)
+
+        assert captured_args["cmd"] == ["/bin/sh", "-c", "echo hello"]
+        assert captured_args["kwargs"].get("start_new_session") is True
+
+    def test_no_start_new_session_on_windows(self, tmp_path, monkeypatch):
+        """On win32, start_new_session should NOT be set."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        captured_kwargs = {}
+
+        def fake_popen(cmd, **kwargs):
+            captured_kwargs.update(kwargs)
+            proc = MagicMock()
+            proc.stdout.read.return_value = b""
+            proc.wait.return_value = 0
+            proc.returncode = 0
+            proc.pid = 12345
+            return proc
+
+        monkeypatch.setattr(subprocess, "Popen", fake_popen)
+        _run_shell_command("echo hello", str(tmp_path), timeout=30)
+
+        assert "start_new_session" not in captured_kwargs
+
+
+class TestKillProcessTreeWindows:
+    def test_taskkill_called_on_windows(self, monkeypatch):
+        """On win32, _kill_process_tree uses taskkill /T /F."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        proc = MagicMock()
+        proc.pid = 42
+        proc.kill.return_value = None
+        proc.wait.return_value = 0
+
+        _kill_process_tree(proc)
+
+        assert captured["cmd"] == ["taskkill", "/T", "/F", "/PID", "42"]
+        proc.kill.assert_called_once()
+
+    def test_no_taskkill_on_unix(self, monkeypatch):
+        """On Unix, _kill_process_tree uses killpg, not taskkill."""
+        monkeypatch.setattr(sys, "platform", "linux")
+        taskkill_called = []
+
+        original_run = subprocess.run
+
+        def spy_run(cmd, **kwargs):
+            taskkill_called.append(cmd)
+            return original_run(cmd, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", spy_run)
+
+        proc = MagicMock()
+        proc.pid = 99999
+        proc.kill.return_value = None
+        proc.wait.return_value = 0
+
+        _kill_process_tree(proc)
+
+        assert not taskkill_called

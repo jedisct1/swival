@@ -713,6 +713,21 @@ def main():
     if yolo:
         tool = copy.deepcopy(RUN_COMMAND_TOOL)
         tool["function"]["description"] = "Run any command and return its output."
+        # Allow shell strings in yolo mode
+        tool["function"]["parameters"]["properties"]["command"] = {
+            "oneOf": [
+                {
+                    "type": "string",
+                    "description": "Shell command string (executed via sh -c). Supports pipes, redirects, &&, etc.",
+                },
+                {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Command as array of strings. Each argument is a separate element.",
+                },
+            ],
+            "description": 'Command to run. Can be a shell string (e.g. "ls -la | head") or an array of strings (e.g. ["ls", "-la"]).',
+        }
         tools.append(tool)
     elif resolved_commands:
         tool = copy.deepcopy(RUN_COMMAND_TOOL)
@@ -747,7 +762,8 @@ def main():
             system_content += (
                 "\n\n**Command execution tool:**\n"
                 "- `run_command`: Run any command and return its output. "
-                'Pass the command and arguments as a list (e.g. `["ls", "-la"]`). '
+                'Pass a shell string (e.g. `"ls -la | grep foo"`) or an array (e.g. `["ls", "-la"]`). '
+                "Shell strings support pipes, redirects, `&&`, etc. "
                 "Optional `timeout` (1-120s, default 30)."
             )
         elif resolved_commands:
@@ -1034,6 +1050,7 @@ def _repl_help() -> None:
         "  /clear             Reset conversation to initial state\n"
         "  /compact [--drop]  Compress context (--drop removes middle turns)\n"
         "  /add-dir <path>    Grant read+write access to a directory\n"
+        "  /extend [N]        Double max turns, or set to N\n"
         "  /exit, /quit       Exit the REPL"
     )
 
@@ -1102,6 +1119,26 @@ def _repl_compact(
     fmt.info(f"compacted: {before} -> {after} tokens ({saved} saved)")
 
 
+def _repl_extend(arg: str, state: dict) -> None:
+    """Double max turns (default) or set to a specific value."""
+    arg = arg.strip()
+    if arg:
+        try:
+            n = int(arg)
+        except ValueError:
+            fmt.warning(f"invalid number: {arg}")
+            return
+        if n < 1:
+            fmt.warning("max turns must be at least 1")
+            return
+        state["max_turns"] = n
+        fmt.info(f"max turns set to {n}")
+    else:
+        old = state["max_turns"]
+        state["max_turns"] = old * 2
+        fmt.info(f"max turns doubled: {old} -> {old * 2}")
+
+
 def repl_loop(
     messages: list,
     tools: list,
@@ -1140,6 +1177,8 @@ def repl_loop(
     if verbose:
         fmt.repl_banner()
 
+    turn_state = {"max_turns": max_turns}
+
     while True:
         try:
             print(file=sys.stderr)  # blank line before prompt
@@ -1172,6 +1211,9 @@ def repl_loop(
         elif cmd == "/compact":
             _repl_compact(messages, tools, context_length, cmd_arg)
             continue
+        elif cmd == "/extend":
+            _repl_extend(cmd_arg, turn_state)
+            continue
 
         messages.append({"role": "user", "content": line})
         try:
@@ -1180,7 +1222,7 @@ def repl_loop(
                 tools,
                 api_base=api_base,
                 model_id=model_id,
-                max_turns=max_turns,
+                max_turns=turn_state["max_turns"],
                 max_output_tokens=max_output_tokens,
                 temperature=temperature,
                 top_p=top_p,
