@@ -670,14 +670,10 @@ class TestKillProcessTreeWindows:
         """On Unix, _kill_process_tree uses killpg, not taskkill."""
         monkeypatch.setattr(sys, "platform", "linux")
         taskkill_called = []
+        killpg_called = []
 
-        original_run = subprocess.run
-
-        def spy_run(cmd, **kwargs):
-            taskkill_called.append(cmd)
-            return original_run(cmd, **kwargs)
-
-        monkeypatch.setattr(subprocess, "run", spy_run)
+        monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: taskkill_called.append(cmd))
+        monkeypatch.setattr(os, "killpg", lambda pid, sig: killpg_called.append((pid, sig)))
 
         proc = MagicMock()
         proc.pid = 99999
@@ -687,3 +683,5 @@ class TestKillProcessTreeWindows:
         _kill_process_tree(proc)
 
         assert not taskkill_called
+        assert len(killpg_called) == 1
+        assert killpg_called[0][0] == 99999
