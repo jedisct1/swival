@@ -118,17 +118,16 @@ def test_auto_repair_json_string_runs(tmp_base, unrestricted):
 # ---------- Test 5d: Auto-repair via shlex only in unrestricted mode ----------
 
 
-def test_auto_repair_plain_string_yolo(tmp_base):
+def test_plain_string_errors_even_in_yolo(tmp_base):
     result = _run_command(
         "echo yolo-repaired",
         tmp_base,
         resolved_commands={},
         unrestricted=True,
     )
-    assert "yolo-repaired" in result
-    assert result.rstrip().endswith(
-        "(auto-corrected: command was passed as a string, converted to array)"
-    )
+    assert result.startswith('error: "command" must be a JSON array')
+    assert "Shell syntax" in result
+    assert "(auto-corrected:" not in result
 
 
 def test_auto_repair_plain_string_sandboxed_still_errors(tmp_base):

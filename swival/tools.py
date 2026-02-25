@@ -4,7 +4,6 @@ import fnmatch
 import json
 import os
 import re
-import shlex
 import subprocess
 import sys
 import threading
@@ -981,21 +980,14 @@ def _run_command(
         except (json.JSONDecodeError, TypeError):
             pass
 
-        # In unrestricted mode only, accept shell-style splitting as a fallback.
-        if repaired_command is None and unrestricted:
-            try:
-                parts = shlex.split(command)
-            except ValueError:
-                parts = []
-            if parts:
-                repaired_command = parts
-
         if repaired_command is None:
             return _finalize(
                 'error: "command" must be a JSON array of strings, not a single string.\n'
                 'Wrong: "command": "grep -n pattern file.py"\n'
                 'Right: "command": ["grep", "-n", "pattern", "file.py"]\n'
-                "Each argument must be a separate element in the array.",
+                "Each argument must be a separate element in the array.\n"
+                "Shell syntax (&&, |, >, 2>&1, etc.) is not supported — "
+                "run one command at a time.",
                 was_repaired,
             )
         command = repaired_command
