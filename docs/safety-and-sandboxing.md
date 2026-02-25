@@ -16,7 +16,7 @@ For stronger isolation, use an OS-level sandbox around Swival itself:
   access at the kernel level. For example, to deny network access:
   ```sh
   sandbox-exec -p '(version 1)(allow default)(deny network*)' \
-      uvx swival "task" --yolo
+      swival "task" --yolo
   ```
 
 Both can be combined. AgentFS handles filesystem isolation, sandbox-exec
@@ -47,7 +47,7 @@ Sometimes the agent needs to read or write files outside the base directory. Use
 `--allow-dir` for that:
 
 ```sh
-uvx swival --allow-dir ~/shared-data --allow-dir /opt/configs "Update the config"
+swival --allow-dir ~/shared-data --allow-dir /opt/configs "Update the config"
 ```
 
 Each `--allow-dir` path grants full read/write access. The flag is repeatable.
@@ -63,7 +63,7 @@ unless you explicitly enable it.
 ### Whitelisted commands
 
 ```sh
-uvx swival --allowed-commands ls,git,python3 "task"
+swival --allowed-commands ls,git,python3 "task"
 ```
 
 At startup, each command name is resolved to its absolute path via `which`. If a
@@ -78,7 +78,7 @@ working directory is set to the base directory.
 ### YOLO mode
 
 ```sh
-uvx swival --yolo "do whatever you want"
+swival --yolo "do whatever you want"
 ```
 
 This disables both the filesystem sandbox and the command whitelist. The agent

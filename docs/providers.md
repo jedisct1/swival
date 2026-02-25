@@ -23,7 +23,7 @@ If no model is loaded, Swival exits with an error telling you to load one.
 If LM Studio is running on a different host or port:
 
 ```sh
-uvx swival --base-url http://192.168.1.100:1234 "task"
+swival --base-url http://192.168.1.100:1234 "task"
 ```
 
 ### Manual model selection
@@ -32,7 +32,7 @@ If auto-discovery doesn't find the right model (e.g., multiple models loaded),
 you can specify it:
 
 ```sh
-uvx swival --model "qwen3-coder-next" "task"
+swival --model "qwen3-coder-next" "task"
 ```
 
 ### Context size configuration
@@ -41,7 +41,7 @@ You can request a specific context length, which may trigger LM Studio to
 reload the model:
 
 ```sh
-uvx swival --max-context-tokens 131072 "task"
+swival --max-context-tokens 131072 "task"
 ```
 
 Swival calls LM Studio's `/api/v1/models/load` endpoint with the new context
@@ -63,7 +63,7 @@ For hosted inference without running a local model.
 
 ```sh
 export HF_TOKEN=hf_your_token_here
-uvx swival --provider huggingface --model meta-llama/Llama-3.3-70B-Instruct "task"
+swival --provider huggingface --model meta-llama/Llama-3.3-70B-Instruct "task"
 ```
 
 The `--model` flag is required and must be in `org/model` format. Authentication
@@ -75,7 +75,7 @@ comes from `HF_TOKEN` in the environment or `--api-key` on the command line
 For HuggingFace dedicated inference endpoints (private deployments):
 
 ```sh
-uvx swival --provider huggingface \
+swival --provider huggingface \
     --model meta-llama/Llama-3.3-70B-Instruct \
     --base-url https://xyz.endpoints.huggingface.cloud \
     --api-key hf_your_key \

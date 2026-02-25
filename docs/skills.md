@@ -61,7 +61,7 @@ precedence over external skills.
 `External skills` are specified with `--skills-dir`:
 
 ```sh
-uvx swival --skills-dir ~/my-skills "task"
+swival --skills-dir ~/my-skills "task"
 ```
 
 The `--skills-dir` flag is repeatable. Each path can be either a directory

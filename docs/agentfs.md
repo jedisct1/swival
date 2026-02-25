@@ -30,7 +30,7 @@ give it a name you can come back to:
 cd ~/my-project
 
 agentfs run --session add-config -- \
-    uvx swival "Add a config module that reads from env vars, and update main.py to use it" --yolo --max-turns 20
+    swival "Add a config module that reads from env vars, and update main.py to use it" --yolo --max-turns 20
 ```
 
 The `--yolo` flag is the natural pairing here. AgentFS handles isolation, so you
@@ -116,7 +116,7 @@ accumulated changes from previous runs:
 
 ```sh
 agentfs run --session add-config -- \
-    uvx swival "The tests are failing because config.py doesn't handle missing env vars. Fix it." --yolo
+    swival "The tests are failing because config.py doesn't handle missing env vars. Fix it." --yolo
 ```
 
 The agent sees its own prior changes and builds on top of them. Re-enter with
@@ -130,7 +130,7 @@ If you want the overlay stored alongside your project as a `.db` file:
 cd ~/my-project
 
 agentfs init --base . -c \
-    'uvx swival "Add a config module" --yolo --max-turns 20' \
+    'swival "Add a config module" --yolo --max-turns 20' \
     add-config
 ```
 
@@ -177,7 +177,7 @@ agentfs mount -f --auto-unmount sandbox /tmp/sandbox
 In another terminal:
 
 ```sh
-uvx swival --repl --base-dir /tmp/sandbox --yolo
+swival --repl --base-dir /tmp/sandbox --yolo
 ```
 
 You can chat with the agent, ask it to make changes, then switch to a third

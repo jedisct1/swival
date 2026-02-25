@@ -7,7 +7,7 @@ Swival operates in two modes: one-shot (the default) and interactive (REPL).
 Give it a task, let it work, get the result:
 
 ```sh
-uvx swival "Review this codebase for security issues"
+swival "Review this codebase for security issues"
 ```
 
 The agent loops through tool calls -- reading files, searching code, reasoning
@@ -17,7 +17,7 @@ The agent loops through tool calls -- reading files, searching code, reasoning
 This separation is intentional. You can pipe the output:
 
 ```sh
-uvx swival -q "Summarize the API surface of src/" > api-summary.txt
+swival -q "Summarize the API surface of src/" > api-summary.txt
 ```
 
 The `-q` (or `--quiet`) flag suppresses all diagnostic output on stderr, so you
@@ -29,7 +29,7 @@ By default, Swival can read, write, and search files within the current
 directory. If you want it to run commands too:
 
 ```sh
-uvx swival --allowed-commands ls,git,python3 \
+swival --allowed-commands ls,git,python3 \
     "Create a tool that returns a random number between 0 and 42"
 ```
 
@@ -45,7 +45,7 @@ The available commands influence the agent's behavior -- if you allow `bun` and
 ## Interactive mode (REPL)
 
 ```sh
-uvx swival --repl
+swival --repl
 ```
 
 This gives you an interactive session with conversation history that carries
@@ -55,7 +55,7 @@ work, ask a follow-up.
 You can also start a REPL with an initial question:
 
 ```sh
-uvx swival --repl "Look at the project structure and tell me what this does"
+swival --repl "Look at the project structure and tell me what this does"
 ```
 
 ### REPL commands

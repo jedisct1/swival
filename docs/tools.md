@@ -80,7 +80,7 @@ See [Safety and Sandboxing](safety-and-sandboxing.md) for details.
 Not available by default. You enable it with `--allowed-commands`:
 
 ```sh
-uvx swival --allowed-commands ls,git,python3 "Run the tests"
+swival --allowed-commands ls,git,python3 "Run the tests"
 ```
 
 Commands are passed as arrays (not shell strings), so there's no shell

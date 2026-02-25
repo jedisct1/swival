@@ -9,6 +9,26 @@ uv yet:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
+## Installation
+
+```sh
+uv tool install swival
+```
+
+This puts the `swival` command on your PATH. You can now run it from anywhere.
+
+To update to the latest version:
+
+```sh
+uv tool upgrade swival
+```
+
+To uninstall:
+
+```sh
+uv tool uninstall swival
+```
+
 ## Running with LM Studio (recommended)
 
 LM Studio is the easiest path. Install it from
@@ -24,7 +44,7 @@ agent can hold more of your codebase in its head at once.
 Then run:
 
 ```sh
-uvx swival "Hello world"
+swival "Hello world"
 ```
 
 Swival connects to LM Studio at `http://127.0.0.1:1234`, queries the API to
@@ -55,7 +75,7 @@ If you'd rather use a hosted model instead of running one locally:
 
 ```sh
 export HF_TOKEN=hf_your_token_here
-uvx swival "Hello world" --provider huggingface --model meta-llama/Llama-3.3-70B-Instruct
+swival "Hello world" --provider huggingface --model meta-llama/Llama-3.3-70B-Instruct
 ```
 
 You need a HuggingFace token with Inference API access. The model must be
@@ -63,7 +83,7 @@ specified in `org/model` format. For dedicated endpoints, add `--base-url` and
 `--api-key`:
 
 ```sh
-uvx swival "Hello world" \
+swival "Hello world" \
     --provider huggingface \
     --model meta-llama/Llama-3.3-70B-Instruct \
     --base-url https://xyz.endpoints.huggingface.cloud \

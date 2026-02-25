@@ -27,7 +27,7 @@ For untrusted repositories where you don't want the agent reading project
 instructions:
 
 ```sh
-uvx swival --no-instructions "task"
+swival --no-instructions "task"
 ```
 
 Instruction files are also skipped when you provide a custom system prompt with
@@ -39,13 +39,13 @@ The default system prompt lives in `swival/system_prompt.txt` and describes the
 agent's workflow, tools, and coding standards. You can replace it entirely:
 
 ```sh
-uvx swival --system-prompt "You are a security auditor. Only report vulnerabilities." "Audit src/"
+swival --system-prompt "You are a security auditor. Only report vulnerabilities." "Audit src/"
 ```
 
 Or omit it:
 
 ```sh
-uvx swival --no-system-prompt "Just answer: what is 2+2?"
+swival --no-system-prompt "Just answer: what is 2+2?"
 ```
 
 These two flags are mutually exclusive. When using `--system-prompt`,
@@ -60,7 +60,7 @@ of which prompt is used.
 ### Temperature and top-p
 
 ```sh
-uvx swival --temperature 0.3 --top-p 0.9 "task"
+swival --temperature 0.3 --top-p 0.9 "task"
 ```
 
 The default temperature is 0.55, which gives a good balance between creativity
@@ -73,7 +73,7 @@ the model samples from.
 ### Seed
 
 ```sh
-uvx swival --seed 42 "task"
+swival --seed 42 "task"
 ```
 
 Sets a random seed for reproducible outputs. When given, the seed is passed
@@ -84,7 +84,7 @@ versions. Omit it (the default) to let the model sample normally.
 ### Max turns
 
 ```sh
-uvx swival --max-turns 10 "quick task"
+swival --max-turns 10 "quick task"
 ```
 
 Limits the number of agent loop iterations. Each turn is one LLM call that may
@@ -94,7 +94,7 @@ without producing a final answer, it exits with code 2.
 ### Output tokens
 
 ```sh
-uvx swival --max-output-tokens 16384 "task"
+swival --max-output-tokens 16384 "task"
 ```
 
 Maximum tokens the model can generate per response. Defaults to 32768. Swival
@@ -104,7 +104,7 @@ output would exceed the context window.
 ### Context length
 
 ```sh
-uvx swival --max-context-tokens 65536 "task"
+swival --max-context-tokens 65536 "task"
 ```
 
 For LM Studio, this can trigger a model reload with the new context size. The

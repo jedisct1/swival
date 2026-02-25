@@ -20,10 +20,16 @@ It's what I use every day. Try it and see if you like it too.
    [qwen3-coder-next](https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF)).
    Crank the context size as high as your hardware allows.
 2. Start the LM Studio server.
-3. Run:
+3. Install Swival:
 
 ```sh
-uvx swival "Refactor the error handling in src/api.py"
+uv tool install swival
+```
+
+4. Run:
+
+```sh
+swival "Refactor the error handling in src/api.py"
 ```
 
 That's it. Swival finds the model, connects, and goes to work.
@@ -31,7 +37,19 @@ That's it. Swival finds the model, connects, and goes to work.
 For interactive sessions:
 
 ```sh
-uvx swival --repl
+swival --repl
+```
+
+To update to the latest version:
+
+```sh
+uv tool upgrade swival
+```
+
+To uninstall:
+
+```sh
+uv tool uninstall swival
 ```
 
 ## Documentation
