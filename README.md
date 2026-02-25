@@ -54,18 +54,18 @@ uv tool uninstall swival
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md) -- installation, first run, what
+- [Getting Started](docs.md/getting-started.md) -- installation, first run, what
   happens under the hood
-- [Usage](docs/usage.md) -- one-shot mode, REPL mode, CLI flags, piping,
+- [Usage](docs.md/usage.md) -- one-shot mode, REPL mode, CLI flags, piping,
   exit codes
-- [Tools](docs/tools.md) -- what the agent can do: file ops, search, editing,
+- [Tools](docs.md/tools.md) -- what the agent can do: file ops, search, editing,
   web fetching, thinking, command execution
-- [Safety and Sandboxing](docs/safety-and-sandboxing.md) -- path resolution,
+- [Safety and Sandboxing](docs.md/safety-and-sandboxing.md) -- path resolution,
   symlink protection, command whitelisting, YOLO mode
-- [Skills](docs/skills.md) -- creating and using SKILL.md-based agent skills
-- [Customization](docs/customization.md) -- project instructions, system prompt
+- [Skills](docs.md/skills.md) -- creating and using SKILL.md-based agent skills
+- [Customization](docs.md/customization.md) -- project instructions, system prompt
   overrides, tuning parameters
-- [Providers](docs/providers.md) -- LM Studio and HuggingFace configuration
-- [Reports](docs/reports.md) -- JSON reports for benchmarking and evaluation
-- [Using Swival with AgentFS](docs/agentfs.md) -- copy-on-write filesystem
+- [Providers](docs.md/providers.md) -- LM Studio and HuggingFace configuration
+- [Reports](docs.md/reports.md) -- JSON reports for benchmarking and evaluation
+- [Using Swival with AgentFS](docs.md/agentfs.md) -- copy-on-write filesystem
   sandboxing for safe agent runs
