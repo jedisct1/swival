@@ -41,7 +41,7 @@ a square root, then delivered the answer:
     ],
     "skills_discovered": [],
     "instructions_loaded": [
-      "CLAUDE.md"
+      "AGENT.md"
     ]
   },
   "result": {
