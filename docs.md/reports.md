@@ -78,7 +78,7 @@ A `success` outcome means the model produced a final non-tool response. An `exha
 
 `tool_calls_total`, `tool_calls_succeeded`, and `tool_calls_failed` are aggregate tool counters. `tool_calls_by_name` is a per-tool breakdown using `{succeeded, failed}` counts.
 
-`compactions` counts `compact_messages` events and `turn_drops` counts `drop_middle_turns` events. `guardrail_interventions` counts injected correction prompts for repeated tool failures. `truncated_responses` counts model outputs that hit output-token limits.
+`compactions` counts `compact_messages` and `aggressive_drop` events. `turn_drops` counts `drop_middle_turns` events. `guardrail_interventions` counts injected correction prompts for repeated tool failures. `truncated_responses` counts model outputs that hit output-token limits.
 
 `skills_used` records skill names successfully activated through `use_skill`. `review_rounds` records how many reviewer passes occurred when `--reviewer` is active. `todo` appears only when the `todo` tool was used and includes `added`, `completed`, and `remaining` counts.
 
@@ -86,11 +86,11 @@ A `success` outcome means the model produced a final non-tool response. An `exha
 
 `timeline` is an ordered array of event objects. Each event includes `turn` and `type`, with type-specific fields.
 
-For `llm_call`, fields include `duration_s`, `prompt_tokens_est`, `finish_reason`, and `is_retry`. Retry calls include `retry_reason`, which is either `compact_messages` or `drop_middle_turns`.
+For `llm_call`, fields include `duration_s`, `prompt_tokens_est`, `finish_reason`, and `is_retry`. Retry calls include `retry_reason`, which is one of `compact_messages`, `drop_middle_turns`, or `aggressive_drop`.
 
 For `tool_call`, fields include `name`, `arguments`, `succeeded`, `duration_s`, and `result_length`. If arguments were invalid JSON, `arguments` is `null`. Failed tool calls include `error`.
 
-For `compaction`, fields include `strategy`, `tokens_before`, and `tokens_after`.
+For `compaction`, fields include `strategy`, `tokens_before`, and `tokens_after`. Strategy is one of `compact_messages`, `drop_middle_turns`, or `aggressive_drop`.
 
 For `guardrail`, fields include `tool` and `level`, where `level` is `nudge` for repeated failures and `stop` for stronger intervention.
 

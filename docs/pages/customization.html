@@ -70,6 +70,7 @@ max_turns = 250
 allowed_commands = [&quot;ls&quot;, &quot;git&quot;, &quot;python3&quot;]
 allowed_dirs = [&quot;/tmp&quot;]
 allowed_dirs_ro = [&quot;/opt/zig/lib/std&quot;]
+proactive_summaries = true
 quiet = false
 </code></pre>
 <p>Relative paths in <code>allowed_dirs</code>, <code>allowed_dirs_ro</code>, <code>skills_dir</code>, and <code>reviewer</code> resolve against the config file's parent directory, not the working directory. Tilde paths like <code>~/projects</code> expand to the home directory.</p>

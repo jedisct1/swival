@@ -54,9 +54,11 @@ class Session:
         read_guard: bool = True,
         history: bool = True,
         config_dir: "Path | None" = None,
+        proactive_summaries: bool = False,
     ):
         self.base_dir = base_dir
         self.config_dir = config_dir
+        self.proactive_summaries = proactive_summaries
         self.provider = provider
         self.model = model
         self.api_key = api_key
@@ -197,17 +199,21 @@ class Session:
 
     def _make_per_run_state(self) -> dict:
         """Create fresh per-run state: thinking, tracker, skill roots, messages."""
-        return {
+        from .agent import CompactionState
+
+        state = {
             "thinking_state": ThinkingState(verbose=self.verbose),
             "todo_state": TodoState(notes_dir=self.base_dir, verbose=self.verbose),
             "file_tracker": FileAccessTracker() if self.read_guard else None,
             "skill_read_roots": list(self._allowed_dir_ro_paths),
             "messages": self._make_initial_messages(),
+            "compaction_state": CompactionState() if self.proactive_summaries else None,
         }
+        return state
 
     def _build_loop_kwargs(self, state: dict) -> dict:
         """Build kwargs for run_agent_loop() from setup + per-run state."""
-        return dict(
+        kwargs = dict(
             api_base=self._api_base,
             model_id=self._model_id,
             max_turns=self.max_turns,
@@ -228,6 +234,9 @@ class Session:
             llm_kwargs=self._llm_kwargs,
             file_tracker=state["file_tracker"],
         )
+        if state.get("compaction_state") is not None:
+            kwargs["compaction_state"] = state["compaction_state"]
+        return kwargs
 
     def run(self, question: str, *, report: bool = False) -> Result:
         """Single-shot: run a question with fresh state. Each call is independent."""

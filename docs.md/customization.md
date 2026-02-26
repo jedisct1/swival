@@ -26,6 +26,7 @@ max_turns = 250
 allowed_commands = ["ls", "git", "python3"]
 allowed_dirs = ["/tmp"]
 allowed_dirs_ro = ["/opt/zig/lib/std"]
+proactive_summaries = true
 quiet = false
 ```
 

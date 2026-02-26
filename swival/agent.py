@@ -240,12 +240,95 @@ def group_into_turns(messages: list) -> list[list]:
     return turns
 
 
+def compact_tool_result(name: str, args: dict | None, content: str) -> str:
+    """Produce a structured summary for a large tool result.
+
+    Returns the original *content* unchanged when it is short enough (<=1000
+    chars).  For larger results the summary preserves the tool name, key
+    arguments, and output metadata so the model still knows what happened.
+    """
+    if len(content) <= 1000:
+        return content
+
+    args = args or {}
+
+    if name == "read_file":
+        path = args.get("file_path", "?")
+        lines = content.count("\n")
+        return f"[read_file: {path}, {lines} lines — content compacted]"
+
+    if name == "grep":
+        pattern = args.get("pattern", "?")
+        path = args.get("path", ".")
+        matches = content.count("\n")
+        return f"[grep: '{pattern}' in {path}, ~{matches} matches — compacted]"
+
+    if name == "list_files":
+        pattern = args.get("pattern", "?")
+        path = args.get("path", ".")
+        count = content.count("\n")
+        return f"[list_files: '{pattern}' in {path}, ~{count} entries — compacted]"
+
+    if name == "run_command":
+        cmd = args.get("command", ["?"])
+        if isinstance(cmd, list):
+            cmd = " ".join(cmd)
+        head = content[:200]
+        tail = content[-200:]
+        return (
+            f"[run_command: `{cmd}` — first 200 chars:\n{head}\n"
+            f"... last 200 chars:\n{tail}]"
+        )
+
+    if name == "fetch_url":
+        url = args.get("url", "?")
+        return f"[fetch_url: {url}, {len(content)} chars — content compacted]"
+
+    # Unknown tool — generic structured fallback
+    return f"[{name}: compacted — originally {len(content)} chars]"
+
+
+def _tool_call_index(turn: list) -> dict[str, tuple[str, dict | None]]:
+    """Build a mapping from tool_call_id → (tool_name, parsed_args) for a turn.
+
+    The first message in a tool-call turn is the assistant message whose
+    ``tool_calls`` list carries the function name and arguments.
+    """
+    index: dict[str, tuple[str, dict | None]] = {}
+    first = turn[0]
+    tool_calls = (
+        first.get("tool_calls", None)
+        if isinstance(first, dict)
+        else getattr(first, "tool_calls", None)
+    )
+    if not tool_calls:
+        return index
+    for tc in tool_calls:
+        tc_id = tc.id if hasattr(tc, "id") else tc["id"]
+        fn = tc.function if hasattr(tc, "function") else tc.get("function", {})
+        fn_name = fn.name if hasattr(fn, "name") else fn.get("name", "?")
+        fn_args_raw = (
+            fn.arguments if hasattr(fn, "arguments") else fn.get("arguments", "{}")
+        )
+        try:
+            fn_args = json.loads(fn_args_raw) if isinstance(fn_args_raw, str) else fn_args_raw
+        except (json.JSONDecodeError, TypeError):
+            fn_args = None
+        index[tc_id] = (fn_name, fn_args)
+    return index
+
+
 def compact_messages(messages: list) -> list:
-    """Truncate large tool results in older turns, preserving turn atomicity."""
+    """Compact large tool results in older turns, preserving turn atomicity.
+
+    Uses per-tool structured summaries (via ``compact_tool_result``) instead of
+    a blanket character-count truncation.
+    """
     turns = group_into_turns(messages)
     # Skip the most recent 2 turns
     cutoff = max(0, len(turns) - 2)
     for turn in turns[:cutoff]:
+        tc_index = _tool_call_index(turn)
         for msg in turn:
             role = (
                 msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
@@ -257,7 +340,13 @@ def compact_messages(messages: list) -> list:
                     else getattr(msg, "content", "")
                 )
                 if content and len(content) > 1000:
-                    replacement = f"[compacted — originally {len(content)} chars]"
+                    tc_id = (
+                        msg.get("tool_call_id")
+                        if isinstance(msg, dict)
+                        else getattr(msg, "tool_call_id", None)
+                    )
+                    tool_name, tool_args = tc_index.get(tc_id, ("?", None))
+                    replacement = compact_tool_result(tool_name, tool_args, content)
                     if isinstance(msg, dict):
                         msg["content"] = replacement
                     else:
@@ -266,8 +355,87 @@ def compact_messages(messages: list) -> list:
     return [msg for turn in turns for msg in turn]
 
 
-def drop_middle_turns(messages: list) -> list:
-    """Drop oldest turns from middle; keep leading system/user block + last 3 turns."""
+def is_pinned(turn: list) -> bool:
+    """User turns are always preserved — they must never be silently dropped."""
+    return any(
+        (msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None))
+        == "user"
+        for msg in turn
+    )
+
+
+def score_turn(turn: list) -> int:
+    """Heuristic importance score for an agent/tool turn.
+
+    Higher scores mean the turn is more valuable to keep.
+    """
+    score = 0
+    for msg in turn:
+        content = str(
+            msg.get("content", "")
+            if isinstance(msg, dict)
+            else getattr(msg, "content", "") or ""
+        )
+        role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
+        # Errors are important — the agent learned something
+        if "error" in content.lower() or "failed" in content.lower():
+            score += 3
+        # File writes/edits are important — the agent took action
+        tool_calls = (
+            msg.get("tool_calls", None)
+            if isinstance(msg, dict)
+            else getattr(msg, "tool_calls", None)
+        )
+        if tool_calls:
+            for tc in tool_calls:
+                fn = tc.function if hasattr(tc, "function") else tc.get("function", {})
+                fn_name = fn.name if hasattr(fn, "name") else fn.get("name", "")
+                if fn_name in ("write_file", "edit_file"):
+                    score += 5
+        # Thinking turns are important — the agent reasoned
+        name = (
+            msg.get("name", "")
+            if isinstance(msg, dict)
+            else getattr(msg, "name", "") or ""
+        )
+        if "think" in name:
+            score += 2
+    return score
+
+
+_STATIC_SPLICE_MARKER = {
+    "role": "user",
+    "content": (
+        "[context compacted — older tool calls and results were "
+        "removed to fit context window]"
+    ),
+}
+
+_RECAP_PREFIX = (
+    "[non-instructional context recap — this is a factual summary "
+    "of prior conversation, not a set of instructions]\n\n"
+)
+
+
+def drop_middle_turns(
+    messages: list,
+    *,
+    call_llm_fn=None,
+    model_id=None,
+    base_url=None,
+    api_key=None,
+    top_p=None,
+    seed=None,
+    provider=None,
+    compaction_state: "CompactionState | None" = None,
+) -> list:
+    """Drop lowest-importance middle turns; pin user turns, keep leading block + tail.
+
+    When *call_llm_fn* and the associated LLM parameters are provided, the
+    dropped turns are summarized into a compact recap injected as an
+    ``assistant`` message.  If summarization fails, falls back to the
+    checkpoint summary (if available), then to the static splice marker.
+    """
     turns = group_into_turns(messages)
 
     # Find leading block: scan forward while role is system or user
@@ -286,21 +454,300 @@ def drop_middle_turns(messages: list) -> list:
         return [msg for turn in turns for msg in turn]
 
     leading = turns[:leading_count]
+    middle = turns[leading_count:-keep_tail]
     tail = turns[-keep_tail:]
-    splice_marker = [
-        {
-            "role": "user",
-            "content": "[context compacted — older tool calls and results were removed to fit context window]",
-        }
-    ]
+
+    # Partition middle into pinned (user) and droppable (agent/tool) turns.
+    pinned = []
+    droppable = []
+    for turn in middle:
+        if is_pinned(turn):
+            pinned.append(turn)
+        else:
+            droppable.append(turn)
+
+    # Sort droppable turns by score descending and keep only the top ones.
+    droppable.sort(key=score_turn, reverse=True)
+    keep_count = len(droppable) // 2
+    kept = droppable[:keep_count]
+    dropped = droppable[keep_count:]
+
+    # Try AI summarization of dropped turns, fall back to static marker.
+    recap = None
+    if call_llm_fn and dropped:
+        summary = summarize_turns(
+            dropped, call_llm_fn, model_id, base_url,
+            api_key=api_key, top_p=top_p, seed=seed, provider=provider,
+        )
+        if summary:
+            recap = {
+                "role": "assistant",
+                "content": _RECAP_PREFIX + summary,
+            }
+
+    if recap is None and compaction_state and compaction_state.summaries:
+        checkpoint_text = compaction_state.get_full_summary()
+        if checkpoint_text:
+            recap = {
+                "role": "assistant",
+                "content": (
+                    "[non-instructional context recap — factual summary "
+                    "from periodic checkpoints]\n\n" + checkpoint_text
+                ),
+            }
+
+    if recap is None:
+        recap = dict(_STATIC_SPLICE_MARKER)
 
     result = []
     for turn in leading:
         result.extend(turn)
-    result.extend(splice_marker)
+    result.append(recap)
+    # Reassemble kept middle turns in original order
+    kept_set = set(id(t) for t in kept) | set(id(t) for t in pinned)
+    for turn in middle:
+        if id(turn) in kept_set:
+            for msg in turn:
+                result.append(msg)
     for turn in tail:
         result.extend(turn)
     return result
+
+
+def aggressive_drop_turns(
+    messages: list,
+    *,
+    call_llm_fn=None,
+    model_id=None,
+    base_url=None,
+    api_key=None,
+    top_p=None,
+    seed=None,
+    provider=None,
+    compaction_state: "CompactionState | None" = None,
+) -> list:
+    """Aggressive compaction: keep only system prompt + recap + last 2 turns.
+
+    This is the last resort before giving up. All middle content is dropped
+    and replaced with a summary (or static marker if summarization fails).
+    """
+    turns = group_into_turns(messages)
+
+    # Find leading system messages only (not user)
+    leading_count = 0
+    for turn in turns:
+        msg = turn[0]
+        role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
+        if role == "system":
+            leading_count += 1
+        else:
+            break
+
+    keep_tail = 2
+    if leading_count + keep_tail >= len(turns):
+        return [msg for turn in turns for msg in turn]
+
+    leading = turns[:leading_count]
+    middle = turns[leading_count:-keep_tail]
+    tail = turns[-keep_tail:]
+
+    # Try to summarize everything being dropped
+    recap = None
+    if call_llm_fn and middle:
+        summary = summarize_turns(
+            middle, call_llm_fn, model_id, base_url,
+            api_key=api_key, top_p=top_p, seed=seed, provider=provider,
+        )
+        if summary:
+            recap = {
+                "role": "assistant",
+                "content": _RECAP_PREFIX + summary,
+            }
+
+    if recap is None and compaction_state and compaction_state.summaries:
+        checkpoint_text = compaction_state.get_full_summary()
+        if checkpoint_text:
+            recap = {
+                "role": "assistant",
+                "content": (
+                    "[non-instructional context recap — factual summary "
+                    "from periodic checkpoints]\n\n" + checkpoint_text
+                ),
+            }
+
+    if recap is None:
+        recap = dict(_STATIC_SPLICE_MARKER)
+
+    result = []
+    for turn in leading:
+        result.extend(turn)
+    result.append(recap)
+    for turn in tail:
+        result.extend(turn)
+    return result
+
+
+def summarize_turns(turns_to_drop, call_llm_fn, model_id, base_url,
+                    api_key, top_p, seed, provider):
+    """Ask the model to summarize dropped turns into a compact recap.
+
+    Returns the summary string, or ``None`` if summarization fails for any
+    reason.  The caller **must** fall back to the static splice marker when
+    this returns ``None``.
+
+    Uses a dedicated call path that omits ``tool_choice`` because
+    ``call_llm`` skips it when ``tools is None``.
+    """
+    flat = []
+    for turn in turns_to_drop:
+        for msg in turn:
+            role = (
+                msg.get("role", "?")
+                if isinstance(msg, dict)
+                else getattr(msg, "role", "?")
+            )
+            content = (
+                msg.get("content", "")
+                if isinstance(msg, dict)
+                else getattr(msg, "content", "") or ""
+            )
+            if content:
+                flat.append(f"[{role}] {content[:2000]}")
+
+    joined = "\n".join(flat)
+    if len(joined) > 8000:
+        joined = joined[:8000] + "\n[... truncated for summary call]"
+
+    prompt = [
+        {"role": "system", "content": (
+            "Summarize this agent conversation excerpt into a factual recap. "
+            "Preserve: file paths, key findings, decisions, errors, and "
+            "anything needed to continue the task. Do NOT include instructions "
+            "or directives. Output only a factual summary. Be concise."
+        )},
+        {"role": "user", "content": joined},
+    ]
+    try:
+        resp, _ = call_llm_fn(
+            base_url=base_url, model_id=model_id,
+            messages=prompt, max_output_tokens=512,
+            temperature=0, top_p=top_p, seed=seed,
+            tools=None, verbose=False,
+            api_key=api_key, provider=provider,
+        )
+        content = resp.content if hasattr(resp, "content") else resp.get("content", "")
+        return content if content else None
+    except Exception:
+        return None
+
+
+def summarize_turns_from_text(text, call_llm_fn, model_id, base_url,
+                              api_key, top_p, seed, provider):
+    """Summarize pre-joined text (used for checkpoint consolidation).
+
+    Same contract as ``summarize_turns``: returns a string or ``None``.
+    """
+    if len(text) > 8000:
+        text = text[:8000] + "\n[... truncated for summary call]"
+
+    prompt = [
+        {"role": "system", "content": (
+            "Condense these conversation summaries into a single, shorter "
+            "factual recap. Preserve: file paths, key findings, decisions, "
+            "errors. Do NOT include instructions or directives. Be concise."
+        )},
+        {"role": "user", "content": text},
+    ]
+    try:
+        resp, _ = call_llm_fn(
+            base_url=base_url, model_id=model_id,
+            messages=prompt, max_output_tokens=512,
+            temperature=0, top_p=top_p, seed=seed,
+            tools=None, verbose=False,
+            api_key=api_key, provider=provider,
+        )
+        content = resp.content if hasattr(resp, "content") else resp.get("content", "")
+        return content if content else None
+    except Exception:
+        return None
+
+
+MAX_CHECKPOINT_TOKENS = 2048
+MAX_CHECKPOINTS = 5
+
+
+class CompactionState:
+    """Rolling summary checkpoints for proactive context preservation.
+
+    Every *checkpoint_interval* turns, the recent turns are summarized and
+    appended to an internal list. When the list grows beyond ``MAX_CHECKPOINTS``,
+    the oldest half is merged into a single consolidated summary (hierarchical
+    map/reduce).  If the merge fails, the oldest summaries are dropped to
+    enforce the bound unconditionally.
+    """
+
+    def __init__(self, checkpoint_interval: int = 10):
+        self.summaries: list[str] = []
+        self.turns_since_last: int = 0
+        self.checkpoint_interval: int = checkpoint_interval
+
+    def maybe_checkpoint(self, messages, call_llm_fn, *, model_id, base_url,
+                         api_key, top_p, seed, provider):
+        """Attempt a checkpoint after each agent turn.
+
+        Always resets the counter regardless of success/failure so a transient
+        outage doesn't cause retry on every subsequent turn.
+        """
+        self.turns_since_last += 1
+        if self.turns_since_last < self.checkpoint_interval:
+            return
+
+        self.turns_since_last = 0
+
+        recent = _get_recent_turns(messages, self.checkpoint_interval)
+        summary = summarize_turns(
+            recent, call_llm_fn, model_id, base_url,
+            api_key=api_key, top_p=top_p, seed=seed, provider=provider,
+        )
+        if summary is None:
+            return
+
+        self.summaries.append(summary)
+        self._maybe_consolidate(
+            call_llm_fn, model_id=model_id, base_url=base_url,
+            api_key=api_key, top_p=top_p, seed=seed, provider=provider,
+        )
+
+    def _maybe_consolidate(self, call_llm_fn, *, model_id, base_url,
+                           api_key, top_p, seed, provider):
+        """Merge old summaries when the list exceeds MAX_CHECKPOINTS."""
+        if len(self.summaries) <= MAX_CHECKPOINTS:
+            return
+        half = len(self.summaries) // 2
+        to_merge = self.summaries[:half]
+        merged = summarize_turns_from_text(
+            "\n\n".join(to_merge), call_llm_fn, model_id, base_url,
+            api_key=api_key, top_p=top_p, seed=seed, provider=provider,
+        )
+        if merged:
+            self.summaries = [merged] + self.summaries[half:]
+        else:
+            # Consolidation failed — drop oldest to enforce bound.
+            self.summaries = self.summaries[half:]
+
+    def get_full_summary(self) -> str:
+        """Return all checkpoint summaries joined, hard-capped by char count."""
+        full = "\n\n".join(self.summaries)
+        cap = MAX_CHECKPOINT_TOKENS * 4  # ~4 chars/token estimate
+        if len(full) > cap:
+            full = full[:cap] + "\n[... older checkpoints truncated]"
+        return full
+
+
+def _get_recent_turns(messages: list, n: int) -> list[list]:
+    """Return the last *n* turns from *messages*."""
+    turns = group_into_turns(messages)
+    return turns[-n:] if len(turns) > n else turns
 
 
 MIN_OUTPUT_TOKENS = 16  # Minimum accepted by most LLM APIs
@@ -654,10 +1101,11 @@ def call_llm(
         model=model_str,
         messages=messages,
         max_tokens=max_output_tokens,
-        tools=tools,
-        tool_choice="auto",
         **kwargs,
     )
+    if tools is not None:
+        completion_kwargs["tools"] = tools
+        completion_kwargs["tool_choice"] = "auto"
     for key, val in [("temperature", temperature), ("top_p", top_p), ("seed", seed)]:
         if val is not None:
             completion_kwargs[key] = val
@@ -922,6 +1370,12 @@ def build_parser():
         action="store_true",
         default=_UNSET,
         help="Disable read-before-write guard (allow writing files without reading them first).",
+    )
+    parser.add_argument(
+        "--proactive-summaries",
+        action="store_true",
+        default=_UNSET,
+        help="Periodically summarize conversation to preserve context across compaction events.",
     )
     parser.add_argument(
         "--init-config",
@@ -1420,6 +1874,9 @@ def _run_main(args, report, _write_report, parser):
         file_tracker=file_tracker,
     )
 
+    if getattr(args, "proactive_summaries", False):
+        loop_kwargs["compaction_state"] = CompactionState()
+
     no_history = getattr(args, "no_history", False)
 
     # Validate reviewer executable at startup
@@ -1563,6 +2020,7 @@ def run_agent_loop(
     file_tracker: FileAccessTracker | None = None,
     report: ReportCollector | None = None,
     turn_offset: int = 0,
+    compaction_state: "CompactionState | None" = None,
 ) -> tuple[str | None, bool]:
     """Run the tool-calling loop until a final answer or max turns.
 
@@ -1618,82 +2076,48 @@ def run_agent_loop(
                     turns + turn_offset, elapsed, token_est, "context_overflow"
                 )
 
-            if verbose:
-                fmt.warning("context window exceeded, compacting history...")
-            tokens_before = estimate_tokens(messages, tools)
-            messages[:] = compact_messages(messages)
-            effective_max_output = clamp_output_tokens(
-                messages, tools, context_length, max_output_tokens
+            # --- Graduated compaction levels ---
+            # Each level is tried in order. If the LLM call succeeds after
+            # a compaction step, we break out. If it still overflows, we
+            # try the next level. If all levels fail, raise AgentError.
+            _llm_summary_kwargs = dict(
+                call_llm_fn=call_llm,
+                model_id=model_id,
+                base_url=api_base,
+                api_key=llm_kwargs.get("api_key"),
+                top_p=top_p,
+                seed=seed,
+                provider=llm_kwargs.get("provider"),
+                compaction_state=compaction_state,
             )
-            tokens_after = estimate_tokens(messages, tools)
-            if report:
-                report.record_compaction(
-                    turns + turn_offset, "compact_messages", tokens_before, tokens_after
-                )
-            if verbose:
-                fmt.context_stats("Context after compaction", tokens_after)
+            compaction_levels = [
+                ("compact_messages", "compacting tool results...",
+                 lambda: compact_messages(messages)),
+                ("drop_middle_turns", "dropping low-importance turns...",
+                 lambda: drop_middle_turns(messages, **_llm_summary_kwargs)),
+                ("aggressive_drop", "aggressive compaction (last resort)...",
+                 lambda: aggressive_drop_turns(messages, **_llm_summary_kwargs)),
+            ]
 
-            _llm_args = (
-                api_base,
-                model_id,
-                messages,
-                effective_max_output,
-                temperature,
-                top_p,
-                seed,
-                tools,
-                verbose,
-            )
-            t0 = time.monotonic()
-            try:
-                with (
-                    fmt.llm_spinner(
-                        f"Waiting for LLM (turn {turns}/{max_turns}, retry)"
-                    )
-                    if verbose
-                    else nullcontext()
-                ):
-                    msg, finish_reason = call_llm(*_llm_args, **llm_kwargs)
-            except ContextOverflowError:
-                elapsed = time.monotonic() - t0
-                if report:
-                    report.record_llm_call(
-                        turns + turn_offset,
-                        elapsed,
-                        tokens_after,
-                        "context_overflow",
-                        is_retry=True,
-                        retry_reason="compact_messages",
-                    )
-
+            for level_name, level_desc, compact_fn in compaction_levels:
                 if verbose:
-                    fmt.warning("still too large, dropping older turns...")
+                    fmt.warning(f"context window exceeded, {level_desc}")
                 tokens_before = estimate_tokens(messages, tools)
-                messages[:] = drop_middle_turns(messages)
+                messages[:] = compact_fn()
                 effective_max_output = clamp_output_tokens(
                     messages, tools, context_length, max_output_tokens
                 )
                 tokens_after = estimate_tokens(messages, tools)
                 if report:
                     report.record_compaction(
-                        turns + turn_offset,
-                        "drop_middle_turns",
-                        tokens_before,
-                        tokens_after,
+                        turns + turn_offset, level_name, tokens_before, tokens_after
                     )
                 if verbose:
-                    fmt.context_stats("Context after drop", tokens_after)
+                    fmt.context_stats(f"Context after {level_name}", tokens_after)
 
                 _llm_args = (
-                    api_base,
-                    model_id,
-                    messages,
-                    effective_max_output,
-                    temperature,
-                    top_p,
-                    seed,
-                    tools,
-                    verbose,
+                    api_base, model_id, messages, effective_max_output,
+                    temperature, top_p, seed, tools, verbose,
                 )
                 t0 = time.monotonic()
                 try:
@@ -1709,24 +2133,17 @@ def run_agent_loop(
                     elapsed = time.monotonic() - t0
                     if report:
                         report.record_llm_call(
-                            turns + turn_offset,
-                            elapsed,
-                            tokens_after,
-                            "context_overflow",
-                            is_retry=True,
-                            retry_reason="drop_middle_turns",
+                            turns + turn_offset, elapsed, tokens_after,
+                            "context_overflow", is_retry=True,
+                            retry_reason=level_name,
                         )
-                    raise AgentError("context window exceeded even after compaction")
+                    continue  # try next level
                 except AgentError:
                     elapsed = time.monotonic() - t0
                     if report:
                         report.record_llm_call(
-                            turns + turn_offset,
-                            elapsed,
-                            tokens_after,
-                            "error",
-                            is_retry=True,
-                            retry_reason="drop_middle_turns",
+                            turns + turn_offset, elapsed, tokens_after,
+                            "error", is_retry=True, retry_reason=level_name,
                         )
                     raise
                 else:
@@ -1735,38 +2152,15 @@ def run_agent_loop(
                         fmt.llm_timing(elapsed, finish_reason)
                     if report:
                         report.record_llm_call(
-                            turns + turn_offset,
-                            elapsed,
-                            tokens_after,
-                            finish_reason,
-                            is_retry=True,
-                            retry_reason="drop_middle_turns",
+                            turns + turn_offset, elapsed, tokens_after,
+                            finish_reason, is_retry=True,
+                            retry_reason=level_name,
                         )
-            except AgentError:
-                elapsed = time.monotonic() - t0
-                if report:
-                    report.record_llm_call(
-                        turns + turn_offset,
-                        elapsed,
-                        tokens_after,
-                        "error",
-                        is_retry=True,
-                        retry_reason="compact_messages",
-                    )
-                raise
+                    break  # success
             else:
-                elapsed = time.monotonic() - t0
-                if verbose:
-                    fmt.llm_timing(elapsed, finish_reason)
-                if report:
-                    report.record_llm_call(
-                        turns + turn_offset,
-                        elapsed,
-                        tokens_after,
-                        finish_reason,
-                        is_retry=True,
-                        retry_reason="compact_messages",
-                    )
+                # All compaction levels exhausted
+                raise AgentError("context window exceeded even after compaction")
+
         except AgentError:
             elapsed = time.monotonic() - t0
             if report:
@@ -1934,6 +2328,16 @@ def run_agent_loop(
         if verbose:
             fmt.context_stats(
                 f"Context after turn {turns}", estimate_tokens(messages, tools)
+            )
+
+        # Proactive checkpoint (if enabled)
+        if compaction_state is not None:
+            compaction_state.maybe_checkpoint(
+                messages, call_llm,
+                model_id=model_id, base_url=api_base,
+                api_key=llm_kwargs.get("api_key"),
+                top_p=top_p, seed=seed,
+                provider=llm_kwargs.get("provider"),
             )
 
     # max_turns exhausted — extract last assistant text
@@ -2116,6 +2520,7 @@ def repl_loop(
     llm_kwargs: dict,
     file_tracker: FileAccessTracker | None = None,
     no_history: bool = False,
+    compaction_state: "CompactionState | None" = None,
 ) -> None:
     """Interactive read-eval-print loop."""
     from prompt_toolkit import PromptSession
@@ -2216,6 +2621,7 @@ def repl_loop(
                         verbose=verbose,
                         llm_kwargs=llm_kwargs,
                         file_tracker=file_tracker,
+                        compaction_state=compaction_state,
                     )
                 except KeyboardInterrupt:
                     fmt.warning("interrupted, /init aborted.")
@@ -2257,6 +2663,7 @@ def repl_loop(
                     verbose=verbose,
                     llm_kwargs=llm_kwargs,
                     file_tracker=file_tracker,
+                    compaction_state=compaction_state,
                 )
             except KeyboardInterrupt:
                 fmt.warning("interrupted, continuation aborted.")
@@ -2293,6 +2700,7 @@ def repl_loop(
                 verbose=verbose,
                 llm_kwargs=llm_kwargs,
                 file_tracker=file_tracker,
+                compaction_state=compaction_state,
             )
         except KeyboardInterrupt:
             fmt.warning("interrupted, question aborted.")

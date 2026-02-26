@@ -44,6 +44,7 @@ CONFIG_KEYS: dict[str, type | tuple[type, ...]] = {
     "color": bool,
     "quiet": bool,
     "reviewer": str,
+    "proactive_summaries": bool,
 }
 
 _LIST_OF_STR_KEYS = {
@@ -86,6 +87,7 @@ _ARGPARSE_DEFAULTS: dict[str, Any] = {
     "no_color": False,
     "quiet": False,
     "reviewer": None,
+    "proactive_summaries": False,
 }
 
 
