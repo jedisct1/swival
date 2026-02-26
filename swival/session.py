@@ -134,11 +134,8 @@ class Session:
             self._allowed_dir_paths.append(p)
 
         # Resolve commands
-        allowed_cmd_str = (
-            ",".join(self.allowed_commands) if self.allowed_commands else None
-        )
         self._resolved_commands = resolve_commands(
-            allowed_cmd_str, self.yolo, self.base_dir
+            self.allowed_commands, self.yolo, self.base_dir
         )
 
         # Discover skills

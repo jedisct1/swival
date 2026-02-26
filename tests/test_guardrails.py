@@ -53,6 +53,9 @@ def _base_args(tmp_path, **overrides):
         reviewer=None,
         version=False,
         no_read_guard=False,
+        no_history=True,
+        init_config=False,
+        project=False,
     )
     defaults.update(overrides)
     return types.SimpleNamespace(**defaults)

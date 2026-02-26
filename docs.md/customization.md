@@ -1,5 +1,41 @@
 # Customization
 
+## Configuration Files
+
+Swival supports persistent settings through TOML config files at two levels: a user-global file and a project-local file. Both are optional.
+
+The global config lives at `~/.config/swival/config.toml` (or `$XDG_CONFIG_HOME/swival/config.toml` if you set that variable). The project config is `swival.toml` in the base directory.
+
+When both files exist, project settings override global settings. CLI flags override everything. The full precedence order is:
+
+CLI flags > project config > global config > hardcoded defaults
+
+To generate a starter config with all settings commented out, run one of:
+
+```sh
+swival --init-config            # global config
+swival --init-config --project  # project config in current directory
+```
+
+Settings use the same names as CLI flags. Lists use TOML arrays instead of comma-separated strings.
+
+```toml
+provider = "openrouter"
+model = "qwen/qwen3-235b-a22b"
+max_turns = 250
+allowed_commands = ["ls", "git", "python3"]
+allowed_dirs = ["/opt/zig/lib/std"]
+quiet = false
+```
+
+Relative paths in `allowed_dirs`, `skills_dir`, and `reviewer` resolve against the config file's parent directory, not the working directory. Tilde paths like `~/projects` expand to the home directory.
+
+If a project config contains `api_key` inside a git repository, Swival prints a warning because the key could be committed accidentally. Prefer environment variables for credentials.
+
+The `--system-prompt` and `no_system_prompt` settings are mutually exclusive in config files, just as they are on the command line.
+
+The library API (`Session` class) does not auto-load config files. If you want config file support in library code, call `load_config()` and `config_to_session_kwargs()` explicitly.
+
 ## Project Instruction Files
 
 Swival can load two project-local instruction files from the base directory during startup. `CLAUDE.md` is injected as `<project-instructions>...</project-instructions>`, and `AGENTS.md` is injected as `<agent-instructions>...</agent-instructions>`. If both files exist, Swival loads both in that order.

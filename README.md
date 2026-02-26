@@ -110,8 +110,8 @@ Full documentation is available at [swival.github.io/swival](https://swival.gith
 - [Safety and Sandboxing](docs.md/safety-and-sandboxing.md) -- path resolution,
   symlink protection, command whitelisting, YOLO mode
 - [Skills](docs.md/skills.md) -- creating and using SKILL.md-based agent skills
-- [Customization](docs.md/customization.md) -- project instructions, system prompt
-  overrides, tuning parameters
+- [Customization](docs.md/customization.md) -- config files, project instructions,
+  system prompt overrides, tuning parameters
 - [Providers](docs.md/providers.md) -- LM Studio, HuggingFace, and OpenRouter
   configuration
 - [Reports](docs.md/reports.md) -- JSON reports for benchmarking and evaluation

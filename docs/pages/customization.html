@@ -54,6 +54,27 @@
         </aside>
         <article class="docs-content">
             <h1 id="customization">Customization</h1>
+<h2 id="configuration-files">Configuration Files</h2>
+<p>Swival supports persistent settings through TOML config files at two levels: a user-global file and a project-local file. Both are optional.</p>
+<p>The global config lives at <code>~/.config/swival/config.toml</code> (or <code>$XDG_CONFIG_HOME/swival/config.toml</code> if you set that variable). The project config is <code>swival.toml</code> in the base directory.</p>
+<p>When both files exist, project settings override global settings. CLI flags override everything. The full precedence order is:</p>
+<p>CLI flags &gt; project config &gt; global config &gt; hardcoded defaults</p>
+<p>To generate a starter config with all settings commented out, run one of:</p>
+<pre><code class="language-sh">swival --init-config            # global config
+swival --init-config --project  # project config in current directory
+</code></pre>
+<p>Settings use the same names as CLI flags. Lists use TOML arrays instead of comma-separated strings.</p>
+<pre><code class="language-toml">provider = &quot;openrouter&quot;
+model = &quot;qwen/qwen3-235b-a22b&quot;
+max_turns = 50
+allowed_commands = [&quot;ls&quot;, &quot;git&quot;, &quot;python3&quot;]
+allowed_dirs = [&quot;../shared-lib&quot;]
+quiet = false
+</code></pre>
+<p>Relative paths in <code>allowed_dirs</code>, <code>skills_dir</code>, and <code>reviewer</code> resolve against the config file's parent directory, not the working directory. Tilde paths like <code>~/projects</code> expand to the home directory.</p>
+<p>If a project config contains <code>api_key</code> inside a git repository, Swival prints a warning because the key could be committed accidentally. Prefer environment variables for credentials.</p>
+<p>The <code>--system-prompt</code> and <code>no_system_prompt</code> settings are mutually exclusive in config files, just as they are on the command line.</p>
+<p>The library API (<code>Session</code> class) does not auto-load config files. If you want config file support in library code, call <code>load_config()</code> and <code>config_to_session_kwargs()</code> explicitly.</p>
 <h2 id="project-instruction-files">Project Instruction Files</h2>
 <p>Swival can load two project-local instruction files from the base directory during startup. <code>CLAUDE.md</code> is injected as <code>&lt;project-instructions&gt;...&lt;/project-instructions&gt;</code>, and <code>AGENTS.md</code> is injected as <code>&lt;agent-instructions&gt;...&lt;/agent-instructions&gt;</code>. If both files exist, Swival loads both in that order.</p>
 <p>Each file is capped at 10,000 characters. These instructions are appended to the built-in system prompt, which makes them a practical place to encode house rules such as test commands, coding conventions, and dependency policies.</p>

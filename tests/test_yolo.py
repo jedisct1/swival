@@ -491,9 +491,11 @@ class TestAgentYolo:
         assert args.yolo is True
 
     def test_yolo_flag_default_false(self):
+        from swival.config import _UNSET
+
         parser = build_parser()
         args = parser.parse_args(["test question"])
-        assert args.yolo is False
+        assert args.yolo is _UNSET
 
     def test_yolo_tool_list_includes_run_command(self, tmp_path, monkeypatch):
         """With --yolo and no --allowed-commands, the tools list passed to

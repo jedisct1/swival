@@ -60,6 +60,9 @@ def _base_args(tmp_path, **overrides):
         reviewer=None,
         version=False,
         no_read_guard=False,
+        no_history=True,
+        init_config=False,
+        project=False,
     )
     defaults.update(overrides)
     return types.SimpleNamespace(**defaults)
@@ -230,9 +233,11 @@ class TestQuietFlag:
 
     def test_default_is_verbose(self):
         from swival import agent
+        from swival.config import apply_config_to_args
 
         parser = agent.build_parser()
         args = parser.parse_args(["hello"])
+        apply_config_to_args(args, {})  # resolve sentinels to defaults
         args.verbose = not args.quiet
         assert args.verbose is True
 

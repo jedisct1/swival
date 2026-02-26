@@ -55,6 +55,8 @@ def _base_args(tmp_path, **overrides):
         version=False,
         no_read_guard=False,
         no_history=True,
+        init_config=False,
+        project=False,
     )
     defaults.update(overrides)
     return types.SimpleNamespace(**defaults)
@@ -241,6 +243,9 @@ class TestCLIValidation:
                 version=False,
                 report=None,
                 reviewer="/some/reviewer",
+                base_dir=".",
+                init_config=False,
+                project=False,
             )
             mock_parser.parse_args.return_value = mock_args
             mock_parser.error.side_effect = SystemExit(2)

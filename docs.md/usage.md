@@ -129,4 +129,12 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 
 `--color` forces ANSI color on standard error, and `--no-color` disables ANSI color even on TTY output.
 
+### Configuration Flags
+
+`--init-config` generates a global config file at `~/.config/swival/config.toml` and exits. The file is a fully commented template showing all available settings.
+
+`--init-config --project` generates a project-local config file at `swival.toml` in the current base directory instead.
+
+Neither flag requires a question argument. Both refuse to overwrite an existing config file.
+
 For the full report schema and analysis workflow, see [Reports](reports.md). For the reviewer protocol and examples, see [Reviews](reviews.md).

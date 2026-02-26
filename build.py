@@ -57,7 +57,7 @@ NAV = [
             (
                 "customization",
                 "Customization",
-                "Project instructions, system prompt overrides, tuning parameters",
+                "Config files, project instructions, system prompt overrides, tuning parameters",
             ),
             ("providers", "Providers", "LM Studio, HuggingFace, and OpenRouter configuration"),
             ("reports", "Reports", "JSON reports for benchmarking and evaluation"),

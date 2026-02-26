@@ -453,9 +453,10 @@ class TestNoReadGuardFlag:
         assert args.no_read_guard is True
 
     def test_flag_default_false(self):
-        """Without --no-read-guard, the flag defaults to False."""
+        """Without --no-read-guard, the flag defaults to _UNSET (sentinel)."""
         from swival.agent import build_parser
+        from swival.config import _UNSET
 
         parser = build_parser()
         args = parser.parse_args(["question"])
-        assert args.no_read_guard is False
+        assert args.no_read_guard is _UNSET

@@ -119,6 +119,10 @@
 <p><code>--reviewer EXECUTABLE</code> runs an external reviewer after each answer. This flag is also incompatible with <code>--repl</code>.</p>
 <p><code>--no-history</code> disables writes to <code>.swival/HISTORY.md</code>.</p>
 <p><code>--color</code> forces ANSI color on standard error, and <code>--no-color</code> disables ANSI color even on TTY output.</p>
+<h3 id="configuration-flags">Configuration Flags</h3>
+<p><code>--init-config</code> generates a global config file at <code>~/.config/swival/config.toml</code> and exits. The file is a fully commented template showing all available settings.</p>
+<p><code>--init-config --project</code> generates a project-local config file at <code>swival.toml</code> in the current base directory instead.</p>
+<p>Neither flag requires a question argument. Both refuse to overwrite an existing config file.</p>
 <p>For the full report schema and analysis workflow, see <a href="reports.html">Reports</a>. For the reviewer protocol and examples, see <a href="reviews.html">Reviews</a>.</p>
         </article>
     </div>

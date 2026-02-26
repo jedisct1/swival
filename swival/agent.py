@@ -18,6 +18,7 @@ from importlib import metadata
 import tiktoken
 
 from . import fmt
+from .config import _UNSET
 from .report import AgentError, ConfigError, ReportCollector
 from .thinking import ThinkingState
 from .todo import TodoState
@@ -615,48 +616,48 @@ def build_parser():
     parser.add_argument(
         "--provider",
         choices=["lmstudio", "huggingface", "openrouter"],
-        default="lmstudio",
+        default=_UNSET,
         help="LLM provider: lmstudio (local), huggingface (HF API), openrouter (multi-provider API).",
     )
     parser.add_argument(
         "--api-key",
         type=str,
-        default=None,
+        default=_UNSET,
         help="API key for the provider (overrides env var).",
     )
     parser.add_argument(
         "--base-url",
-        default=None,
+        default=_UNSET,
         help="Server base URL (default: http://127.0.0.1:1234 for lmstudio).",
     )
     parser.add_argument(
         "--max-context-tokens",
         type=int,
-        default=None,
+        default=_UNSET,
         help="Requested context length for the model (may trigger a reload).",
     )
     parser.add_argument(
         "--max-output-tokens",
         type=int,
-        default=32768,
+        default=_UNSET,
         help="Maximum output tokens (default: 32768).",
     )
     parser.add_argument(
         "--temperature",
         type=float,
-        default=None,
+        default=_UNSET,
         help="Sampling temperature (default: provider default).",
     )
     parser.add_argument(
         "--top-p",
         type=float,
-        default=1.0,
+        default=_UNSET,
         help="Top-p (nucleus) sampling (default: 1.0).",
     )
     parser.add_argument(
         "--seed",
         type=int,
-        default=None,
+        default=_UNSET,
         help="Random seed for reproducible outputs (optional, model support varies).",
     )
 
@@ -664,31 +665,33 @@ def build_parser():
     prompt_group.add_argument(
         "--system-prompt",
         type=str,
-        default=None,
+        default=_UNSET,
         help="System prompt to include.",
     )
     prompt_group.add_argument(
         "--no-system-prompt",
         action="store_true",
+        default=_UNSET,
         help="Omit the system message entirely.",
     )
 
     parser.add_argument(
         "--model",
         type=str,
-        default=None,
+        default=_UNSET,
         help="Override auto-discovered model with a specific model identifier.",
     )
     parser.add_argument(
         "-q",
         "--quiet",
         action="store_true",
+        default=_UNSET,
         help="Suppress all diagnostics; only print the final result.",
     )
     parser.add_argument(
         "--max-turns",
         type=int,
-        default=100,
+        default=_UNSET,
         help="Maximum agent loop iterations (default: 100).",
     )
     parser.add_argument(
@@ -700,35 +703,38 @@ def build_parser():
     parser.add_argument(
         "--allowed-commands",
         type=str,
-        default=None,
+        default=_UNSET,
         help='Comma-separated list of allowed command basenames (e.g. "ls,git,python3").',
     )
     parser.add_argument(
         "--no-instructions",
         action="store_true",
+        default=_UNSET,
         help="Don't load CLAUDE.md or AGENTS.md from the base directory.",
     )
     parser.add_argument(
         "--skills-dir",
         action="append",
-        default=[],
+        default=None,
         help="Additional directory to scan for skills (can be repeated).",
     )
     parser.add_argument(
         "--no-skills",
         action="store_true",
+        default=_UNSET,
         help="Don't load or discover any skills.",
     )
     parser.add_argument(
         "--allow-dir",
         type=str,
         action="append",
-        default=[],
+        default=None,
         help="Grant read/write access to an extra directory (repeatable).",
     )
     parser.add_argument(
         "--yolo",
         action="store_true",
+        default=_UNSET,
         help="Disable filesystem sandbox and command whitelist (unrestricted mode).",
     )
     parser.add_argument(
@@ -741,7 +747,7 @@ def build_parser():
     parser.add_argument(
         "--reviewer",
         metavar="EXECUTABLE",
-        default=None,
+        default=_UNSET,
         help="Path to reviewer executable. Called after each answer with base_dir as argument "
         "and answer on stdin. Exit 0=accept, 1=retry with stdout as feedback, 2=reviewer error.",
     )
@@ -750,26 +756,62 @@ def build_parser():
     color_group.add_argument(
         "--color",
         action="store_true",
+        default=_UNSET,
         help="Force ANSI color even when stderr is not a TTY.",
     )
     color_group.add_argument(
         "--no-color",
         action="store_true",
+        default=_UNSET,
         help="Disable ANSI color even when stderr is a TTY.",
     )
 
     parser.add_argument(
         "--no-history",
         action="store_true",
+        default=_UNSET,
         help="Don't write responses to .swival/HISTORY.md",
     )
     parser.add_argument(
         "--no-read-guard",
         action="store_true",
+        default=_UNSET,
         help="Disable read-before-write guard (allow writing files without reading them first).",
+    )
+    parser.add_argument(
+        "--init-config",
+        action="store_true",
+        default=False,
+        help="Generate a config file template and exit.",
+    )
+    parser.add_argument(
+        "--project",
+        action="store_true",
+        default=False,
+        help="With --init-config, write to <base-dir>/swival.toml instead of global config.",
     )
 
     return parser
+
+
+def _handle_init_config(args):
+    """Generate a config file template and write it."""
+    from .config import generate_config, _global_config_dir
+
+    project = getattr(args, "project", False)
+    if project:
+        base_dir = Path(getattr(args, "base_dir", ".")).resolve()
+        dest = base_dir / "swival.toml"
+    else:
+        dest = _global_config_dir() / "config.toml"
+
+    if dest.exists():
+        print(f"Error: {dest} already exists. Remove it first to regenerate.", file=sys.stderr)
+        sys.exit(1)
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(generate_config(project=project), encoding="utf-8")
+    print(f"Created {dest}")
 
 
 def main():
@@ -785,6 +827,23 @@ def main():
         print(version)
         sys.exit(0)
 
+    # Handle --init-config before anything else
+    if getattr(args, "init_config", False):
+        _handle_init_config(args)
+        sys.exit(0)
+
+    # Load config files, apply to args, resolve sentinels to defaults
+    from .config import load_config, apply_config_to_args
+    from .config import ConfigError as _ConfigError
+
+    base_dir = Path(args.base_dir).resolve()
+    try:
+        file_config = load_config(base_dir)
+    except _ConfigError as e:
+        parser.error(str(e))
+    apply_config_to_args(args, file_config)
+
+    # Derived values (after all sentinels are resolved)
     args.verbose = not args.quiet
 
     if not args.repl and args.question is None:
@@ -821,8 +880,14 @@ def main():
                 args, "_resolved_context_length", args.max_context_tokens
             ),
             "yolo": args.yolo,
-            "allowed_commands": sorted(
-                c.strip() for c in (args.allowed_commands or "").split(",") if c.strip()
+            "allowed_commands": (
+                sorted(args.allowed_commands)
+                if isinstance(args.allowed_commands, list)
+                else sorted(
+                    c.strip()
+                    for c in (args.allowed_commands or "").split(",")
+                    if c.strip()
+                )
             ),
             "skills_discovered": sorted(skills_catalog or {}),
             "instructions_loaded": instructions_loaded or [],
@@ -965,7 +1030,7 @@ def resolve_provider(
 
 
 def resolve_commands(
-    allowed_commands: str | None,
+    allowed_commands: str | list[str] | None,
     yolo: bool,
     base_dir: str,
 ) -> dict[str, str]:
@@ -978,11 +1043,12 @@ def resolve_commands(
     if yolo:
         return {}
 
-    allowed_names = (
-        {c.strip() for c in allowed_commands.split(",") if c.strip()}
-        if allowed_commands
-        else set()
-    )
+    if isinstance(allowed_commands, list):
+        allowed_names = {c.strip() for c in allowed_commands if c.strip()}
+    elif allowed_commands:
+        allowed_names = {c.strip() for c in allowed_commands.split(",") if c.strip()}
+    else:
+        allowed_names = set()
     resolved_commands: dict[str, str] = {}
     base_resolved = Path(base_dir).resolve()
     for name in sorted(allowed_names):
