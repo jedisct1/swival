@@ -541,9 +541,16 @@ def discover_model(base_url, verbose):
             instance = entry["loaded_instances"][0]
             context_length = instance.get("config", {}).get("context_length")
             model_key = entry.get("id", entry.get("key"))
+            vision = False
+            try:
+                import litellm
+                vision = litellm.supports_vision(model=f"openai/{model_key}")
+            except Exception:
+                pass
             if verbose:
+                vision_tag = " (vision enabled)" if vision else ""
                 fmt.model_info(
-                    f"Discovered loaded model: {model_key} (context={context_length})"
+                    f"Discovered loaded model: {model_key} (context={context_length}){vision_tag}"
                 )
             return model_key, context_length
 
