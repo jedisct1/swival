@@ -1366,7 +1366,11 @@ def run_agent_loop(
 
         t0 = time.monotonic()
         try:
-            with fmt.llm_spinner(f"Waiting for LLM (turn {turns}/{max_turns})") if verbose else nullcontext():
+            with (
+                fmt.llm_spinner(f"Waiting for LLM (turn {turns}/{max_turns})")
+                if verbose
+                else nullcontext()
+            ):
                 msg, finish_reason = call_llm(*_llm_args, **llm_kwargs)
         except ContextOverflowError:
             elapsed = time.monotonic() - t0
@@ -1403,7 +1407,13 @@ def run_agent_loop(
             )
             t0 = time.monotonic()
             try:
-                with fmt.llm_spinner(f"Waiting for LLM (turn {turns}/{max_turns}, retry)") if verbose else nullcontext():
+                with (
+                    fmt.llm_spinner(
+                        f"Waiting for LLM (turn {turns}/{max_turns}, retry)"
+                    )
+                    if verbose
+                    else nullcontext()
+                ):
                     msg, finish_reason = call_llm(*_llm_args, **llm_kwargs)
             except ContextOverflowError:
                 elapsed = time.monotonic() - t0
@@ -1448,7 +1458,13 @@ def run_agent_loop(
                 )
                 t0 = time.monotonic()
                 try:
-                    with fmt.llm_spinner(f"Waiting for LLM (turn {turns}/{max_turns}, retry)") if verbose else nullcontext():
+                    with (
+                        fmt.llm_spinner(
+                            f"Waiting for LLM (turn {turns}/{max_turns}, retry)"
+                        )
+                        if verbose
+                        else nullcontext()
+                    ):
                         msg, finish_reason = call_llm(*_llm_args, **llm_kwargs)
                 except ContextOverflowError:
                     elapsed = time.monotonic() - t0
