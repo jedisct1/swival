@@ -1995,9 +1995,12 @@ def _run_main(args, report, _write_report, parser):
                 env_extra=reviewer_env,
             )
 
+            if report:
+                report.record_review(review_round, exit_code, review_text)
+
             if exit_code == 0:
                 if args.verbose:
-                    fmt.info("Reviewer accepted the answer")
+                    fmt.review_accepted(review_round)
                 break
             elif exit_code == 1:
                 if review_round >= MAX_REVIEW_ROUNDS:
@@ -2007,7 +2010,7 @@ def _run_main(args, report, _write_report, parser):
                         )
                     break
                 if args.verbose:
-                    fmt.info(f"Reviewer requested changes:\n{review_text[:500]}")
+                    fmt.review_feedback(review_round, review_text)
                 messages.append({"role": "user", "content": review_text})
                 if report:
                     turn_offset = report.max_turn_seen

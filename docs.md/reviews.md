@@ -12,7 +12,7 @@ This pattern works well for automated gates such as tests, linting, format check
 
 Swival invokes the reviewer as `reviewer_executable <base_dir>`. The first positional argument is the absolute base directory. The full assistant answer is written to reviewer standard input.
 
-If the reviewer exits with code `0`, Swival accepts the answer immediately and ends normally, and reviewer standard output is ignored. If the reviewer exits with code `1`, Swival treats reviewer standard output as feedback, appends that feedback as a new user message, resets turn budget for a new pass, and continues the loop. If the reviewer exits with code `2`, Swival treats that as reviewer failure, warns on standard error when diagnostics are enabled, and accepts the current answer unchanged while ignoring reviewer standard output. Any other nonzero exit code is handled the same way as `2`.
+If the reviewer exits with code `0`, Swival accepts the answer immediately and ends normally. If the reviewer exits with code `1`, Swival treats reviewer standard output as feedback, appends that feedback as a new user message, resets turn budget for a new pass, and continues the loop. If the reviewer exits with code `2`, Swival treats that as reviewer failure, warns on standard error when diagnostics are enabled, and accepts the current answer unchanged. Any other nonzero exit code is handled the same way as `2`. Reviewer standard output is captured for all exit codes and recorded in the report timeline when `--report` is active.
 
 Reviewer execution has a 120-second timeout. Timeout or spawn failures are treated as reviewer errors and do not discard the agent's answer.
 
@@ -89,9 +89,10 @@ if [ $judge_exit -eq 1 ] || [ -z "$judge_output" ]; then
 fi
 
 if echo "$judge_output" | grep -qi "VERDICT: ACCEPT"; then
+    echo "$judge_output"
     exit 0
 elif echo "$judge_output" | grep -qi "VERDICT: RETRY"; then
-    echo "$judge_output" | sed '1,/VERDICT: RETRY/d'
+    echo "$judge_output"
     exit 1
 else
     exit 2
@@ -120,11 +121,11 @@ After startup, reviewer failures are non-fatal. Timeout failures, process spawn 
 
 With `--quiet`, reviewer diagnostics are suppressed along with other diagnostic logging. Rejected intermediate answers are not printed to standard output; only the final accepted answer is printed.
 
-With `--report`, review rounds are captured in the timeline and `stats.review_rounds` records how many reviewer invocations occurred. Turn numbers remain cumulative across rounds, so the timeline reads as one continuous run.
+With `--report`, each reviewer invocation is recorded as a `review` event in the timeline with the round number, exit code, and full reviewer output. `stats.review_rounds` records the total number of reviewer invocations. Turn numbers remain cumulative across rounds, so the timeline reads as one continuous run.
 
 ```sh
 jq '.stats.review_rounds' report.json
-jq '.timeline[] | {turn, type}' report.json
+jq '.timeline[] | select(.type == "review")' report.json
 ```
 
 ## Example CI Flow

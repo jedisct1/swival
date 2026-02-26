@@ -678,6 +678,14 @@ class TestReportMode:
         # Reviewer was invoked twice: once returned 1 (retry), once returned 0 (accept)
         assert data["stats"]["review_rounds"] == 2
         assert data["result"]["outcome"] == "success"
+        # Timeline should contain review events
+        review_events = [e for e in data["timeline"] if e["type"] == "review"]
+        assert len(review_events) == 2
+        assert review_events[0]["round"] == 1
+        assert review_events[0]["exit_code"] == 1
+        assert review_events[0]["feedback"] == "fix it\n"
+        assert review_events[1]["round"] == 2
+        assert review_events[1]["exit_code"] == 0
 
     def test_report_review_rounds_zero_without_reviewer(self, tmp_path, monkeypatch):
         """--report without --reviewer → review_rounds is 0."""

@@ -142,6 +142,27 @@ def assistant_text(text: str) -> None:
     _console.print(line)
 
 
+# -- Reviewer feedback -------------------------------------------------------
+
+
+def review_feedback(review_round: int, text: str) -> None:
+    header = Text()
+    header.append(f"  [review round {review_round}] ", style="bold magenta")
+    header.append("Reviewer requested changes:", style="magenta")
+    _console.print(header)
+    for line in text.splitlines():
+        _console.print(Text(f"    {line}", style="magenta"))
+
+
+def review_accepted(review_round: int) -> None:
+    _console.print(
+        Text(
+            f"  \u2713 Reviewer accepted the answer (round {review_round})",
+            style="bold green",
+        )
+    )
+
+
 # -- Diagnostics -------------------------------------------------------------
 
 

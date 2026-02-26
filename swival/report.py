@@ -114,6 +114,16 @@ class ReportCollector:
         self.truncated_responses += 1
         self.events.append({"turn": turn, "type": "truncated_response"})
 
+    def record_review(self, review_round: int, exit_code: int, feedback: str):
+        self.events.append(
+            {
+                "type": "review",
+                "round": review_round,
+                "exit_code": exit_code,
+                "feedback": feedback,
+            }
+        )
+
     def build_report(
         self,
         *,

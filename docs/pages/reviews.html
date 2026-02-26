@@ -60,7 +60,7 @@
 <p>This pattern works well for automated gates such as tests, linting, format checks, schema checks, or LLM-as-a-judge scoring. <code>--reviewer</code> is incompatible with <code>--repl</code>.</p>
 <h2 id="reviewer-protocol">Reviewer Protocol</h2>
 <p>Swival invokes the reviewer as <code>reviewer_executable &lt;base_dir&gt;</code>. The first positional argument is the absolute base directory. The full assistant answer is written to reviewer standard input.</p>
-<p>If the reviewer exits with code <code>0</code>, Swival accepts the answer immediately and ends normally, and reviewer standard output is ignored. If the reviewer exits with code <code>1</code>, Swival treats reviewer standard output as feedback, appends that feedback as a new user message, resets turn budget for a new pass, and continues the loop. If the reviewer exits with code <code>2</code>, Swival treats that as reviewer failure, warns on standard error when diagnostics are enabled, and accepts the current answer unchanged while ignoring reviewer standard output. Any other nonzero exit code is handled the same way as <code>2</code>.</p>
+<p>If the reviewer exits with code <code>0</code>, Swival accepts the answer immediately and ends normally. If the reviewer exits with code <code>1</code>, Swival treats reviewer standard output as feedback, appends that feedback as a new user message, resets turn budget for a new pass, and continues the loop. If the reviewer exits with code <code>2</code>, Swival treats that as reviewer failure, warns on standard error when diagnostics are enabled, and accepts the current answer unchanged. Any other nonzero exit code is handled the same way as <code>2</code>. Reviewer standard output is captured for all exit codes and recorded in the report timeline when <code>--report</code> is active.</p>
 <p>Reviewer execution has a 120-second timeout. Timeout or spawn failures are treated as reviewer errors and do not discard the agent's answer.</p>
 <h2 id="reviewer-environment-variables">Reviewer Environment Variables</h2>
 <p>Swival sets context variables on the reviewer subprocess for each round. <code>SWIVAL_TASK</code> contains the original user task and is always set. <code>SWIVAL_REVIEW_ROUND</code> contains the current review round number and is always set. <code>SWIVAL_MODEL</code> contains the resolved model identifier when available.</p>
@@ -121,9 +121,10 @@ if [ $judge_exit -eq 1 ] || [ -z &quot;$judge_output&quot; ]; then
 fi
 
 if echo &quot;$judge_output&quot; | grep -qi &quot;VERDICT: ACCEPT&quot;; then
+    echo &quot;$judge_output&quot;
     exit 0
 elif echo &quot;$judge_output&quot; | grep -qi &quot;VERDICT: RETRY&quot;; then
-    echo &quot;$judge_output&quot; | sed '1,/VERDICT: RETRY/d'
+    echo &quot;$judge_output&quot;
     exit 1
 else
     exit 2
@@ -140,9 +141,9 @@ fi
 <p>After startup, reviewer failures are non-fatal. Timeout failures, process spawn failures, and crash-style exits all degrade to reviewer error handling, which means the current answer is accepted and returned.</p>
 <h2 id="interaction-with-quiet-and-report">Interaction With <code>--quiet</code> And <code>--report</code></h2>
 <p>With <code>--quiet</code>, reviewer diagnostics are suppressed along with other diagnostic logging. Rejected intermediate answers are not printed to standard output; only the final accepted answer is printed.</p>
-<p>With <code>--report</code>, review rounds are captured in the timeline and <code>stats.review_rounds</code> records how many reviewer invocations occurred. Turn numbers remain cumulative across rounds, so the timeline reads as one continuous run.</p>
+<p>With <code>--report</code>, each reviewer invocation is recorded as a <code>review</code> event in the timeline with the round number, exit code, and full reviewer output. <code>stats.review_rounds</code> records the total number of reviewer invocations. Turn numbers remain cumulative across rounds, so the timeline reads as one continuous run.</p>
 <pre><code class="language-sh">jq '.stats.review_rounds' report.json
-jq '.timeline[] | {turn, type}' report.json
+jq '.timeline[] | select(.type == &quot;review&quot;)' report.json
 </code></pre>
 <h2 id="example-ci-flow">Example CI Flow</h2>
 <p>A simple CI-style invocation can combine command access, reviewer retries, and report capture in one run.</p>
