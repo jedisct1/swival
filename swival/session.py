@@ -53,8 +53,10 @@ class Session:
         allowed_dirs_ro: list[str] | None = None,
         read_guard: bool = True,
         history: bool = True,
+        config_dir: "Path | None" = None,
     ):
         self.base_dir = base_dir
+        self.config_dir = config_dir
         self.provider = provider
         self.model = model
         self.api_key = api_key
@@ -173,6 +175,7 @@ class Session:
             yolo=self.yolo,
             resolved_commands=self._resolved_commands,
             verbose=self.verbose,
+            config_dir=self.config_dir,
         )
 
         # Clean up stale cmd_output files

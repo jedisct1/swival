@@ -10,7 +10,7 @@ import pytest
 from swival.config import (
     _UNSET,
     ConfigError,
-    _global_config_dir,
+    global_config_dir,
     apply_config_to_args,
     config_to_session_kwargs,
     generate_config,
@@ -67,8 +67,12 @@ def _make_args(**overrides):
 
 
 class TestLoadConfig:
-    def test_missing_files_returns_empty(self, tmp_path):
-        assert load_config(tmp_path) == {}
+    def test_missing_files_returns_config_dir_only(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty_xdg"))
+        result = load_config(tmp_path)
+        assert "config_dir" in result
+        # No user-set keys beyond config_dir
+        assert set(result.keys()) == {"config_dir"}
 
     def test_global_only(self, tmp_path, monkeypatch):
         global_dir = tmp_path / "global_cfg"
@@ -509,7 +513,7 @@ class TestInitConfig:
     def test_writes_global_config(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
-        dest = _global_config_dir() / "config.toml"
+        dest = global_config_dir() / "config.toml"
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(generate_config(project=False), encoding="utf-8")
         assert dest.exists()
@@ -569,14 +573,14 @@ class TestGlobalConfigDir:
         from pathlib import Path
 
         monkeypatch.setenv("XDG_CONFIG_HOME", "/custom/xdg")
-        assert _global_config_dir() == Path("/custom/xdg/swival")
+        assert global_config_dir() == Path("/custom/xdg/swival")
 
     def test_default_home(self, monkeypatch):
         from pathlib import Path
 
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
         expected = Path.home() / ".config" / "swival"
-        assert _global_config_dir() == expected
+        assert global_config_dir() == expected
 
 
 # ===========================================================================

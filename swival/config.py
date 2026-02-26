@@ -92,7 +92,7 @@ _ARGPARSE_DEFAULTS: dict[str, Any] = {
 # --- Internal helpers ---
 
 
-def _global_config_dir() -> Path:
+def global_config_dir() -> Path:
     """Return the global config directory, respecting XDG_CONFIG_HOME."""
     xdg = os.environ.get("XDG_CONFIG_HOME")
     if xdg:
@@ -215,9 +215,13 @@ def load_config(base_dir: Path) -> dict:
     actually set in config files are included (no defaults injected).
     Validates types and mutual exclusions. Resolves relative paths
     against each config file's parent directory.
+
+    The returned dict also contains ``config_dir`` (a ``Path``) pointing
+    to the resolved global config directory (e.g. ``~/.config/swival``).
     """
     # Global config
-    global_path = _global_config_dir() / "config.toml"
+    config_dir = global_config_dir()
+    global_path = config_dir / "config.toml"
     global_config = _load_single(global_path, str(global_path))
     if global_config:
         _resolve_paths(global_config, global_path.parent)
@@ -238,6 +242,9 @@ def load_config(base_dir: Path) -> dict:
             "'system_prompt' and 'no_system_prompt' are mutually exclusive "
             "(set across global and project config)"
         )
+
+    # Attach resolved config directory so callers don't re-derive it.
+    merged["config_dir"] = config_dir
 
     return merged
 

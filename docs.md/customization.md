@@ -37,11 +37,24 @@ The `--system-prompt` and `no_system_prompt` settings are mutually exclusive in 
 
 The library API (`Session` class) does not auto-load config files. If you want config file support in library code, call `load_config()` and `config_to_session_kwargs()` explicitly.
 
-## Project Instruction Files
+## Instruction Files
 
-Swival can load two project-local instruction files from the base directory during startup. `CLAUDE.md` is injected as `<project-instructions>...</project-instructions>`, and `AGENTS.md` is injected as `<agent-instructions>...</agent-instructions>`. If both files exist, Swival loads both in that order.
+Swival loads instruction files during startup and appends them to the system prompt. `CLAUDE.md` provides project rules (`<project-instructions>`), while `AGENTS.md` provides agent conventions (`<agent-instructions>`).
 
-Each file is capped at 10,000 characters. These instructions are appended to the built-in system prompt, which makes them a practical place to encode house rules such as test commands, coding conventions, and dependency policies.
+### CLAUDE.md
+
+Loaded from the project base directory only. Capped at 10,000 characters.
+
+### AGENTS.md
+
+Loaded from two locations, in this order:
+
+1. **User-level**: `~/.config/swival/AGENTS.md` (or `$XDG_CONFIG_HOME/swival/AGENTS.md`)
+2. **Project-level**: `<base-dir>/AGENTS.md`
+
+Both are optional. When both exist, user-level content is prepended to project-level content inside a single `<agent-instructions>` block. The two levels share a combined 10,000 character budget. User-level content is read first and gets priority — a large user-level file will truncate or entirely displace the project-level file. Size your user-level file accordingly if you rely on project-level instructions.
+
+The user-level file is a good place for personal conventions that apply across all projects (preferred language style, test habits, tool preferences). The project-level file is for project-specific rules.
 
 ```markdown
 This is a Go project using Chi for routing. Tests use testify.
@@ -49,13 +62,15 @@ Always run `go test ./...` after making changes.
 Don't add dependencies without asking.
 ```
 
-Use `--no-instructions` when you do not want Swival to read either file.
+### Disabling instructions
+
+Use `--no-instructions` to skip all instruction files (both CLAUDE.md and AGENTS.md at all levels).
 
 ```sh
 swival --no-instructions "task"
 ```
 
-If you set `--system-prompt`, project instruction files are also skipped because you are providing the full prompt text directly.
+If you set `--system-prompt`, instruction files are also skipped because you are providing the full prompt text directly.
 
 ## System Prompt Control
 

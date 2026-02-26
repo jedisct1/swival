@@ -303,53 +303,131 @@ def drop_middle_turns(messages: list) -> list:
     return result
 
 
+MIN_OUTPUT_TOKENS = 16  # Minimum accepted by most LLM APIs
+
+
 def clamp_output_tokens(
     messages: list,
     tools: list | None,
     context_length: int | None,
     requested_max_output: int,
 ) -> int:
-    """Reduce max_output_tokens if prompt + output would exceed context."""
+    """Reduce max_output_tokens if prompt + output would exceed context.
+
+    Raises ContextOverflowError if there isn't enough room for even the
+    minimum output budget — the caller should compact and retry.
+    """
     if context_length is None:
         return requested_max_output
     prompt_tokens = estimate_tokens(messages, tools)
     available = context_length - prompt_tokens
-    if available < 1:
-        return 1  # Nearly full; use minimal budget and let overflow retry handle it
+    if available < MIN_OUTPUT_TOKENS:
+        raise ContextOverflowError(
+            f"Prompt (~{prompt_tokens} tokens) leaves only {available} tokens "
+            f"for output (need >= {MIN_OUTPUT_TOKENS}); context_length={context_length}"
+        )
     return min(requested_max_output, available)
 
 
-def load_instructions(base_dir: str, verbose: bool) -> tuple[str, list[str]]:
-    """Load CLAUDE.md and/or AGENTS.md from base_dir, if present.
+def load_instructions(
+    base_dir: str,
+    config_dir: "Path | None" = None,
+    *,
+    verbose: bool = False,
+) -> tuple[str, list[str]]:
+    """Load CLAUDE.md and/or AGENTS.md, if present.
+
+    User-level AGENTS.md (from *config_dir*) is prepended to the
+    project-level AGENTS.md (from *base_dir*) inside a single
+    ``<agent-instructions>`` block.  Both share a combined budget of
+    ``MAX_INSTRUCTIONS_CHARS``.
 
     Returns (combined_text, filenames_loaded) where combined_text is
     XML-tagged sections (or "" if none found) and filenames_loaded lists
-    which files were actually loaded (e.g. ["CLAUDE.md", "AGENTS.md"]).
+    the absolute paths of files that were actually loaded.
     """
-    sections = []
+    sections: list[str] = []
     loaded: list[str] = []
-    for filename, tag in [
-        ("CLAUDE.md", "project-instructions"),
-        ("AGENTS.md", "agent-instructions"),
-    ]:
-        path = Path(base_dir).resolve() / filename
-        if not path.is_file():
-            continue
+
+    # --- CLAUDE.md (project-level only) ---
+    claude_path = Path(base_dir).resolve() / "CLAUDE.md"
+    if claude_path.is_file():
         try:
-            file_size = path.stat().st_size
-            with path.open(encoding="utf-8", errors="replace") as f:
+            file_size = claude_path.stat().st_size
+            with claude_path.open(encoding="utf-8", errors="replace") as f:
                 content = f.read(MAX_INSTRUCTIONS_CHARS + 1)
         except OSError:
-            continue
-        if len(content) > MAX_INSTRUCTIONS_CHARS:
-            content = (
-                content[:MAX_INSTRUCTIONS_CHARS]
-                + f"\n[truncated — {filename} exceeds {MAX_INSTRUCTIONS_CHARS} character limit]"
+            content = None
+        else:
+            if len(content) > MAX_INSTRUCTIONS_CHARS:
+                content = (
+                    content[:MAX_INSTRUCTIONS_CHARS]
+                    + f"\n[truncated — CLAUDE.md exceeds {MAX_INSTRUCTIONS_CHARS} character limit]"
+                )
+            if verbose:
+                fmt.info(
+                    f"Loaded CLAUDE.md ({file_size} bytes) from {claude_path.parent}"
+                )
+            sections.append(
+                f"<project-instructions>\n{content}\n</project-instructions>"
             )
-        if verbose:
-            fmt.info(f"Loaded {filename} ({file_size} bytes) from {path.parent}")
-        sections.append(f"<{tag}>\n{content}\n</{tag}>")
-        loaded.append(filename)
+            loaded.append(str(claude_path))
+
+    # --- AGENTS.md (user-level + project-level, shared budget) ---
+    agent_parts: list[str] = []
+    budget = MAX_INSTRUCTIONS_CHARS
+
+    # User-level AGENTS.md
+    if config_dir is not None:
+        user_agents_path = Path(config_dir) / "AGENTS.md"
+        if user_agents_path.is_file():
+            try:
+                file_size = user_agents_path.stat().st_size
+                with user_agents_path.open(encoding="utf-8", errors="replace") as f:
+                    user_content = f.read(budget + 1)
+            except OSError:
+                if verbose:
+                    fmt.info(f"Skipped unreadable {user_agents_path}")
+            else:
+                if len(user_content) > budget:
+                    user_content = (
+                        user_content[:budget]
+                        + f"\n[truncated — user AGENTS.md exceeds {budget} character limit]"
+                    )
+                budget -= len(user_content)
+                if verbose:
+                    fmt.info(
+                        f"Loaded AGENTS.md ({file_size} bytes) from {user_agents_path.parent}"
+                    )
+                agent_parts.append(f"<!-- user: {user_agents_path} -->\n{user_content}")
+                loaded.append(str(user_agents_path))
+
+    # Project-level AGENTS.md
+    proj_agents_path = Path(base_dir).resolve() / "AGENTS.md"
+    if proj_agents_path.is_file() and budget > 0:
+        try:
+            file_size = proj_agents_path.stat().st_size
+            with proj_agents_path.open(encoding="utf-8", errors="replace") as f:
+                proj_content = f.read(budget + 1)
+        except OSError:
+            pass
+        else:
+            if len(proj_content) > budget:
+                proj_content = (
+                    proj_content[:budget]
+                    + f"\n[truncated — AGENTS.md exceeds {budget} character limit]"
+                )
+            if verbose:
+                fmt.info(
+                    f"Loaded AGENTS.md ({file_size} bytes) from {proj_agents_path.parent}"
+                )
+            agent_parts.append(f"<!-- project: {proj_agents_path} -->\n{proj_content}")
+            loaded.append(str(proj_agents_path))
+
+    if agent_parts:
+        inner = "\n\n".join(agent_parts)
+        sections.append(f"<agent-instructions>\n{inner}\n</agent-instructions>")
+
     return "\n\n".join(sections), loaded
 
 
@@ -855,14 +933,14 @@ def build_parser():
 
 def _handle_init_config(args):
     """Generate a config file template and write it."""
-    from .config import generate_config, _global_config_dir
+    from .config import generate_config, global_config_dir
 
     project = getattr(args, "project", False)
     if project:
         base_dir = Path(getattr(args, "base_dir", ".")).resolve()
         dest = base_dir / "swival.toml"
     else:
-        dest = _global_config_dir() / "config.toml"
+        dest = global_config_dir() / "config.toml"
 
     if dest.exists():
         print(
@@ -1173,6 +1251,7 @@ def build_system_prompt(
     yolo: bool,
     resolved_commands: dict[str, str],
     verbose: bool,
+    config_dir: "Path | None" = None,
 ) -> tuple[str | None, list[str]]:
     """Assemble full system prompt with instructions, date, skills.
 
@@ -1188,7 +1267,11 @@ def build_system_prompt(
     else:
         system_content = DEFAULT_SYSTEM_PROMPT_FILE.read_text(encoding="utf-8")
         if not no_instructions:
-            instructions, instructions_loaded = load_instructions(base_dir, verbose)
+            instructions, instructions_loaded = load_instructions(
+                base_dir,
+                config_dir,
+                verbose=verbose,
+            )
             if instructions:
                 system_content += "\n\n" + instructions
 
@@ -1284,6 +1367,7 @@ def _run_main(args, report, _write_report, parser):
         yolo=yolo,
         resolved_commands=resolved_commands,
         verbose=args.verbose,
+        config_dir=getattr(args, "config_dir", None),
     )
     messages = []
     if system_content is not None:
@@ -1491,28 +1575,28 @@ def run_agent_loop(
         if verbose:
             fmt.turn_header(turns, max_turns, token_est)
 
-        effective_max_output = clamp_output_tokens(
-            messages, tools, context_length, max_output_tokens
-        )
-        if effective_max_output != max_output_tokens and verbose:
-            fmt.info(
-                f"Output tokens clamped: {max_output_tokens} -> {effective_max_output} (context_length={context_length}, prompt=~{token_est})"
-            )
-
-        _llm_args = (
-            api_base,
-            model_id,
-            messages,
-            effective_max_output,
-            temperature,
-            top_p,
-            seed,
-            tools,
-            verbose,
-        )
-
         t0 = time.monotonic()
         try:
+            effective_max_output = clamp_output_tokens(
+                messages, tools, context_length, max_output_tokens
+            )
+            if effective_max_output != max_output_tokens and verbose:
+                fmt.info(
+                    f"Output tokens clamped: {max_output_tokens} -> {effective_max_output} (context_length={context_length}, prompt=~{token_est})"
+                )
+
+            _llm_args = (
+                api_base,
+                model_id,
+                messages,
+                effective_max_output,
+                temperature,
+                top_p,
+                seed,
+                tools,
+                verbose,
+            )
+
             with (
                 fmt.llm_spinner(f"Waiting for LLM (turn {turns}/{max_turns})")
                 if verbose

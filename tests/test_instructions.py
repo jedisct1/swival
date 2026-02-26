@@ -26,7 +26,7 @@ class TestFileDiscovery:
         assert "Use tabs not spaces." in result
         assert "</project-instructions>" in result
         assert "agent-instructions" not in result
-        assert loaded == ["CLAUDE.md"]
+        assert loaded == [str(tmp_path / "CLAUDE.md")]
 
     def test_agent_md_only(self, tmp_path):
         (tmp_path / "AGENTS.md").write_text("Be concise.", encoding="utf-8")
@@ -35,7 +35,7 @@ class TestFileDiscovery:
         assert "Be concise." in result
         assert "</agent-instructions>" in result
         assert "project-instructions" not in result
-        assert loaded == ["AGENTS.md"]
+        assert loaded == [str(tmp_path / "AGENTS.md")]
 
     def test_both_files(self, tmp_path):
         (tmp_path / "CLAUDE.md").write_text("Project rules.", encoding="utf-8")
@@ -47,7 +47,7 @@ class TestFileDiscovery:
         pi = result.index("<project-instructions>")
         ai = result.index("<agent-instructions>")
         assert pi < ai
-        assert loaded == ["CLAUDE.md", "AGENTS.md"]
+        assert loaded == [str(tmp_path / "CLAUDE.md"), str(tmp_path / "AGENTS.md")]
 
 
 # ---------------------------------------------------------------------------
@@ -298,3 +298,190 @@ class TestIntegration:
         # But CLAUDE.md instructions are NOT appended
         assert "project-instructions" not in system_msg["content"]
         assert "Should not appear" not in system_msg["content"]
+
+
+# ---------------------------------------------------------------------------
+# User-level AGENTS.md
+# ---------------------------------------------------------------------------
+
+
+class TestUserLevelAgentsMd:
+    """Tests for loading user-level AGENTS.md from the config directory."""
+
+    def test_user_level_only(self, tmp_path):
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "AGENTS.md").write_text("User rules.", encoding="utf-8")
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        result, loaded = load_instructions(str(project_dir), config_dir, verbose=False)
+        assert "<agent-instructions>" in result
+        assert "User rules." in result
+        assert f"<!-- user: {config_dir / 'AGENTS.md'} -->" in result
+        assert "<!-- project:" not in result
+        assert loaded == [str(config_dir / "AGENTS.md")]
+
+    def test_project_level_only_no_config_dir(self, tmp_path):
+        """No config_dir passed — behaves like before."""
+        (tmp_path / "AGENTS.md").write_text("Project rules.", encoding="utf-8")
+        result, loaded = load_instructions(str(tmp_path), verbose=False)
+        assert "<agent-instructions>" in result
+        assert "Project rules." in result
+        assert f"<!-- project: {tmp_path / 'AGENTS.md'} -->" in result
+        assert loaded == [str(tmp_path / "AGENTS.md")]
+
+    def test_both_levels(self, tmp_path):
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "AGENTS.md").write_text("User conventions.", encoding="utf-8")
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / "AGENTS.md").write_text("Project conventions.", encoding="utf-8")
+
+        result, loaded = load_instructions(str(project_dir), config_dir, verbose=False)
+        assert "<agent-instructions>" in result
+        assert "User conventions." in result
+        assert "Project conventions." in result
+        # User-level comes first
+        assert result.index("User conventions.") < result.index("Project conventions.")
+        assert loaded == [
+            str(config_dir / "AGENTS.md"),
+            str(project_dir / "AGENTS.md"),
+        ]
+
+    def test_neither_level(self, tmp_path):
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        result, loaded = load_instructions(str(project_dir), config_dir, verbose=False)
+        assert result == ""
+        assert loaded == []
+
+    def test_user_level_exhausts_budget(self, tmp_path):
+        """A large user-level file starves project-level content."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "AGENTS.md").write_text(
+            "U" * (MAX_INSTRUCTIONS_CHARS + 100), encoding="utf-8"
+        )
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / "AGENTS.md").write_text("Project content.", encoding="utf-8")
+
+        result, loaded = load_instructions(str(project_dir), config_dir, verbose=False)
+        assert "truncated" in result
+        # Project content is not present (budget exhausted)
+        assert "Project content." not in result
+        assert loaded == [str(config_dir / "AGENTS.md")]
+
+    def test_combined_exceeds_budget(self, tmp_path):
+        """User-level fits, project-level gets truncated."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        user_content = "U" * (MAX_INSTRUCTIONS_CHARS - 100)
+        (config_dir / "AGENTS.md").write_text(user_content, encoding="utf-8")
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / "AGENTS.md").write_text("P" * 500, encoding="utf-8")
+
+        result, loaded = load_instructions(str(project_dir), config_dir, verbose=False)
+        # Both loaded, but project is truncated
+        assert len(loaded) == 2
+        assert "truncated" in result
+        # User content intact
+        assert user_content in result
+
+    def test_no_instructions_skips_both(self, tmp_path):
+        """build_system_prompt with no_instructions=True skips everything."""
+        from swival.agent import build_system_prompt
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "AGENTS.md").write_text("User rules.", encoding="utf-8")
+        (tmp_path / "AGENTS.md").write_text("Project rules.", encoding="utf-8")
+
+        content, loaded = build_system_prompt(
+            base_dir=str(tmp_path),
+            system_prompt=None,
+            no_system_prompt=False,
+            no_instructions=True,
+            skills_catalog={},
+            yolo=False,
+            resolved_commands={},
+            verbose=False,
+            config_dir=config_dir,
+        )
+        assert "agent-instructions" not in content
+        assert loaded == []
+
+    def test_unreadable_user_agents_skipped(self, tmp_path, monkeypatch):
+        """Unreadable user-level AGENTS.md is skipped; project-level still loads."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "AGENTS.md").write_text("unreachable", encoding="utf-8")
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / "AGENTS.md").write_text("Project ok.", encoding="utf-8")
+
+        original_open = open
+
+        def bad_open(self, *args, **kwargs):
+            if str(self).startswith(str(config_dir)) and self.name == "AGENTS.md":
+                raise PermissionError("Permission denied")
+            return original_open(self, *args, **kwargs)
+
+        monkeypatch.setattr("pathlib.Path.open", bad_open)
+        result, loaded = load_instructions(str(project_dir), config_dir, verbose=False)
+        assert "Project ok." in result
+        assert loaded == [str(project_dir / "AGENTS.md")]
+
+    def test_empty_user_agents_no_empty_block(self, tmp_path):
+        """An empty user-level file doesn't produce an empty comment block."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "AGENTS.md").write_text("", encoding="utf-8")
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / "AGENTS.md").write_text("Project only.", encoding="utf-8")
+
+        result, loaded = load_instructions(str(project_dir), config_dir, verbose=False)
+        assert "Project only." in result
+        # Both files loaded (empty is still loaded, consistent with CLAUDE.md behavior)
+        assert len(loaded) == 2
+
+    def test_boundary_formatting(self, tmp_path):
+        """Exact boundary text: provenance comments, separator, and wrapping."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "AGENTS.md").write_text("User stuff.", encoding="utf-8")
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / "AGENTS.md").write_text("Project stuff.", encoding="utf-8")
+
+        result, loaded = load_instructions(str(project_dir), config_dir, verbose=False)
+
+        user_path = config_dir / "AGENTS.md"
+        proj_path = project_dir / "AGENTS.md"
+
+        # Exact provenance comments
+        assert f"<!-- user: {user_path} -->" in result
+        assert f"<!-- project: {proj_path} -->" in result
+
+        # Separated by exactly one blank line (\n\n)
+        user_block = f"<!-- user: {user_path} -->\nUser stuff."
+        proj_block = f"<!-- project: {proj_path} -->\nProject stuff."
+        assert f"{user_block}\n\n{proj_block}" in result
+
+        # Wrapped in a single agent-instructions tag
+        assert result.count("<agent-instructions>") == 1
+        assert result.count("</agent-instructions>") == 1

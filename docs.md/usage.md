@@ -111,7 +111,7 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 
 `--no-system-prompt` omits the system message entirely.
 
-`--no-instructions` prevents loading `CLAUDE.md` and `AGENTS.md` from the base directory.
+`--no-instructions` prevents loading `CLAUDE.md` and `AGENTS.md` from both the base directory and the user config directory.
 
 `--system-prompt` and `--no-system-prompt` are mutually exclusive.
 

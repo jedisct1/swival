@@ -64,7 +64,7 @@ The JSON below is from a verified local run using `--model dummy-model --max-tur
 
 ### `settings`
 
-`temperature` stores the sampling temperature or `null` when omitted. `top_p` stores nucleus sampling. `seed` stores the random seed or `null`. `max_turns` and `max_output_tokens` store turn and output-token limits. `context_length` stores effective context length after provider resolution. `yolo` indicates unrestricted mode. `allowed_commands` records the configured command whitelist as sorted basenames. `skills_discovered` records skill names discovered at startup. `instructions_loaded` records loaded instruction files such as `CLAUDE.md` and `AGENTS.md`.
+`temperature` stores the sampling temperature or `null` when omitted. `top_p` stores nucleus sampling. `seed` stores the random seed or `null`. `max_turns` and `max_output_tokens` store turn and output-token limits. `context_length` stores effective context length after provider resolution. `yolo` indicates unrestricted mode. `allowed_commands` records the configured command whitelist as sorted basenames. `skills_discovered` records skill names discovered at startup. `instructions_loaded` records loaded instruction files as absolute paths (e.g. the user-level `AGENTS.md` from `~/.config/swival/` and the project-level files).
 
 ### `result`
 

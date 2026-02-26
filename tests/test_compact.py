@@ -283,11 +283,11 @@ class TestClampOutputTokens:
         result = clamp_output_tokens([_user("hi")], None, None, 16384)
         assert result == 16384
 
-    def test_available_less_than_one(self):
-        # When prompt is larger than context, return 1 (minimal budget)
+    def test_available_below_minimum_raises(self):
+        # When prompt leaves fewer than MIN_OUTPUT_TOKENS, raise ContextOverflowError
         msgs = [_user("x " * 10000)]
-        result = clamp_output_tokens(msgs, None, 10, 16384)
-        assert result == 1
+        with pytest.raises(ContextOverflowError):
+            clamp_output_tokens(msgs, None, 10, 16384)
 
     def test_no_clamping_when_room(self):
         msgs = [_user("hi")]
