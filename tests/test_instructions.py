@@ -1,4 +1,4 @@
-"""Tests for CLAUDE.md / AGENT.md instruction loading."""
+"""Tests for CLAUDE.md / AGENTS.md instruction loading."""
 
 import sys
 import types
@@ -29,17 +29,17 @@ class TestFileDiscovery:
         assert loaded == ["CLAUDE.md"]
 
     def test_agent_md_only(self, tmp_path):
-        (tmp_path / "AGENT.md").write_text("Be concise.", encoding="utf-8")
+        (tmp_path / "AGENTS.md").write_text("Be concise.", encoding="utf-8")
         result, loaded = load_instructions(str(tmp_path), verbose=False)
         assert "<agent-instructions>" in result
         assert "Be concise." in result
         assert "</agent-instructions>" in result
         assert "project-instructions" not in result
-        assert loaded == ["AGENT.md"]
+        assert loaded == ["AGENTS.md"]
 
     def test_both_files(self, tmp_path):
         (tmp_path / "CLAUDE.md").write_text("Project rules.", encoding="utf-8")
-        (tmp_path / "AGENT.md").write_text("Agent rules.", encoding="utf-8")
+        (tmp_path / "AGENTS.md").write_text("Agent rules.", encoding="utf-8")
         result, loaded = load_instructions(str(tmp_path), verbose=False)
         assert "<project-instructions>" in result
         assert "<agent-instructions>" in result
@@ -47,7 +47,7 @@ class TestFileDiscovery:
         pi = result.index("<project-instructions>")
         ai = result.index("<agent-instructions>")
         assert pi < ai
-        assert loaded == ["CLAUDE.md", "AGENT.md"]
+        assert loaded == ["CLAUDE.md", "AGENTS.md"]
 
 
 # ---------------------------------------------------------------------------

@@ -64,7 +64,7 @@ The JSON below is from a verified local run using `--model dummy-model --max-tur
 
 ### `settings`
 
-`temperature` stores the sampling temperature or `null` when omitted. `top_p` stores nucleus sampling. `seed` stores the random seed or `null`. `max_turns` and `max_output_tokens` store turn and output-token limits. `context_length` stores effective context length after provider resolution. `yolo` indicates unrestricted mode. `allowed_commands` records the configured command whitelist as sorted basenames. `skills_discovered` records skill names discovered at startup. `instructions_loaded` records loaded instruction files such as `CLAUDE.md` and `AGENT.md`.
+`temperature` stores the sampling temperature or `null` when omitted. `top_p` stores nucleus sampling. `seed` stores the random seed or `null`. `max_turns` and `max_output_tokens` store turn and output-token limits. `context_length` stores effective context length after provider resolution. `yolo` indicates unrestricted mode. `allowed_commands` records the configured command whitelist as sorted basenames. `skills_discovered` records skill names discovered at startup. `instructions_loaded` records loaded instruction files such as `CLAUDE.md` and `AGENTS.md`.
 
 ### `result`
 
@@ -128,7 +128,7 @@ You can evaluate instruction variants like this:
 
 ```sh
 for variant in minimal detailed strict; do
-    cp "agent-variants/${variant}.md" project/AGENT.md
+    cp "agent-variants/${variant}.md" project/AGENTS.md
     swival "Add input validation to the CLI" \
         --base-dir project \
         --report "results/agent-${variant}.json"

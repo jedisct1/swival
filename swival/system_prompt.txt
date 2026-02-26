@@ -42,7 +42,7 @@ All file paths are relative to the working directory. Paths outside the working 
 - Don't over-engineer. Solve the problem at hand without unnecessary abstraction.
 - Handle errors at system boundaries. Trust internal code paths.
 - Don't leave dead code, debug prints, or TODOs.
-- If instructions in AGENT.md or CLAUDE.md are provably wrong, fix them.
+- If instructions in AGENTS.md or CLAUDE.md are provably wrong, fix them.
 
 # Editing files
 

@@ -273,9 +273,9 @@ class TestLoadInstructionsTuple:
 
     def test_both_files(self, tmp_path):
         (tmp_path / "CLAUDE.md").write_text("a")
-        (tmp_path / "AGENT.md").write_text("b")
+        (tmp_path / "AGENTS.md").write_text("b")
         text, loaded = agent.load_instructions(str(tmp_path), verbose=False)
-        assert loaded == ["CLAUDE.md", "AGENT.md"]
+        assert loaded == ["CLAUDE.md", "AGENTS.md"]
 
 
 # ---------------------------------------------------------------------------

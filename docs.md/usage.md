@@ -59,7 +59,7 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 
 `/continue` restarts the agent loop for the existing conversation without adding a new user message.
 
-`/init` runs a three-pass workflow that scans your project and generates an `AGENT.md` file.
+`/init` runs a three-pass workflow that scans your project and generates an `AGENTS.md` file.
 
 `/exit` and `/quit` leave the REPL. Pressing `Ctrl-D` exits as well.
 
@@ -107,7 +107,7 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 
 `--no-system-prompt` omits the system message entirely.
 
-`--no-instructions` prevents loading `CLAUDE.md` and `AGENT.md` from the base directory.
+`--no-instructions` prevents loading `CLAUDE.md` and `AGENTS.md` from the base directory.
 
 `--system-prompt` and `--no-system-prompt` are mutually exclusive.
 

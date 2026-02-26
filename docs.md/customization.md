@@ -2,7 +2,7 @@
 
 ## Project Instruction Files
 
-Swival can load two project-local instruction files from the base directory during startup. `CLAUDE.md` is injected as `<project-instructions>...</project-instructions>`, and `AGENT.md` is injected as `<agent-instructions>...</agent-instructions>`. If both files exist, Swival loads both in that order.
+Swival can load two project-local instruction files from the base directory during startup. `CLAUDE.md` is injected as `<project-instructions>...</project-instructions>`, and `AGENTS.md` is injected as `<agent-instructions>...</agent-instructions>`. If both files exist, Swival loads both in that order.
 
 Each file is capped at 10,000 characters. These instructions are appended to the built-in system prompt, which makes them a practical place to encode house rules such as test commands, coding conventions, and dependency policies.
 

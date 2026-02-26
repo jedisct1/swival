@@ -60,7 +60,7 @@ INIT_ENRICH_PROMPT = (
 )
 
 INIT_WRITE_PROMPT = (
-    "Write the findings to AGENT.md as a concise bulleted list. "
+    "Write the findings to AGENTS.md as a concise bulleted list. "
     "Two sentences maximum per item. "
     "The file is injected into every future agent context, so brevity is essential."
 )
@@ -282,17 +282,17 @@ def clamp_output_tokens(
 
 
 def load_instructions(base_dir: str, verbose: bool) -> tuple[str, list[str]]:
-    """Load CLAUDE.md and/or AGENT.md from base_dir, if present.
+    """Load CLAUDE.md and/or AGENTS.md from base_dir, if present.
 
     Returns (combined_text, filenames_loaded) where combined_text is
     XML-tagged sections (or "" if none found) and filenames_loaded lists
-    which files were actually loaded (e.g. ["CLAUDE.md", "AGENT.md"]).
+    which files were actually loaded (e.g. ["CLAUDE.md", "AGENTS.md"]).
     """
     sections = []
     loaded: list[str] = []
     for filename, tag in [
         ("CLAUDE.md", "project-instructions"),
-        ("AGENT.md", "agent-instructions"),
+        ("AGENTS.md", "agent-instructions"),
     ]:
         path = Path(base_dir).resolve() / filename
         if not path.is_file():
@@ -706,7 +706,7 @@ def build_parser():
     parser.add_argument(
         "--no-instructions",
         action="store_true",
-        help="Don't load CLAUDE.md or AGENT.md from the base directory.",
+        help="Don't load CLAUDE.md or AGENTS.md from the base directory.",
     )
     parser.add_argument(
         "--skills-dir",
@@ -1725,7 +1725,7 @@ def _repl_help() -> None:
         "  /add-dir <path>    Grant read+write access to a directory\n"
         "  /extend [N]        Double max turns, or set to N\n"
         "  /continue          Reset turn counter and continue the agent loop\n"
-        "  /init              Generate AGENT.md for the current project\n"
+        "  /init              Generate AGENTS.md for the current project\n"
         "  /exit, /quit       Exit the REPL"
     )
 
