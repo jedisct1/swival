@@ -321,7 +321,7 @@ class TestReplClearResetsTracker:
         tracker.record_write("/some/new.txt")
 
         messages = [{"role": "system", "content": "sys"}]
-        ts = ThinkingState(verbose=False, notes_dir=str(tmp_path))
+        ts = ThinkingState(verbose=False)
         _repl_clear(messages, ts, file_tracker=tracker)
 
         assert len(tracker.read_files) == 0
@@ -330,7 +330,7 @@ class TestReplClearResetsTracker:
     def test_clear_with_none_tracker(self, tmp_path):
         """Passing file_tracker=None to _repl_clear should not error."""
         messages = [{"role": "system", "content": "sys"}]
-        ts = ThinkingState(verbose=False, notes_dir=str(tmp_path))
+        ts = ThinkingState(verbose=False)
         _repl_clear(messages, ts, file_tracker=None)  # should not raise
 
     def test_clear_then_write_blocked(self, tmp_path):
@@ -343,7 +343,7 @@ class TestReplClearResetsTracker:
 
         # /clear
         messages = [{"role": "system", "content": "sys"}]
-        ts = ThinkingState(verbose=False, notes_dir=str(tmp_path))
+        ts = ThinkingState(verbose=False)
         _repl_clear(messages, ts, file_tracker=tracker)
 
         # Write should now be blocked

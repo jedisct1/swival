@@ -185,9 +185,7 @@ class Session:
     def _make_per_run_state(self) -> dict:
         """Create fresh per-run state: thinking, tracker, skill roots, messages."""
         return {
-            "thinking_state": ThinkingState(
-                verbose=self.verbose, notes_dir=self.base_dir
-            ),
+            "thinking_state": ThinkingState(verbose=self.verbose),
             "todo_state": TodoState(notes_dir=self.base_dir, verbose=self.verbose),
             "file_tracker": FileAccessTracker() if self.read_guard else None,
             "skill_read_roots": [],

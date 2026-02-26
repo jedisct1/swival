@@ -575,7 +575,9 @@ def _user_messages(messages):
         role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
         if role == "user":
             content = (
-                msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", "")
+                msg.get("content")
+                if isinstance(msg, dict)
+                else getattr(msg, "content", "")
             )
             out.append(content)
     return out
@@ -631,8 +633,12 @@ class TestTodoReminder:
         # The reminder should be injected as a user message containing "Reminder:"
         # Check the snapshot seen by turn 5 (the final answer turn)
         all_user_msgs = _user_messages(snapshots[-1])
-        reminder_msgs = [m for m in all_user_msgs if "Reminder:" in m and "todo" in m.lower()]
-        assert len(reminder_msgs) == 1, f"Expected 1 reminder, got {len(reminder_msgs)}: {reminder_msgs}"
+        reminder_msgs = [
+            m for m in all_user_msgs if "Reminder:" in m and "todo" in m.lower()
+        ]
+        assert len(reminder_msgs) == 1, (
+            f"Expected 1 reminder, got {len(reminder_msgs)}: {reminder_msgs}"
+        )
         assert "Implement feature X" in reminder_msgs[0]
 
     def test_no_reminder_when_all_done(self, tmp_path, monkeypatch):
@@ -686,7 +692,9 @@ class TestTodoReminder:
         agent.main()
 
         all_user_msgs = _user_messages(snapshots[-1])
-        reminder_msgs = [m for m in all_user_msgs if "Reminder:" in m and "todo" in m.lower()]
+        reminder_msgs = [
+            m for m in all_user_msgs if "Reminder:" in m and "todo" in m.lower()
+        ]
         assert len(reminder_msgs) == 0, f"Expected no reminders, got: {reminder_msgs}"
 
     def test_no_reminder_within_interval(self, tmp_path, monkeypatch):
@@ -732,7 +740,9 @@ class TestTodoReminder:
         agent.main()
 
         all_user_msgs = _user_messages(snapshots[-1])
-        reminder_msgs = [m for m in all_user_msgs if "Reminder:" in m and "todo" in m.lower()]
+        reminder_msgs = [
+            m for m in all_user_msgs if "Reminder:" in m and "todo" in m.lower()
+        ]
         assert len(reminder_msgs) == 0, f"Expected no reminders, got: {reminder_msgs}"
 
     def test_reminder_resets_interval(self, tmp_path, monkeypatch):
@@ -779,6 +789,10 @@ class TestTodoReminder:
         agent.main()
 
         all_user_msgs = _user_messages(snapshots[-1])
-        reminder_msgs = [m for m in all_user_msgs if "Reminder:" in m and "todo" in m.lower()]
+        reminder_msgs = [
+            m for m in all_user_msgs if "Reminder:" in m and "todo" in m.lower()
+        ]
         # Should have exactly 1 reminder (at turn 4), not 2
-        assert len(reminder_msgs) == 1, f"Expected 1 reminder, got {len(reminder_msgs)}: {reminder_msgs}"
+        assert len(reminder_msgs) == 1, (
+            f"Expected 1 reminder, got {len(reminder_msgs)}: {reminder_msgs}"
+        )

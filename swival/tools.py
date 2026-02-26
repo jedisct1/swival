@@ -262,15 +262,6 @@ TOOLS = [
                         "minLength": 1,
                         "maxLength": 50,
                     },
-                    "note": {
-                        "type": "string",
-                        "description": (
-                            "Optional. A concise summary to persist to disk for later retrieval. "
-                            "Use this to save key findings, decisions, or context you'll need "
-                            "after older messages are compacted. "
-                            "Saved to .swival/notes.md — retrieve with read_file."
-                        ),
-                    },
                 },
                 "required": ["thought"],
             },

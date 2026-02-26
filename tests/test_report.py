@@ -212,7 +212,7 @@ class TestHandleToolCallTuple:
         tc.id = "tc1"
         tc.function.name = "read_file"
         tc.function.arguments = json.dumps({"file_path": "test.txt"})
-        ts = ThinkingState(verbose=False, notes_dir=str(tmp_path))
+        ts = ThinkingState(verbose=False)
 
         msg, meta = agent.handle_tool_call(tc, str(tmp_path), ts, verbose=False)
         assert msg["role"] == "tool"
@@ -230,7 +230,7 @@ class TestHandleToolCallTuple:
         tc.id = "tc2"
         tc.function.name = "read_file"
         tc.function.arguments = json.dumps({"file_path": "nonexistent.txt"})
-        ts = ThinkingState(verbose=False, notes_dir=str(tmp_path))
+        ts = ThinkingState(verbose=False)
 
         msg, meta = agent.handle_tool_call(tc, str(tmp_path), ts, verbose=False)
         assert msg["content"].startswith("error:")
@@ -244,7 +244,7 @@ class TestHandleToolCallTuple:
         tc.id = "tc3"
         tc.function.name = "read_file"
         tc.function.arguments = "not valid json"
-        ts = ThinkingState(verbose=False, notes_dir=str(tmp_path))
+        ts = ThinkingState(verbose=False)
 
         msg, meta = agent.handle_tool_call(tc, str(tmp_path), ts, verbose=False)
         assert msg["content"].startswith("error:")

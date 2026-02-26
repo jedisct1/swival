@@ -85,8 +85,13 @@ class TodoState:
         if any(self._task_key(i.text) == task_key for i in self.items):
             if self.verbose:
                 remaining = sum(1 for i in self.items if not i.done)
-                fmt.todo_update("add", f"Already listed: {task[:80]} ({remaining} remaining)")
-            return self._response("add", note=f"'{task}' already in list — not added. Continue with your next action.")
+                fmt.todo_update(
+                    "add", f"Already listed: {task[:80]} ({remaining} remaining)"
+                )
+            return self._response(
+                "add",
+                note=f"'{task}' already in list — not added. Continue with your next action.",
+            )
         if len(self.items) >= MAX_ITEMS:
             return f"error: todo list full ({MAX_ITEMS} items max)"
         self.items.append(TodoItem(text=task))

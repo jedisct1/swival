@@ -19,7 +19,7 @@ import tiktoken
 
 from . import fmt
 from .report import AgentError, ConfigError, ReportCollector
-from .thinking import ThinkingState, _safe_notes_path
+from .thinking import ThinkingState
 from .todo import TodoState
 from .tracker import FileAccessTracker
 from .tools import (
@@ -44,7 +44,7 @@ INIT_PROMPT = (
     "unusual choices that you didn't know about, are hard to guess and are unlikely "
     "to change in the future. Be concise and not redundant. Start by listing files "
     "and use the todo tool to schedule which ones to review. Then read them one by "
-    "one, using the think tool to take notes about each file's conventions."
+    "one, using the think tool to reason about each file's conventions."
 )
 
 INIT_ENRICH_PROMPT = (
@@ -1153,7 +1153,7 @@ def _run_main(args, report, _write_report, parser):
 
     atexit.register(cleanup_old_cmd_outputs, base_dir)
 
-    thinking_state = ThinkingState(verbose=args.verbose, notes_dir=base_dir)
+    thinking_state = ThinkingState(verbose=args.verbose)
     todo_state = TodoState(notes_dir=base_dir, verbose=args.verbose)
     file_tracker = (
         None if getattr(args, "no_read_guard", False) else FileAccessTracker()
@@ -1742,16 +1742,7 @@ def _repl_clear(
     # Fully reset ThinkingState
     thinking_state.history.clear()
     thinking_state.branches.clear()
-    thinking_state.note_count = 0
     thinking_state.think_calls = 0
-    thinking_state.note_attempts = 0
-    thinking_state.note_saves = 0
-    if thinking_state.notes_dir is not None:
-        try:
-            notes_path = _safe_notes_path(thinking_state.notes_dir)
-            notes_path.unlink(missing_ok=True)
-        except ValueError:
-            pass  # symlink escape — don't touch it
 
     if file_tracker is not None:
         file_tracker.reset()

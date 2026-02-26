@@ -78,10 +78,6 @@ conclusions when new information surfaces. It supports revisions (correcting a
 specific earlier thought) and branches (exploring alternative approaches in
 parallel).
 
-The think tool also has a persistent notes feature: the agent can save concise
-summaries to `.swival/notes.md` during long sessions. When older conversation
-turns get compacted to save context, these notes survive and can be re-read.
-
 ## Task tracking
 
 A task list for tracking work items during a session. The agent adds items as it

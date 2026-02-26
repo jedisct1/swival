@@ -68,7 +68,7 @@ def _loop_kwargs(tmp_path, **overrides):
         seed=None,
         context_length=None,
         base_dir=str(tmp_path),
-        thinking_state=ThinkingState(verbose=False, notes_dir=str(tmp_path)),
+        thinking_state=ThinkingState(verbose=False),
         resolved_commands={},
         skills_catalog={},
         skill_read_roots=[],
@@ -432,62 +432,24 @@ class TestClearCommand:
             {"role": "assistant", "content": "a1"},
             _user("q2"),
         ]
-        ts = ThinkingState(verbose=False, notes_dir=str(tmp_path))
+        ts = ThinkingState(verbose=False)
         _repl_clear(messages, ts)
         assert len(messages) == 1
         assert messages[0]["role"] == "system"
 
     def test_clear_resets_thinking_state(self, tmp_path):
-        """After /clear, ThinkingState history/branches/note_count are reset."""
-        ts = ThinkingState(verbose=False, notes_dir=str(tmp_path))
+        """After /clear, ThinkingState history/branches are reset."""
+        ts = ThinkingState(verbose=False)
         from swival.thinking import ThoughtEntry
 
         ts.history.append(ThoughtEntry("t", 1, 1, False))
         ts.branches["b1"] = [ThoughtEntry("t", 1, 1, False)]
-        ts.note_count = 5
 
         messages = [_sys("system"), _user("q1")]
         _repl_clear(messages, ts)
 
         assert ts.history == []
         assert ts.branches == {}
-        assert ts.note_count == 0
-
-    def test_clear_deletes_notes_file(self, tmp_path):
-        """After /clear, the persisted notes file is deleted."""
-        swival_dir = tmp_path / ".swival"
-        swival_dir.mkdir()
-        notes_file = swival_dir / "notes.md"
-        notes_file.write_text("some notes")
-
-        ts = ThinkingState(verbose=False, notes_dir=str(tmp_path))
-        messages = [_sys("system")]
-        _repl_clear(messages, ts)
-
-        assert not notes_file.exists()
-
-    def test_clear_skips_symlink_escape(self, tmp_path):
-        """If .swival is a symlink outside notes_dir, /clear does NOT delete target."""
-        outside = tmp_path / "outside"
-        outside.mkdir()
-        target_notes = outside / "notes.md"
-        target_notes.write_text("precious data")
-
-        # Make .swival a symlink pointing outside tmp_path/inner
-        inner = tmp_path / "inner"
-        inner.mkdir()
-        symlink = inner / ".swival"
-        symlink.symlink_to(outside)
-
-        # Create ThinkingState with a safe dir first, then swap notes_dir
-        # to the compromised dir (ThinkingState.__init__ validates eagerly)
-        ts = ThinkingState(verbose=False, notes_dir=None)
-        ts.notes_dir = str(inner)
-        messages = [_sys("system")]
-        _repl_clear(messages, ts)
-
-        # The target file should NOT have been deleted
-        assert target_notes.exists()
 
     def test_clear_in_repl(self, tmp_path):
         """Full integration: /clear in REPL resets messages between questions."""

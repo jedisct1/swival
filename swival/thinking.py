@@ -3,7 +3,6 @@
 import json
 import re
 from dataclasses import dataclass
-from pathlib import Path
 
 from . import fmt
 
@@ -24,42 +23,16 @@ MAX_THOUGHT_LENGTH = 10000
 MAX_HISTORY = 200
 MAX_BRANCHES = 20
 MAX_BRANCH_ID_LENGTH = 50
-MAX_NOTES = 50
-MAX_NOTE_LENGTH = 5000
-
-
-def _safe_notes_path(notes_dir: str) -> Path:
-    """Build the notes file path and verify it resolves inside notes_dir.
-
-    Prevents symlink-based escapes (e.g. .swival -> /etc).
-    """
-    base = Path(notes_dir).resolve()
-    notes_path = (Path(notes_dir) / ".swival" / "notes.md").resolve()
-    if not notes_path.is_relative_to(base):
-        raise ValueError(f"notes path {notes_path} escapes base directory {base}")
-    return notes_path
 
 
 class ThinkingState:
-    def __init__(self, verbose: bool = False, notes_dir: str | None = None):
+    def __init__(self, verbose: bool = False):
         self.history: list[ThoughtEntry] = []
         self.branches: dict[str, list[ThoughtEntry]] = {}
         self.verbose = verbose
-        self.notes_dir = notes_dir
-        self.note_count = 0
 
         # Usage counters (unconditional, not gated on verbose)
         self.think_calls = 0
-        self.note_attempts = 0
-        self.note_saves = 0
-
-        # Session isolation: delete any stale notes file from a prior run.
-        if notes_dir is not None:
-            notes_path = _safe_notes_path(notes_dir)
-            try:
-                notes_path.unlink()
-            except FileNotFoundError:
-                pass  # No stale file — fine.
 
     def process(self, args: dict) -> str:
         """Validate and record a thinking step. Returns a JSON summary or error string."""
@@ -158,71 +131,13 @@ class ThinkingState:
             "history_length": len(self.history),
         }
 
-        # Handle persistent note
-        note_text = args.get("note", "").strip()
-        if note_text:
-            self._handle_note(note_text, entry, response)
-
         return json.dumps(response)
-
-    def _handle_note(self, note_text: str, entry: ThoughtEntry, response: dict) -> None:
-        """Persist a note to disk and update the response dict."""
-        self.note_attempts += 1
-
-        if self.notes_dir is None:
-            response["note_saved"] = False
-            response["note_error"] = "no_notes_dir"
-            return
-
-        if self.note_count >= MAX_NOTES:
-            response["note_saved"] = False
-            response["note_error"] = "cap_exceeded"
-            return
-
-        if len(note_text) > MAX_NOTE_LENGTH:
-            note_text = note_text[:MAX_NOTE_LENGTH]
-
-        try:
-            notes_path = _safe_notes_path(self.notes_dir)
-        except ValueError:
-            response["note_saved"] = False
-            response["note_error"] = "write_failed"
-            return
-
-        self.note_count += 1
-
-        # Build header
-        header = f"## Note {self.note_count} (thought {entry.thought_number}"
-        if entry.branch_id is not None:
-            header += f", branch: {entry.branch_id}"
-        header += ")"
-
-        try:
-            notes_path.parent.mkdir(parents=True, exist_ok=True)
-            with notes_path.open("a", encoding="utf-8") as f:
-                f.write(f"{header}\n{note_text}\n\n")
-        except (OSError, UnicodeEncodeError):
-            self.note_count -= 1
-            response["note_saved"] = False
-            response["note_error"] = "write_failed"
-            return
-
-        self.note_saves += 1
-        response["note_saved"] = True
-        response["notes_file"] = ".swival/notes.md"
 
     def summary_line(self) -> str | None:
         """Return a one-line usage summary, or None if think was never called."""
         if self.think_calls == 0:
             return None
-        parts = [
-            f"think: {self.think_calls} call{'s' if self.think_calls != 1 else ''}"
-        ]
-        if self.note_saves:
-            parts.append(
-                f"{self.note_saves} note{'s' if self.note_saves != 1 else ''} saved"
-            )
-        return ", ".join(parts)
+        return f"think: {self.think_calls} call{'s' if self.think_calls != 1 else ''}"
 
     def _log(self, entry: ThoughtEntry) -> None:
         """Write a formatted log line to stderr."""
