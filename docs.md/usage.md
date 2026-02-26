@@ -68,7 +68,7 @@ swival --repl "Look at the project structure and tell me what this does"
 - `/extend` -- double the current max turns limit
 - `/extend <N>` -- set max turns to a specific number
 - `/continue` -- reset the turn counter and continue the agent loop
-- `/init` -- generate a ZOK.md file describing the project's conventions
+- `/init` -- generate a AGENT.md file describing the project's conventions
 - `/exit` or `/quit` -- exit (Ctrl-D works too)
 
 The REPL uses `prompt-toolkit`, so you get command history, history search, and

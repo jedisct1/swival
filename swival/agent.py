@@ -37,18 +37,21 @@ _encoder = tiktoken.get_encoding("cl100k_base")
 MAX_HISTORY_SIZE = 500 * 1024  # 500KB
 
 INIT_PROMPT = (
-    "Create or update the markdown file called ZOK.md describing the conventions "
+    "Create or update the markdown file called AGENT.md describing the conventions "
     "(style, doc, tools) used by this project. Only list unusual choices that you "
     "didn't know about, are hard to guess and are unlikely to change in the future. "
-    "Be concise and not redundant. Use the think tool (with notes) to organize your "
-    "findings before writing."
+    "Be concise and not redundant. Start by listing files, then read a representative "
+    "sample of the source files. After reading each file, use the think tool to take "
+    "notes about its conventions. Once you have enough notes, create or update "
+    "the file AGENT.md with your findings."
 )
 
 INIT_ENRICH_PROMPT = (
-    "Now read back the ZOK.md you just wrote and the project source files again. "
-    "Enrich ZOK.md with anything you missed in the first pass — patterns, edge cases, "
-    "implicit conventions, or non-obvious architectural decisions. Remove anything "
-    "that turned out to be wrong or redundant. Keep it concise."
+    "Now read back the AGENT.md you created and the project source files again. "
+    "Create or update the file AGENT.md to enrich it with anything you missed in the "
+    "first pass — patterns, edge cases, implicit conventions, or non-obvious "
+    "architectural decisions. Remove anything that turned out to be wrong or redundant. "
+    "Keep it concise."
 )
 
 _CONTEXT_OVERFLOW_RE = re.compile(
@@ -1650,7 +1653,7 @@ def _repl_help() -> None:
         "  /add-dir <path>    Grant read+write access to a directory\n"
         "  /extend [N]        Double max turns, or set to N\n"
         "  /continue          Reset turn counter and continue the agent loop\n"
-        "  /init              Generate ZOK.md for the current project\n"
+        "  /init              Generate AGENT.md for the current project\n"
         "  /exit, /quit       Exit the REPL"
     )
 
@@ -1829,7 +1832,7 @@ def repl_loop(
         elif cmd == "/init":
             if cmd_arg:
                 fmt.warning(f"/init takes no arguments, ignoring {cmd_arg!r}")
-            # Two-pass init: first create ZOK.md, then enrich it
+            # Two-pass init: first create AGENT.md, then enrich it
             for _pass, prompt in enumerate(
                 (INIT_PROMPT, INIT_ENRICH_PROMPT), 1
             ):
