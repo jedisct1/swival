@@ -2051,7 +2051,9 @@ def _run_main(args, report, _write_report, parser):
         if answer is not None:
             print(answer)
         if exhausted and args.verbose:
-            fmt.warning("max turns reached for initial question. Use /continue to resume.")
+            fmt.warning(
+                "max turns reached for initial question. Use /continue to resume."
+            )
 
     repl_loop(messages, tools, **loop_kwargs, no_history=no_history)
 
@@ -2200,7 +2202,7 @@ def run_agent_loop(
                 try:
                     with (
                         fmt.llm_spinner(
-                            f"Waiting for LLM (turn {turns}/{max_turns}, retry)"
+                            f"Waiting for LLM (turn {turns}/{max_turns}, retry after compaction)"
                         )
                         if verbose
                         else nullcontext()
@@ -2763,7 +2765,9 @@ def repl_loop(
             if answer is not None:
                 print(answer)
             if exhausted and verbose:
-                fmt.warning("max turns reached for this question. Use /continue to resume.")
+                fmt.warning(
+                    "max turns reached for this question. Use /continue to resume."
+                )
             continue
 
         messages.append({"role": "user", "content": line})
