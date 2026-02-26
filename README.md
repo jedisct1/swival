@@ -2,7 +2,7 @@
 
 # Swival
 
-A coding agent for open models. [Documentation](https://swival.github.io/swival/)
+A coding agent for any model. [Documentation](https://swival.github.io/swival/)
 
 Swival connects to [LM Studio](https://lmstudio.ai/),
 [HuggingFace Inference API](https://huggingface.co/inference-api), or
