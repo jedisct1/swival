@@ -36,6 +36,13 @@ _encoder = tiktoken.get_encoding("cl100k_base")
 
 MAX_HISTORY_SIZE = 500 * 1024  # 500KB
 
+INIT_PROMPT = (
+    "Create or update the markdown file called ZOK.md describing the conventions "
+    "(style, doc, tools) used by this project. Only list unusual choices that you "
+    "didn't know about, are hard to guess and are unlikely to change in the future. "
+    "Be concise and not redundant."
+)
+
 _CONTEXT_OVERFLOW_RE = re.compile(
     r"context.{0,10}(length|window|limit)"
     r"|maximum.{0,10}(context|token)"
@@ -1550,6 +1557,7 @@ def _repl_help() -> None:
         "  /add-dir <path>    Grant read+write access to a directory\n"
         "  /extend [N]        Double max turns, or set to N\n"
         "  /continue          Reset turn counter and continue the agent loop\n"
+        "  /init              Generate ZOK.md for the current project\n"
         "  /exit, /quit       Exit the REPL"
     )
 
@@ -1725,6 +1733,10 @@ def repl_loop(
         elif cmd == "/extend":
             _repl_extend(cmd_arg, turn_state)
             continue
+        elif cmd == "/init":
+            if cmd_arg:
+                fmt.warning(f"/init takes no arguments, ignoring {cmd_arg!r}")
+            line = INIT_PROMPT
         elif cmd == "/continue":
             fmt.info("continuing agent loop...")
             try:

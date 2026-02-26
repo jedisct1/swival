@@ -10,6 +10,7 @@ from swival.agent import (
     run_agent_loop,
     repl_loop,
     ContextOverflowError,
+    INIT_PROMPT,
     _repl_help,
     _repl_clear,
     _repl_add_dir,
@@ -392,6 +393,7 @@ class TestHelpCommand:
         assert "/compact" in captured.err
         assert "/add-dir" in captured.err
         assert "/continue" in captured.err
+        assert "/init" in captured.err
         assert "/exit" in captured.err
 
     def test_help_in_repl(self, tmp_path):
@@ -876,6 +878,67 @@ class TestContinueCommand:
 
         # First call: max_turns=5, /continue after /extend 20: max_turns=20
         assert call_kwargs == [5, 20]
+
+
+# ---------------------------------------------------------------------------
+# /init command
+# ---------------------------------------------------------------------------
+
+
+class TestInitCommand:
+    def _mock_session(self, inputs):
+        mock_session = MagicMock()
+        side = []
+        for v in inputs:
+            if v is EOFError:
+                side.append(EOFError())
+            elif v is KeyboardInterrupt:
+                side.append(KeyboardInterrupt())
+            else:
+                side.append(v)
+        mock_session.prompt.side_effect = side
+        return mock_session
+
+    def test_init_sends_prompt(self, tmp_path):
+        """/init appends INIT_PROMPT as a user message and calls the agent loop."""
+        messages = [_sys("system")]
+
+        call_messages = []
+
+        def fake_run(msgs, tools, **kwargs):
+            call_messages.append(list(msgs))
+            return ("done", False)
+
+        inputs = ["/init", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run) as mock_loop,
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        assert mock_loop.call_count == 1
+        assert call_messages[0][1]["content"] == INIT_PROMPT
+
+    def test_init_ignores_args_with_warning(self, tmp_path, capsys):
+        """/init foo warns about the argument but still runs."""
+        messages = [_sys("system")]
+
+        inputs = ["/init foo", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch(
+                "swival.agent.run_agent_loop", return_value=("done", False)
+            ) as mock_loop,
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        assert mock_loop.call_count == 1
+        captured = capsys.readouterr()
+        assert "/init takes no arguments" in captured.err
 
 
 class TestUnknownSlashCommand:
