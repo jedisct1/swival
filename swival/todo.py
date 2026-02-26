@@ -79,10 +79,16 @@ class TodoState:
         return f"error: unhandled action {action!r}"
 
     def _add(self, task: str) -> str:
-        if len(self.items) >= MAX_ITEMS:
-            return f"error: todo list full ({MAX_ITEMS} items max)"
         if len(task) > MAX_ITEM_TEXT:
             return f"error: task text exceeds {MAX_ITEM_TEXT} character limit, please shorten it"
+        task_key = self._task_key(task)
+        if any(self._task_key(i.text) == task_key for i in self.items):
+            if self.verbose:
+                remaining = sum(1 for i in self.items if not i.done)
+                fmt.todo_update("add", f"Already listed: {task[:80]} ({remaining} remaining)")
+            return self._response("add")
+        if len(self.items) >= MAX_ITEMS:
+            return f"error: todo list full ({MAX_ITEMS} items max)"
         self.items.append(TodoItem(text=task))
         self.add_count += 1
         self._save()
@@ -123,20 +129,20 @@ class TodoState:
         candidates = (
             self.items if include_done else [i for i in self.items if not i.done]
         )
-        lower = task.lower()
+        lower = self._task_key(task)
 
         # 1. Exact match (case-insensitive)
-        exact = [i for i in candidates if i.text.lower() == lower]
+        exact = [i for i in candidates if self._task_key(i.text) == lower]
         if len(exact) == 1:
             return exact[0]
 
         # 2. Prefix match
-        prefix = [i for i in candidates if i.text.lower().startswith(lower)]
+        prefix = [i for i in candidates if self._task_key(i.text).startswith(lower)]
         if len(prefix) == 1:
             return prefix[0]
 
         # 3. Substring match
-        sub = [i for i in candidates if lower in i.text.lower()]
+        sub = [i for i in candidates if lower in self._task_key(i.text)]
         if len(sub) == 1:
             return sub[0]
 
@@ -147,6 +153,10 @@ class TodoState:
         ambiguous = exact or prefix or sub
         items_str = "; ".join(f"'{i.text}'" for i in ambiguous[:5])
         return f"error: '{task}' matches multiple items — be more specific: {items_str}"
+
+    @staticmethod
+    def _task_key(task: str) -> str:
+        return task.casefold()
 
     def _response(self, action: str) -> str:
         items = [{"task": i.text, "done": i.done} for i in self.items]

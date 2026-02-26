@@ -82,6 +82,25 @@ The think tool also has a persistent notes feature: the agent can save concise
 summaries to `.swival/notes.md` during long sessions. When older conversation
 turns get compacted to save context, these notes survive and can be re-read.
 
+## Task tracking
+
+A task list for tracking work items during a session. The agent adds items as it
+discovers work, marks them done as it progresses, and reviews outstanding items
+to decide what to do next. Designed to work reliably even on small models.
+
+The todo list persists to `.swival/todo.md` as markdown checkboxes and survives
+context compaction -- the agent can re-read it with `read_file` even after older
+conversation turns get truncated. Items are matched by text with progressive
+fuzzy matching (exact first, then prefix, then substring), so the agent doesn't
+need to recall exact wording.
+
+Actions: `add` (create new item), `done` (mark as completed -- no-op if already
+done), `remove` (delete entirely, works on done items too), `clear` (wipe all
+items), `list` (see current state). Every action returns the full current list so
+the agent always has a fresh view.
+
+Limits: 50 items max, 500 characters per item.
+
 ## Response history
 
 Every final answer the agent produces is appended to `.swival/HISTORY.md` with a

@@ -292,7 +292,7 @@ TOOLS = [
                         "type": "string",
                         "enum": ["add", "done", "remove", "clear", "list"],
                         "description": (
-                            "add: Add a new task. "
+                            "add: Add a new task (duplicate tasks are ignored). "
                             "done: Mark a task as completed (no-op if already done). "
                             "remove: Remove a task entirely. "
                             "clear: Remove all tasks and start fresh. "

@@ -85,8 +85,9 @@ can change it.
 
 **Structured thinking for any model.** The built-in think tool gives any model
 (including local ones) multi-step reasoning with revisions, branches, and
-persistent notes that survive context compaction. It's not locked to a specific
-provider.
+persistent notes that survive context compaction. A companion todo tool lets the
+agent track work items as a persistent checklist, so it doesn't lose track of
+multi-step plans even when context gets compacted.
 
 **Built for benchmarking.** Pass `--report report.json` and Swival writes a
 machine-readable evaluation report with per-call LLM timing, tool
@@ -105,7 +106,7 @@ Full documentation is available at [swival.github.io/swival](https://swival.gith
 - [Usage](docs.md/usage.md) -- one-shot mode, REPL mode, CLI flags, piping,
   exit codes
 - [Tools](docs.md/tools.md) -- what the agent can do: file ops, search, editing,
-  web fetching, thinking, command execution
+  web fetching, thinking, task tracking, command execution
 - [Safety and Sandboxing](docs.md/safety-and-sandboxing.md) -- path resolution,
   symlink protection, command whitelisting, YOLO mode
 - [Skills](docs.md/skills.md) -- creating and using SKILL.md-based agent skills

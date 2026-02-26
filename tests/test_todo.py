@@ -29,11 +29,20 @@ class TestAdd:
         assert result["total"] == 2
         assert result["remaining"] == 2
 
-    def test_add_allows_duplicates(self):
+    def test_add_deduplicates_exact_match(self):
         state = TodoState()
         state.process({"action": "add", "task": "Same task"})
         result = json.loads(state.process({"action": "add", "task": "Same task"}))
-        assert result["total"] == 2
+        assert result["total"] == 1
+        assert result["remaining"] == 1
+        assert state.add_count == 1
+
+    def test_add_deduplicates_case_insensitive(self):
+        state = TodoState()
+        state.process({"action": "add", "task": "Fix login bug"})
+        result = json.loads(state.process({"action": "add", "task": "fix login bug"}))
+        assert result["total"] == 1
+        assert result["items"] == [{"task": "Fix login bug", "done": False}]
 
     def test_add_without_task(self):
         state = TodoState()
