@@ -117,9 +117,10 @@ class TestReadFileTail:
         assert "16: line16" in result2
 
     def test_tail_ignores_offset(self, tmp_path):
-        """tail=5, offset=1 still returns the last 5 lines."""
+        """tail=5 returns the last 5 lines even when offset is set."""
         self._make_file(tmp_path, 10)
-        result = _read_file("data.txt", str(tmp_path), tail=5, offset=1)
+        # offset=7 would normally start at line 7, but tail takes precedence
+        result = _read_file("data.txt", str(tmp_path), tail=5, offset=7)
         assert "6: line6" in result
         assert "10: line10" in result
         assert "5: line5" not in result
@@ -171,6 +172,17 @@ class TestReadFileTail:
         self._make_file(tmp_path, 10)
         result = dispatch(
             "read_file", {"file_path": "data.txt", "tail": 3}, str(tmp_path)
+        )
+        assert "8: line8" in result
+        assert "10: line10" in result
+
+    def test_dispatch_tail_ignores_offset(self, tmp_path):
+        """dispatch('read_file') with tail set should ignore a stray offset."""
+        self._make_file(tmp_path, 10)
+        result = dispatch(
+            "read_file",
+            {"file_path": "data.txt", "tail": 3, "offset": 1000},
+            str(tmp_path),
         )
         assert "8: line8" in result
         assert "10: line10" in result

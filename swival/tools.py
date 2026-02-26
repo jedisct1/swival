@@ -1602,6 +1602,7 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
                 tail = int(tail)
             except (ValueError, TypeError):
                 return "error: tail must be an integer"
+            offset = 1  # tail takes precedence; ignore any offset the model sent
         return _read_file(
             file_path=args["file_path"],
             base_dir=base_dir,
