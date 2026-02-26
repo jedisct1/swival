@@ -1241,7 +1241,7 @@ def _run_main(args, report, _write_report, parser):
 
     # Resolve --add-dir paths
     allowed_dirs: list[Path] = []
-    for d in args.add_dir:
+    for d in getattr(args, "add_dir", []):
         p = Path(d).expanduser().resolve()
         if not p.is_dir():
             raise AgentError(f"--add-dir path is not a directory: {d}")
@@ -1251,7 +1251,7 @@ def _run_main(args, report, _write_report, parser):
 
     # Resolve --add-dir-ro paths
     allowed_dirs_ro: list[Path] = []
-    for d in args.add_dir_ro:
+    for d in getattr(args, "add_dir_ro", []):
         p = Path(d).expanduser().resolve()
         if not p.is_dir():
             raise AgentError(f"--add-dir-ro path is not a directory: {d}")
