@@ -63,9 +63,10 @@ of which prompt is used.
 swival --temperature 0.3 --top-p 0.9 "task"
 ```
 
-The default temperature is 0.55, which gives a good balance between creativity
-and consistency for coding tasks. Lower values make the agent more deterministic;
-higher values make it more creative (and more likely to hallucinate).
+When not specified, temperature defaults to the provider's default. A value
+around 0.5 gives a good balance between creativity and consistency for coding
+tasks. Lower values make the agent more deterministic; higher values make it
+more creative (and more likely to hallucinate).
 
 Top-p defaults to 1.0 (no nucleus sampling). Reducing it limits the token pool
 the model samples from.

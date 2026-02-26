@@ -112,8 +112,7 @@ swival --provider openrouter --model openrouter/free "task"
 ```
 
 The `--model` flag is required. Use the model identifier from OpenRouter's
-catalog (e.g., `openrouter/free`, `anthropic/claude-3-5-sonnet`,
-`openrouter/free`). Authentication comes from
+catalog (e.g., ``). Authentication comes from
 `OPENROUTER_API_KEY` in the environment or `--api-key` on the command line
 (which takes precedence).
 

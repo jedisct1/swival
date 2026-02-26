@@ -87,23 +87,24 @@ line editing.
 
 ### Behavior tuning
 
-| Flag                   | Default    | Description                                         |
-| ---------------------- | ---------- | --------------------------------------------------- |
-| `--max-turns`          | `100`      | Maximum agent loop iterations                       |
-| `--max-output-tokens`  | `32768`    | Maximum output tokens per LLM call                  |
-| `--max-context-tokens` | from model | Requested context length (may trigger model reload) |
-| `--temperature`        | `0.55`     | Sampling temperature                                |
-| `--top-p`              | `1.0`      | Top-p (nucleus) sampling                            |
-| `--seed`               | none       | Random seed for reproducible outputs                |
+| Flag                   | Default          | Description                                         |
+| ---------------------- | ---------------- | --------------------------------------------------- |
+| `--max-turns`          | `100`            | Maximum agent loop iterations                       |
+| `--max-output-tokens`  | `32768`          | Maximum output tokens per LLM call                  |
+| `--max-context-tokens` | from model       | Requested context length (may trigger model reload) |
+| `--temperature`        | provider default | Sampling temperature                                |
+| `--top-p`              | `1.0`            | Top-p (nucleus) sampling                            |
+| `--seed`               | none             | Random seed for reproducible outputs                |
 
 ### Sandboxing
 
-| Flag                 | Default | Description                                    |
-| -------------------- | ------- | ---------------------------------------------- |
-| `--base-dir`         | `.`     | Base directory for file tools                  |
-| `--allowed-commands` | none    | Comma-separated command whitelist              |
-| `--allow-dir`        | none    | Grant access to extra directories (repeatable) |
-| `--yolo`             | off     | Disable sandbox and command whitelist entirely |
+| Flag                 | Default | Description                                               |
+| -------------------- | ------- | --------------------------------------------------------- |
+| `--base-dir`         | `.`     | Base directory for file tools                             |
+| `--allowed-commands` | none    | Comma-separated command whitelist                         |
+| `--allow-dir`        | none    | Grant access to extra directories (repeatable)            |
+| `--yolo`             | off     | Disable sandbox and command whitelist entirely            |
+| `--no-read-guard`    | off     | Skip read-before-write guard (allow editing unread files) |
 
 ### System prompt and instructions
 

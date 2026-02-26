@@ -119,6 +119,19 @@ questions asked.</p>
 <a href="agentfs.html">AgentFS</a> if you want an external safety net.</p>
 <p>In YOLO mode, the <code>run_command</code> tool description changes to indicate any command
 is allowed, and the system prompt is updated accordingly.</p>
+<h2 id="read-before-write-guard">Read-before-write guard</h2>
+<p>By default, Swival prevents the agent from overwriting or editing a file it
+hasn't read in the current session. This stops the agent from clobbering files
+it hasn't inspected yet. Files the agent created itself (via <code>write_file</code>) can
+always be re-written without a prior read.</p>
+<p>The same guard applies to <code>write_file</code> with <code>move_from</code> — if the destination
+already exists, it must have been read or written first (the source is exempt,
+since renaming doesn't change content).</p>
+<p>To disable this guard:</p>
+<pre><code class="language-sh">swival --no-read-guard &quot;task&quot;
+</code></pre>
+<p>This is useful when you're running Swival against a directory it shouldn't need
+to pre-read before writing (e.g., an empty output directory).</p>
 <h2 id="url-fetching-and-ssrf-protection">URL fetching and SSRF protection</h2>
 <p>The <code>fetch_url</code> tool blocks requests to private, loopback, link-local, and
 reserved IP addresses. It resolves the hostname to IP addresses using

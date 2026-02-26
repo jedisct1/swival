@@ -91,6 +91,26 @@ Use this when you trust the model and want maximum capability. Combine it with
 In YOLO mode, the `run_command` tool description changes to indicate any command
 is allowed, and the system prompt is updated accordingly.
 
+## Read-before-write guard
+
+By default, Swival prevents the agent from overwriting or editing a file it
+hasn't read in the current session. This stops the agent from clobbering files
+it hasn't inspected yet. Files the agent created itself (via `write_file`) can
+always be re-written without a prior read.
+
+The same guard applies to `write_file` with `move_from` — if the destination
+already exists, it must have been read or written first (the source is exempt,
+since renaming doesn't change content).
+
+To disable this guard:
+
+```sh
+swival --no-read-guard "task"
+```
+
+This is useful when you're running Swival against a directory it shouldn't need
+to pre-read before writing (e.g., an empty output directory).
+
 ## URL fetching and SSRF protection
 
 The `fetch_url` tool blocks requests to private, loopback, link-local, and

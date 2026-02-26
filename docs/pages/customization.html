@@ -94,9 +94,10 @@ of which prompt is used.</p>
 <h3 id="temperature-and-top-p">Temperature and top-p</h3>
 <pre><code class="language-sh">swival --temperature 0.3 --top-p 0.9 &quot;task&quot;
 </code></pre>
-<p>The default temperature is 0.55, which gives a good balance between creativity
-and consistency for coding tasks. Lower values make the agent more deterministic;
-higher values make it more creative (and more likely to hallucinate).</p>
+<p>When not specified, temperature defaults to the provider's default. A value
+around 0.5 gives a good balance between creativity and consistency for coding
+tasks. Lower values make the agent more deterministic; higher values make it
+more creative (and more likely to hallucinate).</p>
 <p>Top-p defaults to 1.0 (no nucleus sampling). Reducing it limits the token pool
 the model samples from.</p>
 <h3 id="seed">Seed</h3>

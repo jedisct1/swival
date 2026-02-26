@@ -158,22 +158,23 @@ Outcomes:
 
 Aggregate counters for the entire run.
 
-| Field                     | Type     | Description                                                              |
-| ------------------------- | -------- | ------------------------------------------------------------------------ |
-| `turns`                   | int      | Number of turns completed                                                |
-| `llm_calls`               | int      | Total LLM API calls (including retries)                                  |
-| `total_llm_time_s`        | float    | Wall-clock seconds spent in LLM calls                                    |
-| `total_tool_time_s`       | float    | Wall-clock seconds spent executing tools                                 |
-| `tool_calls_total`        | int      | Total tool invocations                                                   |
-| `tool_calls_succeeded`    | int      | Tool calls that returned a result                                        |
-| `tool_calls_failed`       | int      | Tool calls that returned an error                                        |
-| `tool_calls_by_name`      | object   | Per-tool breakdown: `{"read_file": {"succeeded": 5, "failed": 0}, ...}`  |
-| `compactions`             | int      | Context compactions (truncating old results)                             |
-| `turn_drops`              | int      | Aggressive context recovery (dropping turns)                             |
-| `guardrail_interventions` | int      | Times the guardrail injected corrective messages                         |
-| `truncated_responses`     | int      | LLM responses cut short by output token limit                            |
-| `skills_used`             | string[] | Skill names that were successfully activated during the run              |
-| `review_rounds`           | int      | Number of times the external reviewer was invoked (0 if no `--reviewer`) |
+| Field                     | Type     | Description                                                                            |
+| ------------------------- | -------- | -------------------------------------------------------------------------------------- |
+| `turns`                   | int      | Number of turns completed                                                              |
+| `llm_calls`               | int      | Total LLM API calls (including retries)                                                |
+| `total_llm_time_s`        | float    | Wall-clock seconds spent in LLM calls                                                  |
+| `total_tool_time_s`       | float    | Wall-clock seconds spent executing tools                                               |
+| `tool_calls_total`        | int      | Total tool invocations                                                                 |
+| `tool_calls_succeeded`    | int      | Tool calls that returned a result                                                      |
+| `tool_calls_failed`       | int      | Tool calls that returned an error                                                      |
+| `tool_calls_by_name`      | object   | Per-tool breakdown: `{"read_file": {"succeeded": 5, "failed": 0}, ...}`                |
+| `compactions`             | int      | Context compactions (truncating old results)                                           |
+| `turn_drops`              | int      | Aggressive context recovery (dropping turns)                                           |
+| `guardrail_interventions` | int      | Times the guardrail injected corrective messages                                       |
+| `truncated_responses`     | int      | LLM responses cut short by output token limit                                          |
+| `skills_used`             | string[] | Skill names that were successfully activated during the run                            |
+| `review_rounds`           | int      | Number of times the external reviewer was invoked (0 if no `--reviewer`)               |
+| `todo`                    | object   | Present only if the todo tool was used: `{"added": N, "completed": N, "remaining": N}` |
 
 ### timeline
 
