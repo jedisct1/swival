@@ -54,13 +54,21 @@ class ThinkingState:
         if mode is None:
             if is_rev is True:
                 mode = "revision"
-            elif has_branch and is_rev is not True:
+            elif is_rev is False:
+                # Explicit "not a revision" — treat as new regardless of
+                # stray branch/revision fields (common template payload).
+                mode = "new"
+            elif has_branch:
                 mode = "branch"
-            elif has_revises and is_rev is not False:
-                # revises_thought present, is_revision not explicitly false → coerce
+            elif has_revises:
+                # revises_thought present, is_revision absent → coerce
                 mode = "revision"
             else:
                 mode = "new"
+        elif mode not in ("new", "revision", "branch"):
+            # Unknown mode value — fall back to new to prevent stray fields
+            # from driving validation.
+            mode = "new"
 
         # Downgrade impossible modes when there's no history to reference
         if mode == "revision" and not self.history:
@@ -78,7 +86,7 @@ class ThinkingState:
             args.pop("branch_from_thought", None)
             args.pop("branch_id", None)
             args["is_revision"] = True
-        elif mode == "branch":
+        else:  # branch
             args.pop("revises_thought", None)
             args["is_revision"] = False
 

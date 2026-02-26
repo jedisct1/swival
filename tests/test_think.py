@@ -642,6 +642,36 @@ class TestSanitizer:
         assert entry.branch_from_thought is None
         assert entry.branch_id is None
 
+    def test_template_payload_second_thought(self):
+        """Full template payload on second call — must still be new, not branch."""
+        state = ThinkingState()
+        # First call: normal thought (creates history)
+        state.process({"thought": "First"})
+        # Second call: same full-template payload — is_revision=false should
+        # force mode=new even though branch fields are present and history
+        # now exists.
+        result = json.loads(
+            state.process(
+                {
+                    "thought": "Second template",
+                    "thought_number": 2,
+                    "total_thoughts": 3,
+                    "next_thought_needed": True,
+                    "is_revision": False,
+                    "revises_thought": 1,
+                    "branch_from_thought": 1,
+                    "branch_id": "main",
+                }
+            )
+        )
+        assert result["history_length"] == 2
+        entry = state.history[1]
+        assert entry.is_revision is False
+        assert entry.revises_thought is None
+        assert entry.branch_from_thought is None
+        assert entry.branch_id is None
+        assert result["branches"] == []
+
     def test_is_revision_false_strips_revision_fields(self):
         """is_revision=false with revises_thought → stripped to normal thought."""
         state = ThinkingState()
@@ -755,6 +785,29 @@ class TestSanitizer:
         assert entry.is_revision is False
         assert entry.revises_thought is None
         assert "alt" in result["branches"]
+
+    def test_invalid_mode_treated_as_new(self):
+        """Unknown mode value falls back to new, stripping all optional fields."""
+        state = ThinkingState()
+        state.process({"thought": "First"})
+        result = json.loads(
+            state.process(
+                {
+                    "thought": "Garbage mode",
+                    "mode": "foo",
+                    "revises_thought": 1,
+                    "branch_from_thought": 1,
+                    "branch_id": "sneaky",
+                }
+            )
+        )
+        assert result["history_length"] == 2
+        entry = state.history[1]
+        assert entry.is_revision is False
+        assert entry.revises_thought is None
+        assert entry.branch_from_thought is None
+        assert entry.branch_id is None
+        assert result["branches"] == []
 
     def test_revision_downgraded_when_no_history(self):
         """mode=revision on first call (no history) → downgraded to new."""
