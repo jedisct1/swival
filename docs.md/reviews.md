@@ -48,7 +48,7 @@ All existing model and provider options (`--model`, `--provider`, `--base-url`, 
 ```sh
 swival "Fix the failing tests" \
     --model local/qwen-coder \
-    --reviewer "swival --reviewer-mode --model openai/gpt-4o"
+    --reviewer "swival --reviewer-mode --model qwen3-coder-next"
 ```
 
 ### Verification File
