@@ -54,114 +54,42 @@
         </aside>
         <article class="docs-content">
             <h1 id="tools">Tools</h1>
-<p>Swival gives the model a fixed set of tools. These are always available (except
-<code>run_command</code> and <code>use_skill</code>, which are opt-in). The agent decides when and how
-to use them.</p>
-<h2 id="file-reading">File reading</h2>
-<p>The agent can read any file within the base directory. Files come back with line
-numbers, which helps the agent reference specific locations when editing. Large
-files are automatically paginated at 50 KB per page, with continuation hints so
-the agent can read the next chunk. There's also a <code>tail</code> parameter for reading
-the end of log files or build output.</p>
-<p>Directories can be read too -- the agent gets a listing with subdirectory
-markers.</p>
-<h2 id="file-writing">File writing</h2>
-<p>Creates or overwrites a file. Parent directories are created automatically. The
-agent uses this when it needs to create something from scratch. For modifying
-existing files, it prefers <code>edit_file</code> (below), which is less destructive.</p>
-<p>The optional <code>move_from</code> parameter lets the agent rename or move a file in a
-single call. When <code>content</code> is omitted, it does an atomic filesystem rename
-(works for binary files too, no content copying). When <code>content</code> is provided,
-it writes the new content to the destination and trashes the source. The source
-does not need to have been read first — renaming doesn't change content. If the
-destination already exists, it must have been read or written first, the same
-requirement that <code>edit_file</code> enforces.</p>
-<h2 id="file-editing">File editing</h2>
-<p>This is the agent's primary tool for modifying code. It works by string
-replacement: the agent specifies the exact text to find and what to replace it
-with. Behind the scenes, the edit engine uses a 3-pass matching strategy:</p>
-<ol>
-<li>Exact match first.</li>
-<li>If that fails, line-trimmed matching (ignores leading/trailing whitespace per
-   line).</li>
-<li>If that fails too, Unicode-normalized matching (converts smart quotes, em
-   dashes, and ellipsis to their ASCII equivalents before comparing).</li>
-</ol>
-<p>This makes edits robust even when the model's output has slightly different
-whitespace or punctuation than the original file. If multiple matches are found,
-the edit fails unless <code>replace_all</code> is set -- this prevents accidental bulk
-changes.</p>
-<h2 id="file-deletion">File deletion</h2>
-<p>Moves a file to <code>.swival/trash/</code> inside the base directory rather than deleting
-it outright. The agent gets a trash ID it can report back if you need to find the
-file later. Directories cannot be deleted with this tool.</p>
-<p>The trash is automatically cleaned up: entries older than 7 days are removed, and
-the total trash size is capped at 50 MB (oldest entries removed first when the cap
-is exceeded). The cleanup runs at the start of each delete operation.</p>
-<h2 id="directory-listing">Directory listing</h2>
-<p>Recursively lists files matching a glob pattern (like <code>**/*.py</code> or
-<code>src/**/*.ts</code>), sorted by modification time with newest first. Results are
-capped at 100 entries. The agent uses this to orient itself in unfamiliar
-codebases.</p>
-<h2 id="grep">Grep</h2>
-<p>Searches file contents with regex patterns, returning matches grouped by file
-with line numbers. Supports filename filtering with globs (e.g., only search
-<code>*.py</code> files) and directory scoping. Results are sorted by file modification
-time and capped at 100 matches.</p>
-<h2 id="thinking">Thinking</h2>
-<p>A structured reasoning tool. The agent uses this to break complex problems into
-numbered steps, track hypotheses during debugging, and revise earlier
-conclusions when new information surfaces. It supports revisions (correcting a
-specific earlier thought) and branches (exploring alternative approaches in
-parallel).</p>
-<h2 id="task-tracking">Task tracking</h2>
-<p>A task list for tracking work items during a session. The agent adds items as it
-discovers work, marks them done as it progresses, and reviews outstanding items
-to decide what to do next. Designed to work reliably even on small models.</p>
-<p>The todo list persists to <code>.swival/todo.md</code> as markdown checkboxes and survives
-context compaction -- the agent can re-read it with <code>read_file</code> even after older
-conversation turns get truncated. Items are matched by text with progressive
-fuzzy matching (exact first, then prefix, then substring), so the agent doesn't
-need to recall exact wording.</p>
-<p>Actions: <code>add</code> (create new item), <code>done</code> (mark as completed -- no-op if already
-done), <code>remove</code> (delete entirely, works on done items too), <code>clear</code> (wipe all
-items), <code>list</code> (see current state). Every action returns the full current list so
-the agent always has a fresh view.</p>
-<p>Limits: 50 items max, 500 characters per item.</p>
-<h2 id="response-history">Response history</h2>
-<p>Every final answer the agent produces is appended to <code>.swival/HISTORY.md</code> with a
-timestamp and the original question. This is an append-only log that persists
-across sessions -- the agent can read it back with <code>read_file</code> to recall what was
-asked and answered earlier in the same project.</p>
-<p>The file is capped at 500 KB. Once it reaches that size, new entries are skipped.
-There's no automatic rotation or truncation; delete or trim the file manually if
-it gets too large. Use <code>--no-history</code> to disable history logging entirely.</p>
-<h2 id="web-fetching">Web fetching</h2>
-<p>Fetches URLs and returns the content as markdown (default), plain text, or raw
-HTML. The agent uses this to read documentation, check API references, or pull
-in information from the web. Raw responses are capped at 5 MB before conversion;
-converted output is capped at 50 KB.</p>
-<p>URL fetching has built-in SSRF protection -- it blocks requests to private,
-loopback, and link-local addresses, checking every hop in the redirect chain.
-See <a href="safety-and-sandboxing.html">Safety and Sandboxing</a> for details.</p>
-<h2 id="command-execution">Command execution</h2>
-<p>Not available by default. You enable it with <code>--allowed-commands</code>:</p>
+<p>Swival gives the model a fixed set of tools at runtime. Most tools are always available. <code>run_command</code> appears only when you enable command execution with <code>--allowed-commands</code> or <code>--yolo</code>, and <code>use_skill</code> appears only when skills are discovered.</p>
+<h2 id="read_file"><code>read_file</code></h2>
+<p><code>read_file</code> can read text files and directory listings inside allowed roots. File output is line-numbered, which makes later edits precise. The default window starts at <code>offset=1</code> with <code>limit=2000</code> lines. If output is truncated, Swival appends a continuation hint with the next offset. You can also request <code>tail=N</code> to start from the end of the file, which is useful for logs.</p>
+<p>Large responses are capped at 50 KB per call, and individual long lines are truncated at 2,000 characters. Directory reads return sorted entries and mark subdirectories with a trailing <code>/</code>.</p>
+<h2 id="write_file"><code>write_file</code></h2>
+<p><code>write_file</code> creates or overwrites files and automatically creates missing parent directories. It supports two mutually exclusive modes. In normal write mode, you provide <code>content</code>. In move mode, you provide <code>move_from</code> and Swival performs an atomic rename when possible.</p>
+<p>When <code>move_from</code> is used and no <code>content</code> is provided, Swival moves the source path to the destination path without copying text content. This supports non-text files and symlinks as well. If the destination already exists, the read-before-write guard still applies to that destination, while the source path is exempt because rename does not modify source content.</p>
+<h2 id="edit_file"><code>edit_file</code></h2>
+<p><code>edit_file</code> is the main incremental editing tool. It replaces <code>old_string</code> with <code>new_string</code> in an existing file and supports <code>replace_all</code> when you intentionally want multiple replacements.</p>
+<p>Matching is done in three passes. Swival tries an exact string match first. If that fails, it retries with per-line trimmed matching so leading and trailing whitespace differences do not break the edit. If that still fails, it retries with Unicode normalization so smart quotes, em dashes, and ellipsis variants map to ASCII equivalents. If multiple matches are found and <code>replace_all</code> is false, the call fails to prevent accidental bulk edits.</p>
+<h2 id="delete_file"><code>delete_file</code></h2>
+<p><code>delete_file</code> is a soft delete. Instead of removing files permanently, Swival moves them into <code>.swival/trash/&lt;trash_id&gt;/</code> and appends metadata to <code>.swival/trash/index.jsonl</code>. Directories are not allowed.</p>
+<p>Trash retention is enforced automatically. Entries older than seven days are removed, and total trash size is capped at 50 MB with oldest-first eviction when needed.</p>
+<h2 id="list_files"><code>list_files</code></h2>
+<p><code>list_files</code> recursively evaluates glob patterns such as <code>**/*.py</code> and returns matches sorted by file modification time, newest first. Results are capped at 100 files and output is still bounded by the same 50 KB response cap.</p>
+<h2 id="grep"><code>grep</code></h2>
+<p><code>grep</code> searches file contents with Python regular expressions. Matches are grouped by file, include line numbers, and are sorted by file recency so the newest files are surfaced first. You can narrow by directory with <code>path</code> and by filename glob with <code>include</code>. Results are capped at 100 matches and long lines are truncated to 2,000 characters.</p>
+<h2 id="think"><code>think</code></h2>
+<p><code>think</code> is structured scratchpad reasoning. It lets the model capture numbered thoughts, revise earlier thoughts, and branch from a prior thought to compare alternative approaches. This is especially helpful for debugging and multi-step refactors.</p>
+<h2 id="todo"><code>todo</code></h2>
+<p><code>todo</code> tracks work items during a run. The list is stored in <code>.swival/todo.md</code>, so the agent can recover state even after context compaction. Actions include <code>add</code>, <code>done</code>, <code>remove</code>, <code>clear</code>, and <code>list</code>, and each action returns the full current list.</p>
+<p>Matching for <code>done</code> and <code>remove</code> is fuzzy in a controlled way, so exact wording is not required every time. Swival tries exact matching first, then prefix matching, then substring matching. The list allows up to 50 items, and each item can be up to 500 characters.</p>
+<h2 id="history-logging">History Logging</h2>
+<p>Every final answer is appended to <code>.swival/HISTORY.md</code> with a timestamp and the originating question. This file is capped at 500 KB. Once full, new entries are skipped instead of rotating older content. Use <code>--no-history</code> if you do not want history writes.</p>
+<h2 id="fetch_url"><code>fetch_url</code></h2>
+<p><code>fetch_url</code> downloads HTTP or HTTPS content and returns it as markdown, plain text, or raw HTML. It is designed for documentation lookup and API reference pulls. Binary content types are rejected. Raw response bodies are capped at 5 MB, and inline output is capped at 50 KB. Larger converted outputs are saved under <code>.swival/</code> so the agent can page through them with <code>read_file</code>.</p>
+<p>SSRF protections are built in. Swival resolves every URL in the redirect chain and blocks private, loopback, link-local, and reserved addresses.</p>
+<h2 id="run_command"><code>run_command</code></h2>
+<p><code>run_command</code> is disabled by default. You can enable it with a whitelist.</p>
 <pre><code class="language-sh">swival --allowed-commands ls,git,python3 &quot;Run the tests&quot;
 </code></pre>
-<p>Commands are passed as arrays (not shell strings), so there's no shell
-injection risk. Each command is resolved to its absolute path at startup, and
-only whitelisted basenames are allowed. Commands that resolve to paths inside
-the base directory are rejected -- this prevents the model from modifying a
-script and then running it.</p>
-<p>Command output over 10 KB is saved to <code>.swival/</code> and the agent paginates
-through it with <code>read_file</code>. Timeout defaults to 30 seconds (max 120).</p>
-<p>For unrestricted command access, see <code>--yolo</code> in
-<a href="safety-and-sandboxing.html">Safety and Sandboxing</a>.</p>
-<h2 id="skills">Skills</h2>
-<p>When skills are discovered (see <a href="skills.html">Skills</a>), the agent gets a
-<code>use_skill</code> tool that loads detailed instructions for a specific task on
-demand. The system prompt includes a compact catalog of available skills, and
-the agent calls <code>use_skill</code> when it encounters a task that matches one.</p>
+<p>In whitelist mode, the command must be passed as an array of arguments, not as a shell string. Swival resolves each allowed command to an absolute path at startup and rejects commands that resolve inside the base directory, so the model cannot edit and execute workspace scripts in one loop.</p>
+<p>Timeout defaults to 30 seconds and is clamped to a maximum of 120 seconds. Inline command output is capped at 10 KB. Larger output is written to <code>.swival/cmd_output_*.txt</code>, and those files are cleaned up automatically after roughly ten minutes.</p>
+<p>In YOLO mode, command execution is unrestricted and Swival also accepts shell command strings through <code>/bin/sh -c</code> on Unix or <code>cmd.exe /c</code> on Windows.</p>
+<h2 id="use_skill"><code>use_skill</code></h2>
+<p>When skills are discovered, Swival exposes <code>use_skill</code> so the model can load full instructions on demand. The system prompt only includes a compact skill catalog at startup, and full skill instructions are injected only when the tool is called. This keeps the default prompt smaller while still allowing rich task-specific guidance.</p>
         </article>
     </div>
     <footer class="site-footer">

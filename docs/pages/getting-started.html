@@ -55,73 +55,42 @@
         <article class="docs-content">
             <h1 id="getting-started">Getting Started</h1>
 <h2 id="prerequisites">Prerequisites</h2>
-<p>You need Python 3.13+ and <a href="https://docs.astral.sh/uv/">uv</a>. If you don't have
-uv yet:</p>
+<p>Swival requires Python 3.13 or newer and <a href="https://docs.astral.sh/uv/">uv</a>. If <code>uv</code> is not installed yet, you can install it with the command below.</p>
 <pre><code class="language-sh">curl -LsSf https://astral.sh/uv/install.sh | sh
 </code></pre>
 <h2 id="installation">Installation</h2>
+<p>Install the CLI with <code>uv tool install swival</code>. This places the <code>swival</code> command on your <code>PATH</code>, so you can run it from any directory.</p>
 <pre><code class="language-sh">uv tool install swival
 </code></pre>
-<p>This puts the <code>swival</code> command on your PATH. You can now run it from anywhere.</p>
-<p>To update to the latest version:</p>
+<p>When you want to move to the newest release, run <code>uv tool upgrade swival</code>.</p>
 <pre><code class="language-sh">uv tool upgrade swival
 </code></pre>
-<p>To uninstall:</p>
+<p>If you ever want to remove it, run <code>uv tool uninstall swival</code>.</p>
 <pre><code class="language-sh">uv tool uninstall swival
 </code></pre>
-<h2 id="running-with-lm-studio-recommended">Running with LM Studio (recommended)</h2>
-<p>LM Studio is the easiest path. Install it from
-<a href="https://lmstudio.ai/">lmstudio.ai</a>, then download a model that supports tool
-calling. My pick is
-<a href="https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF">qwen3-coder-next</a> -- on
-a 64 GB MacBook Pro with a 100k context window, it's genuinely excellent.</p>
-<p>Load the model, start the server (the "Local Server" tab in LM Studio), and
-increase the context size as high as your RAM allows. Bigger context means the
-agent can hold more of your codebase in its head at once.</p>
-<p>Then run:</p>
+<h2 id="running-with-lm-studio">Running with LM Studio</h2>
+<p>LM Studio is the default provider and usually the fastest way to get started. Install LM Studio from <a href="https://lmstudio.ai/">lmstudio.ai</a>, load a tool-calling model, and start the local server from the Local Server tab. If your machine can handle it, increase the context window, because larger context gives the agent more room to reason over your codebase.</p>
+<p>Once LM Studio is running, this is enough to start:</p>
 <pre><code class="language-sh">swival &quot;Hello world&quot;
 </code></pre>
-<p>Swival connects to LM Studio at <code>http://127.0.0.1:1234</code>, queries the API to
-discover which model is loaded, and sends your prompt. No API keys, no config
-files, no environment variables. It just works.</p>
-<h3 id="what-happens-under-the-hood">What happens under the hood</h3>
-<p>When you run that command, Swival:</p>
-<ol>
-<li>Hits LM Studio's <code>/api/v1/models</code> endpoint to find the loaded model and its
-   context size.</li>
-<li>Builds a system prompt that describes the available tools (file reading,
-   editing, search, etc.) and the working directory.</li>
-<li>Sends your question to the model via LiteLLM.</li>
-<li>Enters the agent loop: the model can call tools, read files, make edits, and
-   reason through the problem across as many turns as it needs.</li>
-<li>When the model produces a final text answer (no more tool calls), Swival
-   prints it to stdout and exits.</li>
-</ol>
-<p>All diagnostic output (turn numbers, tool calls, timing) goes to stderr. The
-final answer goes to stdout. This means you can pipe Swival's output cleanly
-into other tools.</p>
+<p>By default, Swival connects to <code>http://127.0.0.1:1234</code>, queries LM Studio for the currently loaded model, and uses that model automatically.</p>
+<h2 id="what-happens-internally">What Happens Internally</h2>
+<p>When you run a task against LM Studio, Swival first calls <code>/api/v1/models</code> to discover the loaded model and context size. It then builds a system prompt that includes tool definitions and workspace context, sends your task through LiteLLM, and enters the agent loop where the model can read files, edit files, search, and continue tool-calling until it finishes. When the model returns a final text answer with no more tool calls, Swival prints that answer to standard output and exits.</p>
+<p>Diagnostic logs such as turn headers, tool traces, and timing information are written to standard error, which keeps standard output clean for piping into other tools.</p>
 <h2 id="running-with-huggingface">Running with HuggingFace</h2>
-<p>If you'd rather use a hosted model instead of running one locally:</p>
+<p>If you prefer hosted inference, set a HuggingFace token and provide a model in <code>org/model</code> format.</p>
 <pre><code class="language-sh">export HF_TOKEN=hf_your_token_here
 swival &quot;Hello world&quot; --provider huggingface --model zai-org/GLM-5
 </code></pre>
-<p>You need a HuggingFace token with Inference API access. The model must be
-specified in <code>org/model</code> format. For dedicated endpoints, add <code>--base-url</code> and
-<code>--api-key</code>:</p>
+<p>If you are using a dedicated HuggingFace endpoint, pass both <code>--base-url</code> and <code>--api-key</code>.</p>
 <pre><code class="language-sh">swival &quot;Hello world&quot; \
     --provider huggingface \
     --model zai-org/GLM-5 \
     --base-url https://xyz.endpoints.huggingface.cloud \
     --api-key hf_your_key
 </code></pre>
-<p>See <a href="providers.html">Providers</a> for more detail on provider configuration.</p>
-<h2 id="next-steps">Next steps</h2>
-<ul>
-<li><a href="usage.html">Usage</a> covers the two operating modes and all CLI flags.</li>
-<li><a href="tools.html">Tools</a> explains what the agent can do out of the box.</li>
-<li><a href="safety-and-sandboxing.html">Safety and Sandboxing</a> explains how file access is restricted.</li>
-<li><a href="agentfs.html">Using Swival with AgentFS</a> shows how to run the agent in a copy-on-write sandbox so you can review and test changes before applying them.</li>
-</ul>
+<h2 id="where-to-go-next">Where To Go Next</h2>
+<p>If you want the full command surface and mode behavior, continue with <a href="usage.html">Usage</a>. If you want a deeper look at built-in capabilities, read <a href="tools.html">Tools</a>. If you need to understand trust boundaries before enabling stronger actions, read <a href="safety-and-sandboxing.html">Safety and Sandboxing</a>. If you want copy-on-write isolation so you can review and apply changes only when ready, read <a href="agentfs.html">Using Swival with AgentFS</a>.</p>
         </article>
     </div>
     <footer class="site-footer">

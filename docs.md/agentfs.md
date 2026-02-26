@@ -1,30 +1,20 @@
-# Using Swival with AgentFS
+# Using Swival With AgentFS
 
-[AgentFS](https://www.agentfs.ai/) gives your agent a copy-on-write filesystem.
-Everything the agent writes goes into a SQLite-backed overlay while your real
-project files stay untouched. You review what the agent did, test it, and only
-then apply the changes to your actual working tree.
-
-This is the workflow: **build in a sandbox, validate, commit to the real
-filesystem.**
-
-This also provides better sandboxing than Swival.
+[AgentFS](https://www.agentfs.ai/) gives Swival a copy-on-write filesystem overlay. The agent can edit freely, but your real project files remain unchanged until you explicitly copy changes back. This is a practical workflow for high-autonomy runs because you can inspect and test everything before applying it.
 
 ## Prerequisites
 
-Install AgentFS:
+Install AgentFS first.
 
 ```sh
 curl -fsSL https://agentfs.ai/install | bash
 ```
 
-You also need a running LLM provider (LM Studio, HuggingFace, etc.). See
-[Getting Started](getting-started.md) for that.
+You also need a working model provider for Swival itself, such as LM Studio or HuggingFace.
 
-## Step 1: Let the agent work in a sandbox
+## Run Swival Inside A Session Overlay
 
-`agentfs run` wraps any command in a copy-on-write sandbox. Add `--session` to
-give it a name you can come back to:
+`agentfs run` wraps a command in a session-backed sandbox. If you name the session, you can return to the same overlay state later.
 
 ```sh
 cd ~/my-project
@@ -33,71 +23,59 @@ agentfs run --session add-config -- \
     swival "Add a config module that reads from env vars, and update main.py to use it" --yolo --max-turns 20
 ```
 
-The `--yolo` flag is the natural pairing here. AgentFS handles isolation, so you
-can give Swival unrestricted file and command access without risking your real
-files.
+This pairing of AgentFS and `--yolo` is intentional. AgentFS provides filesystem isolation externally, so Swival can run with full command and file capability without mutating your real tree.
 
-When Swival finishes, your working tree is exactly as it was before. The
-agent's changes live in the session delta at
-`~/.agentfs/run/add-config/delta.db`.
+After the run, your working copy is unchanged. The overlay delta for this example lives at `~/.agentfs/run/add-config/delta.db`.
 
-## Step 2: Review what changed
+## Review The Delta
 
-See which files the agent touched:
+You can inspect which paths were added or modified with `agentfs diff`.
 
 ```sh
 agentfs diff ~/.agentfs/run/add-config/delta.db
 ```
+
+A typical short output looks like this:
 
 ```
 A f /src/config.py
 M f /src/main.py
 ```
 
-`A` = added, `M` = modified.
+## Validate Inside The Overlay
 
-## Step 3: Test inside the sandbox
-
-Re-enter the session with a shell. You'll see the full project with the agent's
-changes applied:
+Re-enter the same session as a shell, then run tests or manual checks against the overlay view.
 
 ```sh
 agentfs run --session add-config -- bash
 ```
 
-From inside that shell, run your test suite:
+Inside that shell, run your usual checks.
 
 ```sh
 python -m pytest tests/ -v
-```
-
-Or start the app and try it manually:
-
-```sh
 python src/main.py
 ```
 
-If something is off, exit the shell and ask the agent for another pass (see
-"Iterating" below). Nothing has touched your real project yet.
+If validation fails, exit and ask Swival for another pass using the same session name.
 
-## Step 4: Apply the changes
+## Apply Changes To The Real Project
 
-Re-enter the session and copy the changed files back to your working tree. The
-diff from step 2 tells you exactly which files to grab:
+Once you are satisfied, copy only the files you want back into your actual working tree.
 
 ```sh
 agentfs run --session add-config -- \
     sh -c 'cp src/config.py ~/my-project/src/config.py && cp src/main.py ~/my-project/src/main.py'
 ```
 
-Or for many files, use rsync from inside the session:
+For larger updates, `rsync` is often easier.
 
 ```sh
 agentfs run --session add-config -- \
     rsync -av src/ ~/my-project/src/
 ```
 
-Then commit normally:
+Then commit normally in your project directory.
 
 ```sh
 cd ~/my-project
@@ -105,26 +83,22 @@ git add src/config.py src/main.py
 git commit -m "Add config module"
 ```
 
-If you want to discard the agent's work instead, just delete the session data
-at `~/.agentfs/run/add-config/`. Nothing else was changed.
+If you decide not to keep the work, delete the session directory at `~/.agentfs/run/add-config/` and your real project remains untouched.
 
-## Iterating on the feature
+## Iterate Without Starting Over
 
-If the tests fail or you don't like what the agent produced, you can keep going
-without starting over. Each invocation with the same `--session` sees the
-accumulated changes from previous runs:
+You can continue improving the same feature by reusing the session name. Each run sees prior overlay changes.
 
 ```sh
 agentfs run --session add-config -- \
     swival "The tests are failing because config.py doesn't handle missing env vars. Fix it." --yolo
 ```
 
-The agent sees its own prior changes and builds on top of them. Re-enter with
-a shell, re-run tests, iterate until it works. Then apply as above.
+This lets you run a natural loop of generate, validate, and refine before applying files.
 
-## Alternative: `agentfs init -c`
+## Alternative Workflow With `agentfs init -c`
 
-If you want the overlay stored alongside your project as a `.db` file:
+If you prefer a project-local overlay database, initialize AgentFS in the repo and run Swival through `-c`.
 
 ```sh
 cd ~/my-project
@@ -134,38 +108,36 @@ agentfs init --base . -c \
     add-config
 ```
 
-This creates `.agentfs/add-config.db`, runs Swival inside the overlay, then
-saves the delta. You can diff it by name:
+This writes `.agentfs/add-config.db`. You can diff by session name.
 
 ```sh
 agentfs diff add-config
 ```
 
-And read files from the overlay without mounting:
+You can also inspect files in that overlay directly without mounting.
 
 ```sh
 agentfs fs add-config cat /src/config.py
 ```
 
-To test or apply, mount the overlay and work from the mount point:
+For testing and selective apply, mount the overlay.
 
 ```sh
 mkdir -p /tmp/sandbox
 agentfs mount -f --auto-unmount add-config /tmp/sandbox &
 
 cd /tmp/sandbox
-python -m pytest tests/ -v          # validate
-cp src/config.py ~/my-project/src/  # apply
+python -m pytest tests/ -v
+cp src/config.py ~/my-project/src/
 
-kill %1                              # unmount
+kill %1
 ```
 
-To discard, delete `.agentfs/add-config.db`.
+If you do not want the result, remove `.agentfs/add-config.db`.
 
-## Alternative: manual mount for REPL mode
+## Alternative Workflow For REPL Sessions
 
-When you want an interactive back-and-forth with the agent, mount the overlay
-yourself:
+For live conversational editing, mount first and point Swival's base directory at the mount.
 
 ```sh
 cd ~/my-project
@@ -174,26 +146,14 @@ mkdir -p /tmp/sandbox
 agentfs mount -f --auto-unmount sandbox /tmp/sandbox
 ```
 
-In another terminal:
+In another terminal, run REPL mode against the mounted view.
 
 ```sh
 swival --repl --base-dir /tmp/sandbox --yolo
 ```
 
-You can chat with the agent, ask it to make changes, then switch to a third
-terminal to run tests against `/tmp/sandbox` in real time. When you're
-satisfied, copy files back and unmount.
+This setup gives you an interactive agent session while you test changes from a separate terminal against the mounted sandbox.
 
-## Tips
+## Practical Guidance
 
-- **`--yolo` + AgentFS is the sweet spot.** Swival's built-in sandbox is
-  redundant when AgentFS is handling isolation. `--yolo` gives the agent full
-  access to `run_command` and the entire filesystem, with AgentFS as the safety
-  net.
-
-- **Session names make things resumable.** `agentfs run --session foo` lets you
-  come back to the same overlay state across multiple Swival invocations.
-
-- **AgentFS is invisible to Swival.** There's no special integration. Swival
-  just sees a normal filesystem. You either let `agentfs run` handle the
-  sandboxing, or point `--base-dir` at a mount.
+In day-to-day use, AgentFS plus `--yolo` is often the most productive combination because it gives the model full capability while still protecting your real workspace. Session names make iteration resumable across multiple agent runs. Swival does not need special AgentFS integration because it simply sees whatever filesystem tree you point it at, whether that tree is your real directory or a mounted copy-on-write overlay.

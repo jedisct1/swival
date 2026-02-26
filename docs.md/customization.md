@@ -1,19 +1,10 @@
 # Customization
 
-## Project instruction files
+## Project Instruction Files
 
-Swival supports two project instruction files, loaded from the base directory at
-startup:
+Swival can load two project-local instruction files from the base directory during startup. `CLAUDE.md` is injected as `<project-instructions>...</project-instructions>`, and `AGENT.md` is injected as `<agent-instructions>...</agent-instructions>`. If both files exist, Swival loads both in that order.
 
-- `CLAUDE.md` -- project-level instructions, wrapped in `<project-instructions>` tags
-- `AGENT.md` -- agent-specific instructions, wrapped in `<agent-instructions>` tags
-
-If both exist, both are included (CLAUDE.md first). Each file is capped at
-10,000 characters. These are appended to the default system prompt, so the
-agent sees them alongside its built-in instructions.
-
-This is useful for telling the agent about your project's conventions, preferred
-patterns, or things to watch out for. A typical CLAUDE.md might say:
+Each file is capped at 10,000 characters. These instructions are appended to the built-in system prompt, which makes them a practical place to encode house rules such as test commands, coding conventions, and dependency policies.
 
 ```markdown
 This is a Go project using Chi for routing. Tests use testify.
@@ -21,93 +12,74 @@ Always run `go test ./...` after making changes.
 Don't add dependencies without asking.
 ```
 
-### Disabling instruction files
-
-For untrusted repositories where you don't want the agent reading project
-instructions:
+Use `--no-instructions` when you do not want Swival to read either file.
 
 ```sh
 swival --no-instructions "task"
 ```
 
-Instruction files are also skipped when you provide a custom system prompt with
-`--system-prompt`.
+If you set `--system-prompt`, project instruction files are also skipped because you are providing the full prompt text directly.
 
-## System prompt control
+## System Prompt Control
 
-The default system prompt lives in `swival/system_prompt.txt` and describes the
-agent's workflow, tools, and coding standards. You can replace it entirely:
+The built-in prompt is stored in `swival/system_prompt.txt` and defines default behavior, tool policy, and coding expectations.
+
+You can replace it completely with `--system-prompt`.
 
 ```sh
 swival --system-prompt "You are a security auditor. Only report vulnerabilities." "Audit src/"
 ```
 
-Or omit it:
+You can also remove the system message entirely with `--no-system-prompt`.
 
 ```sh
 swival --no-system-prompt "Just answer: what is 2+2?"
 ```
 
-These two flags are mutually exclusive. When using `--system-prompt`,
-CLAUDE.md/AGENT.md files and the skill catalog are not appended (since you're
-providing the full prompt yourself).
+`--system-prompt` and `--no-system-prompt` are mutually exclusive.
 
-The current date and time are always appended to the system message, regardless
-of which prompt is used.
+When a system message is present, Swival appends the current local date and time to that system content.
 
-## Tuning parameters
+## Sampling And Reproducibility
 
-### Temperature and top-p
+`--temperature` and `--top-p` control response sampling.
 
 ```sh
 swival --temperature 0.3 --top-p 0.9 "task"
 ```
 
-When not specified, temperature defaults to the provider's default. A value
-around 0.5 gives a good balance between creativity and consistency for coding
-tasks. Lower values make the agent more deterministic; higher values make it
-more creative (and more likely to hallucinate).
+If you do not set `--temperature`, provider defaults apply. `--top-p` defaults to `1.0`.
 
-Top-p defaults to 1.0 (no nucleus sampling). Reducing it limits the token pool
-the model samples from.
-
-### Seed
+`--seed` passes a deterministic seed when the provider supports it.
 
 ```sh
 swival --seed 42 "task"
 ```
 
-Sets a random seed for reproducible outputs. When given, the seed is passed
-through to the model provider. Not all models support this, and even those that
-do may not guarantee identical outputs across different hardware or software
-versions. Omit it (the default) to let the model sample normally.
+Seeded runs are usually more stable, but identical output is still not guaranteed across all providers, model versions, and hardware environments.
 
-### Max turns
+## Turn And Token Limits
+
+`--max-turns` limits how many agent-loop iterations are allowed.
 
 ```sh
 swival --max-turns 10 "quick task"
 ```
 
-Limits the number of agent loop iterations. Each turn is one LLM call that may
-include multiple tool calls. The default is 100. If the agent hits the limit
-without producing a final answer, it exits with code 2.
+The default turn limit is `100`. If the loop reaches this limit without a final answer, Swival exits with code `2`.
 
-### Output tokens
+`--max-output-tokens` limits tokens generated per model call.
 
 ```sh
 swival --max-output-tokens 16384 "task"
 ```
 
-Maximum tokens the model can generate per response. Defaults to 32768. Swival
-automatically clamps this down if the prompt is large enough that prompt +
-output would exceed the context window.
+The default is `32768`. If prompt size and context constraints require it, Swival clamps output budget downward automatically.
 
-### Context length
+`--max-context-tokens` sets requested context length.
 
 ```sh
 swival --max-context-tokens 65536 "task"
 ```
 
-For LM Studio, this can trigger a model reload with the new context size. The
-value must be at least as large as `--max-output-tokens`. If not specified,
-Swival uses whatever context length the model is currently loaded with.
+For LM Studio, this can trigger a model reload. When both `--max-context-tokens` and `--max-output-tokens` are set, `--max-output-tokens` must be less than or equal to context length.

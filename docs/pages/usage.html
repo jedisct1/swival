@@ -54,263 +54,72 @@
         </aside>
         <article class="docs-content">
             <h1 id="usage">Usage</h1>
-<p>Swival operates in two modes: one-shot (the default) and interactive (REPL).</p>
-<h2 id="one-shot-mode">One-shot mode</h2>
-<p>Give it a task, let it work, get the result:</p>
+<p>Swival has two operating modes. The default mode is one-shot, where you give the agent a task and let it run to completion. The second mode is an interactive REPL, where conversation history stays live across follow-up prompts.</p>
+<h2 id="one-shot-mode">One-Shot Mode</h2>
+<p>In one-shot mode, you pass one task on the command line and Swival keeps looping through tool calls until it reaches a final answer or hits the turn limit.</p>
 <pre><code class="language-sh">swival &quot;Review this codebase for security issues&quot;
 </code></pre>
-<p>The agent loops through tool calls -- reading files, searching code, reasoning
--- until it has a final answer. That answer is printed to stdout. Everything else
-(turn headers, tool call logs, timing) goes to stderr.</p>
-<p>This separation is intentional. You can pipe the output:</p>
+<p>The final answer is written to standard output. Diagnostics such as turn logs, timing, and tool traces are written to standard error.</p>
+<p>If you want a clean output stream for scripting, use <code>--quiet</code> or <code>-q</code>.</p>
 <pre><code class="language-sh">swival -q &quot;Summarize the API surface of src/&quot; &gt; api-summary.txt
 </code></pre>
-<p>The <code>-q</code> (or <code>--quiet</code>) flag suppresses all diagnostic output on stderr, so you
-get just the answer.</p>
-<h3 id="giving-the-agent-more-power">Giving the agent more power</h3>
-<p>By default, Swival can read, write, and search files within the current
-directory. If you want it to run commands too:</p>
+<p>You can grant command execution when needed by explicitly whitelisting command names.</p>
 <pre><code class="language-sh">swival --allowed-commands ls,git,python3 \
     &quot;Create a tool that returns a random number between 0 and 42&quot;
 </code></pre>
-<p>The available commands influence the agent's behavior -- if you allow <code>bun</code> and
-<code>node</code>, it'll lean toward JavaScript. Allow <code>python3</code> and it'll write Python.</p>
-<h3 id="exit-codes">Exit codes</h3>
-<ul>
-<li><code>0</code> -- success, the agent produced an answer</li>
-<li><code>1</code> -- error (couldn't connect to LM Studio, invalid arguments, etc.)</li>
-<li><code>2</code> -- max turns exhausted without a final answer</li>
-</ul>
-<h2 id="interactive-mode-repl">Interactive mode (REPL)</h2>
+<p>That whitelist changes what the agent can do. If <code>python3</code> is available, it can use Python for implementation and verification. If no commands are whitelisted, <code>run_command</code> is unavailable unless you enable YOLO mode.</p>
+<p>A successful run exits with code <code>0</code>. A runtime or configuration failure exits with code <code>1</code>. A run that reaches the turn limit before finishing exits with code <code>2</code>.</p>
+<h2 id="interactive-mode">Interactive Mode</h2>
+<p>REPL mode keeps a shared conversation state, so each new question can build on earlier turns.</p>
 <pre><code class="language-sh">swival --repl
 </code></pre>
-<p>This gives you an interactive session with conversation history that carries
-across questions. It works like Claude Code or Codex -- ask a question, watch it
-work, ask a follow-up.</p>
-<p>You can also start a REPL with an initial question:</p>
+<p>You can also launch the REPL and send an initial question immediately.</p>
 <pre><code class="language-sh">swival --repl &quot;Look at the project structure and tell me what this does&quot;
 </code></pre>
-<h3 id="repl-commands">REPL commands</h3>
-<ul>
-<li><code>/help</code> -- show available commands</li>
-<li><code>/clear</code> -- reset conversation history (keeps system prompt)</li>
-<li><code>/compact</code> -- compress context by truncating old tool results</li>
-<li><code>/compact --drop</code> -- more aggressive: drops entire middle turns</li>
-<li><code>/add-dir &lt;path&gt;</code> -- grant read/write access to an additional directory</li>
-<li><code>/extend</code> -- double the current max turns limit</li>
-<li><code>/extend &lt;N&gt;</code> -- set max turns to a specific number</li>
-<li><code>/continue</code> -- reset the turn counter and continue the agent loop</li>
-<li><code>/init</code> -- generate a AGENT.md file describing the project's conventions</li>
-<li><code>/exit</code> or <code>/quit</code> -- exit (Ctrl-D works too)</li>
-</ul>
-<p>The REPL uses <code>prompt-toolkit</code>, so you get command history, history search, and
-line editing.</p>
-<h2 id="cli-flags">CLI flags</h2>
-<h3 id="model-and-provider">Model and provider</h3>
-<table>
-<thead>
-<tr>
-<th>Flag</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--provider</code></td>
-<td><code>lmstudio</code></td>
-<td>LLM provider: <code>lmstudio</code>, <code>huggingface</code>, or <code>openrouter</code></td>
-</tr>
-<tr>
-<td><code>--model</code></td>
-<td>auto-discovered</td>
-<td>Override model identifier</td>
-</tr>
-<tr>
-<td><code>--base-url</code></td>
-<td><code>http://127.0.0.1:1234</code></td>
-<td>Server base URL</td>
-</tr>
-<tr>
-<td><code>--api-key</code></td>
-<td>from env</td>
-<td>API key (overrides <code>HF_TOKEN</code> / <code>OPENROUTER_API_KEY</code>)</td>
-</tr>
-</tbody>
-</table>
-<h3 id="behavior-tuning">Behavior tuning</h3>
-<table>
-<thead>
-<tr>
-<th>Flag</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--max-turns</code></td>
-<td><code>100</code></td>
-<td>Maximum agent loop iterations</td>
-</tr>
-<tr>
-<td><code>--max-output-tokens</code></td>
-<td><code>32768</code></td>
-<td>Maximum output tokens per LLM call</td>
-</tr>
-<tr>
-<td><code>--max-context-tokens</code></td>
-<td>from model</td>
-<td>Requested context length (may trigger model reload)</td>
-</tr>
-<tr>
-<td><code>--temperature</code></td>
-<td>provider default</td>
-<td>Sampling temperature</td>
-</tr>
-<tr>
-<td><code>--top-p</code></td>
-<td><code>1.0</code></td>
-<td>Top-p (nucleus) sampling</td>
-</tr>
-<tr>
-<td><code>--seed</code></td>
-<td>none</td>
-<td>Random seed for reproducible outputs</td>
-</tr>
-</tbody>
-</table>
-<h3 id="sandboxing">Sandboxing</h3>
-<table>
-<thead>
-<tr>
-<th>Flag</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--base-dir</code></td>
-<td><code>.</code></td>
-<td>Base directory for file tools</td>
-</tr>
-<tr>
-<td><code>--allowed-commands</code></td>
-<td>none</td>
-<td>Comma-separated command whitelist</td>
-</tr>
-<tr>
-<td><code>--allow-dir</code></td>
-<td>none</td>
-<td>Grant access to extra directories (repeatable)</td>
-</tr>
-<tr>
-<td><code>--yolo</code></td>
-<td>off</td>
-<td>Disable sandbox and command whitelist entirely</td>
-</tr>
-<tr>
-<td><code>--no-read-guard</code></td>
-<td>off</td>
-<td>Skip read-before-write guard (allow editing unread files)</td>
-</tr>
-</tbody>
-</table>
-<h3 id="system-prompt-and-instructions">System prompt and instructions</h3>
-<table>
-<thead>
-<tr>
-<th>Flag</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--system-prompt</code></td>
-<td>built-in</td>
-<td>Custom system prompt (replaces default)</td>
-</tr>
-<tr>
-<td><code>--no-system-prompt</code></td>
-<td>off</td>
-<td>Omit system message entirely</td>
-</tr>
-<tr>
-<td><code>--no-instructions</code></td>
-<td>off</td>
-<td>Don't load CLAUDE.md or AGENT.md</td>
-</tr>
-</tbody>
-</table>
-<h3 id="skills">Skills</h3>
-<table>
-<thead>
-<tr>
-<th>Flag</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>--skills-dir</code></td>
-<td>none</td>
-<td>Additional skill directory (repeatable)</td>
-</tr>
-<tr>
-<td><code>--no-skills</code></td>
-<td>off</td>
-<td>Disable skill discovery</td>
-</tr>
-</tbody>
-</table>
-<h3 id="output-and-reporting">Output and reporting</h3>
-<table>
-<thead>
-<tr>
-<th>Flag</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>-q</code> / <code>--quiet</code></td>
-<td>off</td>
-<td>Suppress all diagnostics; only print the final result</td>
-</tr>
-<tr>
-<td><code>--report FILE</code></td>
-<td>off</td>
-<td>Write a JSON evaluation report instead of stdout</td>
-</tr>
-<tr>
-<td><code>--reviewer EXE</code></td>
-<td>off</td>
-<td>Run external reviewer after each answer (see <a href="reviews.html">Reviews</a>)</td>
-</tr>
-<tr>
-<td><code>--no-history</code></td>
-<td>off</td>
-<td>Don't write responses to <code>.swival/HISTORY.md</code></td>
-</tr>
-<tr>
-<td><code>--color</code></td>
-<td>auto</td>
-<td>Force ANSI color on stderr</td>
-</tr>
-<tr>
-<td><code>--no-color</code></td>
-<td>auto</td>
-<td>Disable ANSI color on stderr</td>
-</tr>
-</tbody>
-</table>
-<p>See <a href="reports.html">Reports</a> for the full report schema, timeline event types, and
-benchmarking workflows. See <a href="reviews.html">Reviews</a> for the reviewer protocol and
-how to build a reviewer script.</p>
+<p>The REPL is built on <code>prompt-toolkit</code>, so it supports input history, history search, and normal terminal line editing.</p>
+<h2 id="repl-commands">REPL Commands</h2>
+<p><code>/help</code> prints the command reference in the terminal.</p>
+<p><code>/clear</code> drops conversation history back to the initial system state and also resets internal thinking and file-tracking state.</p>
+<p><code>/compact</code> compacts older tool output in memory. <code>/compact --drop</code> is more aggressive and also drops middle turns.</p>
+<p><code>/add-dir &lt;path&gt;</code> grants read and write access to an additional directory for the current session.</p>
+<p><code>/extend</code> doubles the current turn budget. <code>/extend &lt;N&gt;</code> sets the turn budget to an exact value.</p>
+<p><code>/continue</code> restarts the agent loop for the existing conversation without adding a new user message.</p>
+<p><code>/init</code> runs a three-pass workflow that scans your project and generates an <code>AGENT.md</code> file.</p>
+<p><code>/exit</code> and <code>/quit</code> leave the REPL. Pressing <code>Ctrl-D</code> exits as well.</p>
+<h2 id="cli-flags">CLI Flags</h2>
+<h3 id="model-and-provider-flags">Model And Provider Flags</h3>
+<p><code>--provider</code> chooses the backend provider and defaults to <code>lmstudio</code>. Valid values are <code>lmstudio</code>, <code>huggingface</code>, and <code>openrouter</code>.</p>
+<p><code>--model</code> overrides auto-discovery with a fixed model identifier.</p>
+<p><code>--base-url</code> sets a custom API base URL. For LM Studio, the default base URL is <code>http://127.0.0.1:1234</code> when <code>--base-url</code> is not set.</p>
+<p><code>--api-key</code> provides a key directly on the command line and takes precedence over provider environment variables such as <code>HF_TOKEN</code> or <code>OPENROUTER_API_KEY</code>.</p>
+<h3 id="behavior-tuning-flags">Behavior Tuning Flags</h3>
+<p><code>--max-turns</code> sets the maximum number of loop iterations and defaults to <code>100</code>.</p>
+<p><code>--max-output-tokens</code> sets the model output budget per call and defaults to <code>32768</code>.</p>
+<p><code>--max-context-tokens</code> requests a context window size. With LM Studio, this may trigger a model reload.</p>
+<p><code>--temperature</code> controls sampling temperature and defaults to the provider default when omitted.</p>
+<p><code>--top-p</code> controls nucleus sampling and defaults to <code>1.0</code>.</p>
+<p><code>--seed</code> passes a random seed for providers that support reproducible sampling.</p>
+<h3 id="sandboxing-flags">Sandboxing Flags</h3>
+<p><code>--base-dir</code> defines the base directory for file tools and defaults to the current directory.</p>
+<p><code>--allowed-commands</code> enables command execution through a comma-separated whitelist.</p>
+<p><code>--allow-dir</code> grants read and write access to additional directories and can be repeated.</p>
+<p><code>--yolo</code> disables both filesystem sandbox checks and command whitelisting, except that filesystem root access is still blocked.</p>
+<p><code>--no-read-guard</code> disables the read-before-write guard that normally prevents editing existing files before reading them.</p>
+<h3 id="system-prompt-and-instruction-flags">System Prompt And Instruction Flags</h3>
+<p><code>--system-prompt</code> replaces the built-in prompt with your own prompt text.</p>
+<p><code>--no-system-prompt</code> omits the system message entirely.</p>
+<p><code>--no-instructions</code> prevents loading <code>CLAUDE.md</code> and <code>AGENT.md</code> from the base directory.</p>
+<p><code>--system-prompt</code> and <code>--no-system-prompt</code> are mutually exclusive.</p>
+<h3 id="skills-flags">Skills Flags</h3>
+<p><code>--skills-dir</code> adds external skill directories and can be passed more than once.</p>
+<p><code>--no-skills</code> disables skill discovery and removes the <code>use_skill</code> tool path.</p>
+<h3 id="output-and-reporting-flags">Output And Reporting Flags</h3>
+<p><code>--quiet</code> and <code>-q</code> suppress diagnostics and keep terminal output focused on final answers.</p>
+<p><code>--report FILE</code> writes a JSON run report to <code>FILE</code>. This flag is incompatible with <code>--repl</code>.</p>
+<p><code>--reviewer EXECUTABLE</code> runs an external reviewer after each answer. This flag is also incompatible with <code>--repl</code>.</p>
+<p><code>--no-history</code> disables writes to <code>.swival/HISTORY.md</code>.</p>
+<p><code>--color</code> forces ANSI color on standard error, and <code>--no-color</code> disables ANSI color even on TTY output.</p>
+<p>For the full report schema and analysis workflow, see <a href="reports.html">Reports</a>. For the reviewer protocol and examples, see <a href="reviews.html">Reviews</a>.</p>
         </article>
     </div>
     <footer class="site-footer">

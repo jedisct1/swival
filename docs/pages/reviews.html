@@ -54,98 +54,19 @@
         </aside>
         <article class="docs-content">
             <h1 id="reviews">Reviews</h1>
-<p>The <code>--reviewer</code> flag hooks an external program into the agent loop. After the
-agent produces an answer, Swival pipes it to your reviewer script, and the
-script decides whether the answer is good enough or needs another pass.</p>
+<p>The <code>--reviewer</code> flag lets you attach an external executable to the agent loop. After Swival produces an answer, it runs that executable, passes the answer on standard input, and decides whether to accept or retry based on the reviewer's exit code.</p>
 <pre><code class="language-sh">swival &quot;Refactor the error handling in src/api.py&quot; --reviewer ./review.sh
 </code></pre>
-<p>This is useful for automated QA gates (run tests, check linting, validate
-output format), for LLM-as-a-judge evaluation (have a second model score the
-answer), and for running benchmarks where you need a programmatic pass/fail
-signal. The reviewer is just an executable. It can do anything from a simple
-<code>pytest</code> run to a full evaluation pipeline.</p>
-<p><code>--reviewer</code> is incompatible with <code>--repl</code>.</p>
-<h2 id="the-protocol">The protocol</h2>
-<p>The reviewer executable receives:</p>
-<ul>
-<li><strong>Argument 1:</strong> the base directory (absolute path).</li>
-<li><strong>stdin:</strong> the agent's full text answer.</li>
-</ul>
-<p>It communicates back through its exit code and stdout:</p>
-<table>
-<thead>
-<tr>
-<th>Exit code</th>
-<th>Meaning</th>
-<th>What Swival does</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>0</td>
-<td>Accept</td>
-<td>Print the answer and exit normally</td>
-</tr>
-<tr>
-<td>1</td>
-<td>Retry</td>
-<td>Feed the reviewer's stdout back as a new prompt, reset the turn counter, re-enter the agent loop</td>
-</tr>
-<tr>
-<td>2</td>
-<td>Error</td>
-<td>Warn on stderr, accept the answer as-is</td>
-</tr>
-<tr>
-<td>Other</td>
-<td>(same as 2)</td>
-<td>Treated as a reviewer error</td>
-</tr>
-</tbody>
-</table>
-<p>On exit code 1, the reviewer writes its feedback to stdout. Swival appends that
-as a new user message -- the model sees the full conversation history plus the
-review feedback, and gets a fresh turn budget to address it.</p>
-<p>On exit code 0, stdout is ignored. On exit code 2 (or any other code), stdout
-is ignored and Swival accepts the answer without modification.</p>
-<h2 id="environment-variables">Environment variables</h2>
-<p>Swival sets environment variables on the reviewer subprocess so the script has
-context beyond just the answer text:</p>
-<table>
-<thead>
-<tr>
-<th>Variable</th>
-<th>Value</th>
-<th>Always set?</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>SWIVAL_TASK</code></td>
-<td>The original question passed to Swival</td>
-<td>Yes</td>
-</tr>
-<tr>
-<td><code>SWIVAL_REVIEW_ROUND</code></td>
-<td>Current round number, 1-indexed</td>
-<td>Yes</td>
-</tr>
-<tr>
-<td><code>SWIVAL_MODEL</code></td>
-<td>Resolved model ID (e.g. <code>qwen3-coder-30b</code>)</td>
-<td>When available</td>
-</tr>
-</tbody>
-</table>
-<p>The reviewer also inherits the parent process's full environment. If any of
-these variables already exist in the parent environment, Swival's values take
-precedence.</p>
-<p><code>SWIVAL_TASK</code> is the most useful one -- it tells an LLM-as-judge reviewer what
-the agent was supposed to do, so it can evaluate the answer in context.
-<code>SWIVAL_REVIEW_ROUND</code> lets a reviewer adjust its strictness or bail out based on
-how many rounds have passed.</p>
-<h2 id="writing-a-reviewer-script">Writing a reviewer script</h2>
-<p>A minimal reviewer that checks whether tests pass:</p>
+<p>This pattern works well for automated gates such as tests, linting, format checks, schema checks, or LLM-as-a-judge scoring. <code>--reviewer</code> is incompatible with <code>--repl</code>.</p>
+<h2 id="reviewer-protocol">Reviewer Protocol</h2>
+<p>Swival invokes the reviewer as <code>reviewer_executable &lt;base_dir&gt;</code>. The first positional argument is the absolute base directory. The full assistant answer is written to reviewer standard input.</p>
+<p>If the reviewer exits with code <code>0</code>, Swival accepts the answer immediately and ends normally, and reviewer standard output is ignored. If the reviewer exits with code <code>1</code>, Swival treats reviewer standard output as feedback, appends that feedback as a new user message, resets turn budget for a new pass, and continues the loop. If the reviewer exits with code <code>2</code>, Swival treats that as reviewer failure, warns on standard error when diagnostics are enabled, and accepts the current answer unchanged while ignoring reviewer standard output. Any other nonzero exit code is handled the same way as <code>2</code>.</p>
+<p>Reviewer execution has a 120-second timeout. Timeout or spawn failures are treated as reviewer errors and do not discard the agent's answer.</p>
+<h2 id="reviewer-environment-variables">Reviewer Environment Variables</h2>
+<p>Swival sets context variables on the reviewer subprocess for each round. <code>SWIVAL_TASK</code> contains the original user task and is always set. <code>SWIVAL_REVIEW_ROUND</code> contains the current review round number and is always set. <code>SWIVAL_MODEL</code> contains the resolved model identifier when available.</p>
+<p>The reviewer inherits the parent environment too, but Swival's injected values override any same-named parent values.</p>
+<h2 id="writing-a-reviewer-script">Writing A Reviewer Script</h2>
+<p>A minimal reviewer that accepts only when tests pass can look like this:</p>
 <pre><code class="language-bash">#!/usr/bin/env bash
 set -euo pipefail
 
@@ -159,11 +80,10 @@ else
     exit 1
 fi
 </code></pre>
-<p>A reviewer that validates JSON output:</p>
+<p>A reviewer that requires valid JSON output can look like this:</p>
 <pre><code class="language-bash">#!/usr/bin/env bash
 set -euo pipefail
 
-# The agent's answer arrives on stdin
 answer=$(cat)
 
 if echo &quot;$answer&quot; | python3 -c &quot;import sys, json; json.load(sys.stdin)&quot; 2&gt;/dev/null; then
@@ -173,26 +93,16 @@ else
     exit 1
 fi
 </code></pre>
-<p>The script must be executable (<code>chmod +x review.sh</code>). Swival validates this at
-startup and exits with an error if the file doesn't exist or isn't executable.</p>
-<h2 id="using-swival-as-a-reviewer">Using Swival as a reviewer</h2>
-<p>A second Swival instance can act as an LLM-as-judge reviewer. The outer Swival
-does the work, the inner one evaluates the result. Since Swival automatically
-sets <code>$SWIVAL_TASK</code> on the reviewer subprocess, the judge knows what the agent
-was supposed to do without you having to repeat the task.</p>
-<p>The wrapper script is short — it reads the answer from stdin, asks the judge
-Swival for a verdict, and translates the verdict into an exit code:</p>
+<p>The reviewer file must exist and be executable. Swival validates this before the run starts.</p>
+<h2 id="using-swival-as-the-reviewer">Using Swival As The Reviewer</h2>
+<p>You can run a second Swival instance as an LLM judge. The outer Swival does the work and the inner Swival evaluates quality against the original task and current answer.</p>
 <pre><code class="language-bash">#!/usr/bin/env bash
-# judge.sh — use a second Swival instance to review the agent's answer
+# judge.sh -- use a second Swival instance to review the agent's answer
 set -uo pipefail
 
 base_dir=&quot;$1&quot;
 answer=$(cat)
 
-# Ask the judge for a structured verdict.
-# --max-turns 3: gives room for a think step before answering.
-# --quiet:       only the final answer goes to stdout.
-# --no-history:  don't pollute the history file with review prompts.
 judge_output=$(swival &quot;You are reviewing a coding agent's output.
 
 &lt;task&gt;$SWIVAL_TASK&lt;/task&gt;
@@ -206,98 +116,43 @@ Respond with exactly one of:
     --base-dir &quot;$base_dir&quot; --max-turns 3 --quiet --no-history 2&gt;/dev/null)
 judge_exit=$?
 
-# Swival exit 1 is a real error; exit 2 is max-turns but may still have output.
 if [ $judge_exit -eq 1 ] || [ -z &quot;$judge_output&quot; ]; then
-    exit 2  # reviewer error — accept the answer as-is
+    exit 2
 fi
 
-# Parse the verdict
 if echo &quot;$judge_output&quot; | grep -qi &quot;VERDICT: ACCEPT&quot;; then
     exit 0
 elif echo &quot;$judge_output&quot; | grep -qi &quot;VERDICT: RETRY&quot;; then
     echo &quot;$judge_output&quot; | sed '1,/VERDICT: RETRY/d'
     exit 1
 else
-    # Couldn't parse — treat as reviewer error
     exit 2
 fi
 </code></pre>
-<p>Run it like any other reviewer:</p>
-<pre><code class="language-sh">swival &quot;Refactor the auth module&quot; --reviewer ./judge.sh
-</code></pre>
-<p>A few things to keep in mind:</p>
-<ul>
-<li><strong>Both instances share the same LM Studio / HuggingFace backend.</strong> If only one
-  model is loaded, the judge uses the same model as the worker. You can point the
-  judge at a different provider or model by adding <code>--provider</code> / <code>--model</code> /
-  <code>--base-url</code> flags to the inner <code>swival</code> call.</li>
-<li><strong>Use <code>--max-turns 3</code></strong> for the judge, not 1. Some models use the <code>think</code> tool
-  before answering, which consumes a turn. With <code>--max-turns 1</code> the judge
-  exhausts its budget before producing a verdict.</li>
-<li><strong>Use <code>-uo pipefail</code>, not <code>-euo pipefail</code>.</strong> The inner Swival exits with code 2
-  when it hits max turns, which is not a real failure (it still produces output).
-  <code>set -e</code> would abort the script on that non-zero exit before you get to parse
-  the verdict.</li>
-<li><strong>Handle unparseable output gracefully.</strong> Smaller models sometimes emit raw
-  tool-call syntax instead of a clean verdict. The <code>else</code> branch exits 2
-  (reviewer error), which tells Swival to accept the answer as-is. The retry
-  mechanism means this usually self-corrects on the next round.</li>
-</ul>
-<h2 id="retry-behavior">Retry behavior</h2>
-<p>When the reviewer returns exit code 1, Swival:</p>
-<ol>
-<li>Appends the reviewer's stdout as a new <code>user</code> message to the conversation.</li>
-<li>Resets the turn counter (the agent gets a fresh <code>--max-turns</code> budget).</li>
-<li>Re-enters the agent loop with the full conversation history intact.</li>
-</ol>
-<p>The model sees everything from prior rounds -- its own reasoning, tool calls,
-previous answers, and the review feedback -- so it can build on its earlier work
-rather than starting from scratch.</p>
-<p>There is a hard cap of 5 review rounds. If the reviewer keeps returning 1 after
-5 rounds, Swival accepts the last answer with a warning. This prevents infinite
-loops from a misconfigured reviewer.</p>
-<h2 id="failure-handling">Failure handling</h2>
-<p>Swival validates the reviewer executable at startup. If it doesn't exist or
-isn't executable, the run fails immediately with an error.</p>
-<p>After startup, all reviewer failures are non-fatal:</p>
-<ul>
-<li><strong>Timeout</strong> (120 seconds): warns on stderr, accepts the answer.</li>
-<li><strong>Spawn failure</strong> (binary deleted, permissions changed): warns on stderr, accepts the answer.</li>
-<li><strong>Crash</strong> (non-zero exit other than 1): warns on stderr, accepts the answer.</li>
-</ul>
-<p>The agent's work is never lost due to a broken reviewer. If the reviewer can't
-run, you still get the answer.</p>
-<h2 id="interaction-with-other-flags">Interaction with other flags</h2>
-<h3 id="-quiet"><code>--quiet</code></h3>
-<p>Reviewer diagnostics (round numbers, acceptance messages, warnings) go to
-stderr and are gated on the verbose flag. <code>--quiet</code> suppresses all of them.
-Intermediate answers rejected by the reviewer are never printed to stdout --
-only the final accepted answer is.</p>
-<h3 id="-report"><code>--report</code></h3>
-<p>When both <code>--reviewer</code> and <code>--report</code> are active, the JSON report captures the
-full timeline across all review rounds. Turn numbers are cumulative (they don't
-restart at 1 for each round), so the timeline reads as one continuous sequence.</p>
-<p>The <code>stats</code> object includes a <code>review_rounds</code> field counting how many times the
-reviewer was invoked. This is 0 when <code>--reviewer</code> is not used.</p>
-<pre><code class="language-sh"># Check how many review rounds happened
-jq '.stats.review_rounds' report.json
-
-# See the full timeline across rounds
+<p>This wrapper keeps reviewer behavior predictable even when the judge fails to return parseable output. In that case, returning exit code <code>2</code> tells the outer run to accept the current answer rather than failing hard.</p>
+<p>If both instances point at the same provider, they will use the same backend by default. You can direct the inner judge to a different provider or model by adding <code>--provider</code>, <code>--model</code>, and optionally <code>--base-url</code> inside the wrapper.</p>
+<p>Using <code>--max-turns 3</code> for the inner judge is practical because some models spend a turn on tool-based reasoning before producing a verdict. Using <code>set -uo pipefail</code> instead of <code>set -euo pipefail</code> avoids aborting the wrapper early when the inner run exits with code <code>2</code> but still returns parseable output.</p>
+<h2 id="retry-and-round-limits">Retry And Round Limits</h2>
+<p>Every time the reviewer returns exit code <code>1</code>, Swival appends reviewer feedback as a user message and re-enters the loop with a fresh turn budget. The full conversation stays intact, so the model can build on prior work instead of restarting from scratch.</p>
+<p>To prevent infinite cycles, Swival enforces a hard limit of five review rounds. If round five still returns code <code>1</code>, Swival accepts the latest answer and emits a warning when diagnostics are enabled.</p>
+<h2 id="failure-handling">Failure Handling</h2>
+<p>Startup validation fails fast if the reviewer executable is missing or non-executable.</p>
+<p>After startup, reviewer failures are non-fatal. Timeout failures, process spawn failures, and crash-style exits all degrade to reviewer error handling, which means the current answer is accepted and returned.</p>
+<h2 id="interaction-with-quiet-and-report">Interaction With <code>--quiet</code> And <code>--report</code></h2>
+<p>With <code>--quiet</code>, reviewer diagnostics are suppressed along with other diagnostic logging. Rejected intermediate answers are not printed to standard output; only the final accepted answer is printed.</p>
+<p>With <code>--report</code>, review rounds are captured in the timeline and <code>stats.review_rounds</code> records how many reviewer invocations occurred. Turn numbers remain cumulative across rounds, so the timeline reads as one continuous run.</p>
+<pre><code class="language-sh">jq '.stats.review_rounds' report.json
 jq '.timeline[] | {turn, type}' report.json
 </code></pre>
-<p>See <a href="reports.html">Reports</a> for the full report schema.</p>
-<h2 id="example-workflow">Example workflow</h2>
-<p>A CI pipeline that runs the agent and requires tests to pass:</p>
-<pre><code class="language-sh">#!/usr/bin/env bash
-swival &quot;Fix the failing tests in tests/unit/&quot; \
+<h2 id="example-ci-flow">Example CI Flow</h2>
+<p>A simple CI-style invocation can combine command access, reviewer retries, and report capture in one run.</p>
+<pre><code class="language-sh">swival &quot;Fix the failing tests in tests/unit/&quot; \
     --allowed-commands python3,pytest \
     --reviewer ./ci-review.sh \
     --report results.json \
     --quiet
 </code></pre>
-<p>Where <code>ci-review.sh</code> runs the test suite and returns <code>0</code> on green, or<code>1</code> with
-failure details on red. The agent gets up to 5 chances to fix the tests,
-and the full timeline is captured in the report for later analysis.</p>
+<p>In that setup, <code>ci-review.sh</code> should return <code>0</code> when checks pass and return <code>1</code> with actionable feedback when checks fail. Swival will retry with that feedback up to five rounds.</p>
         </article>
     </div>
     <footer class="site-footer">

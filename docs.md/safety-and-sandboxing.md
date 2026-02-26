@@ -1,140 +1,70 @@
 # Safety and Sandboxing
 
-Swival's sandboxing is application-level. It validates paths and whitelists
-commands in Python, but it does not use OS-level isolation (namespaces,
-seccomp, pledge, etc.). A sufficiently creative model or a bug in the sandbox
-code could bypass these checks. Don't treat them as a security boundary for
-untrusted models.
+Swival's built-in sandbox is implemented at the application layer. It validates paths and enforces command policy in Python, but it is not an operating-system isolation boundary. You should treat it as a strong guardrail for normal use, not as a hard security perimeter against untrusted or adversarial models.
 
-For stronger isolation, use an OS-level sandbox around Swival itself:
+If you need stronger isolation, wrap Swival with an OS-level sandbox. [AgentFS](agentfs.md) gives you copy-on-write filesystem isolation so agent edits do not touch your real tree until you copy files back. On macOS, `sandbox-exec` can additionally limit network, process, and filesystem capabilities at the kernel policy level.
 
-- **[AgentFS](agentfs.md)** provides a copy-on-write filesystem overlay. The
-  agent can write freely, but your real files don't change until you explicitly
-  copy them back. See [Using Swival with AgentFS](agentfs.md) for a full
-  walkthrough.
-- **sandbox-exec** (macOS) can restrict filesystem, network, and process
-  access at the kernel level. For example, to deny network access:
-  ```sh
-  sandbox-exec -p '(version 1)(allow default)(deny network*)' \
-      swival "task" --yolo
-  ```
+```sh
+sandbox-exec -p '(version 1)(allow default)(deny network*)' \
+    swival "task" --yolo
+```
 
-Both can be combined. AgentFS handles filesystem isolation, sandbox-exec
-handles everything else.
+AgentFS and `sandbox-exec` can be combined when you want both writable sandboxed development flow and stricter system-level controls.
 
-With that caveat, here's what Swival's built-in sandbox does and how to
-configure it.
+## Base Directory Enforcement
 
-## Base directory
+All filesystem operations are anchored to `--base-dir`, which defaults to the current directory. Path checks resolve both the base directory and target path through symlinks, then verify that the resolved target remains inside an allowed root. If a path escapes through traversal or symlink indirection, the operation fails.
 
-All file paths are resolved relative to `--base-dir` (defaults to the current
-directory). The resolution function (`safe_resolve`) works like this:
+Even in YOLO mode, Swival blocks the filesystem root itself. You cannot grant the agent unrestricted access to `/` by accident.
 
-1. Resolve the base directory to an absolute path, following symlinks.
-2. Resolve the target path the same way.
-3. Check that the resolved target is inside the resolved base directory.
+## Additional Allowed Directories
 
-If the target escapes the base directory at any point -- even through symlinks
--- the operation fails with an error. This means a symlink inside your project
-that points to `/etc/passwd` won't be followed.
-
-The filesystem root is always blocked, even in unrestricted mode. You can't
-accidentally give the agent access to everything.
-
-## Extra directories
-
-Sometimes the agent needs to read or write files outside the base directory. Use
-`--allow-dir` for that:
+When the agent needs access outside `--base-dir`, pass one or more `--allow-dir` flags.
 
 ```sh
 swival --allow-dir ~/shared-data --allow-dir /opt/configs "Update the config"
 ```
 
-Each `--allow-dir` path grants full read/write access. The flag is repeatable.
-The path must exist, must be a directory, and can't be the filesystem root.
+Each allowed directory must already exist, must be a directory, and cannot be the filesystem root. In REPL mode, you can grant the same access dynamically with `/add-dir <path>`.
 
-In the REPL, you can add directories on the fly with `/add-dir <path>`.
+## Command Execution Policy
 
-## Command execution
+Command execution is off by default. The agent only receives `run_command` when you explicitly enable it.
 
-Command execution is disabled by default. The agent has no `run_command` tool
-unless you explicitly enable it.
-
-### Whitelisted commands
+In whitelist mode, you pass a comma-separated set of command basenames.
 
 ```sh
 swival --allowed-commands ls,git,python3 "task"
 ```
 
-At startup, each command name is resolved to its absolute path via `which`. If a
-command isn't found on PATH, Swival exits with an error. If a command resolves
-to a path inside the base directory, it's also rejected -- this prevents the
-agent from writing a script and then executing it.
+At startup, each basename is resolved to an absolute path using `which`. If a command cannot be found, Swival exits with an error. If a command resolves inside your base directory, Swival rejects it so the agent cannot modify and execute workspace binaries in one session.
 
-At runtime, only the whitelisted basenames are accepted. Commands are passed as
-arrays (`["ls", "-la"]`), not shell strings, so there's no shell injection. The
-working directory is set to the base directory.
+At runtime in whitelist mode, commands must be passed as argument arrays, not shell strings. This removes shell interpolation and injection risk from ordinary command calls.
 
-### YOLO mode
+In YOLO mode, both the filesystem sandbox and the command whitelist are disabled. The agent can read or write any non-root path and run arbitrary commands.
 
 ```sh
 swival --yolo "do whatever you want"
 ```
 
-This disables both the filesystem sandbox and the command whitelist. The agent
-can read and write any file (except the filesystem root) and run any command. No
-questions asked.
+## Read-Before-Write Guard
 
-Use this when you trust the model and want maximum capability. Combine it with
-[AgentFS](agentfs.md) if you want an external safety net.
+By default, Swival blocks writes to existing files unless that file has already been read or previously written during the current session. This reduces accidental overwrites when the model has not inspected current file contents.
 
-In YOLO mode, the `run_command` tool description changes to indicate any command
-is allowed, and the system prompt is updated accordingly.
+This guard also applies when `write_file` uses `move_from` and the destination already exists. The source path is exempt from the read requirement because renaming does not modify source content.
 
-## Read-before-write guard
-
-By default, Swival prevents the agent from overwriting or editing a file it
-hasn't read in the current session. This stops the agent from clobbering files
-it hasn't inspected yet. Files the agent created itself (via `write_file`) can
-always be re-written without a prior read.
-
-The same guard applies to `write_file` with `move_from` — if the destination
-already exists, it must have been read or written first (the source is exempt,
-since renaming doesn't change content).
-
-To disable this guard:
+If you intentionally want direct write access without prior reads, disable the guard with `--no-read-guard`.
 
 ```sh
 swival --no-read-guard "task"
 ```
 
-This is useful when you're running Swival against a directory it shouldn't need
-to pre-read before writing (e.g., an empty output directory).
+## URL Fetching And SSRF Protections
 
-## URL fetching and SSRF protection
+The `fetch_url` tool only allows `http` and `https`. It resolves each hostname with `socket.getaddrinfo`, blocks private and internal address classes through `ipaddress`, and re-runs those checks on every redirect hop. Redirect chains are handled manually and capped at ten hops, which prevents public-to-private redirect abuse patterns.
 
-The `fetch_url` tool blocks requests to private, loopback, link-local, and
-reserved IP addresses. It resolves the hostname to IP addresses using
-`socket.getaddrinfo` and checks each address against Python's `ipaddress`
-module before connecting.
+Binary MIME types are rejected. Response bodies are capped at 5 MB before conversion, and converted inline output is capped at 50 KB.
 
-Redirect chains are handled manually -- each hop is validated against the same
-blocklist. This prevents SSRF attacks where a public URL redirects to an
-internal service. The redirect limit is 10 hops.
+## Output Caps
 
-Only HTTP and HTTPS schemes are allowed. Binary content types are rejected.
-Response bodies are capped at 5 MB raw, with the converted output capped at
-50 KB inline (larger responses are saved to files for pagination).
-
-## Output caps
-
-Several caps exist to prevent the agent from overwhelming the context window:
-
-- File reads: 50 KB per read, with pagination for larger files
-- Individual lines: truncated at 2,000 characters
-- Directory listings and grep results: 100 entries max
-- Command output: 10 KB inline, larger results saved to `.swival/` for
-  pagination (auto-deleted after 10 minutes)
-- URL fetch output: 50 KB inline, larger results saved to files
-- Response history: `.swival/HISTORY.md` capped at 500 KB (new entries skipped
-  once the limit is reached)
+Several hard caps keep the conversation bounded. File reads are limited to 50 KB per call and lines are truncated at 2,000 characters. Directory and grep-style listings are capped at 100 results. Command output is capped at 10 KB inline, with larger output written to `.swival/` for paginated reads and auto-cleaned after roughly ten minutes. URL fetch output is capped at 50 KB inline, with larger output saved to files. Response history is written to `.swival/HISTORY.md` until that file reaches 500 KB, after which new entries are skipped.

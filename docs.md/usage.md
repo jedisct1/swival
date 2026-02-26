@@ -1,137 +1,132 @@
 # Usage
 
-Swival operates in two modes: one-shot (the default) and interactive (REPL).
+Swival has two operating modes. The default mode is one-shot, where you give the agent a task and let it run to completion. The second mode is an interactive REPL, where conversation history stays live across follow-up prompts.
 
-## One-shot mode
+## One-Shot Mode
 
-Give it a task, let it work, get the result:
+In one-shot mode, you pass one task on the command line and Swival keeps looping through tool calls until it reaches a final answer or hits the turn limit.
 
 ```sh
 swival "Review this codebase for security issues"
 ```
 
-The agent loops through tool calls -- reading files, searching code, reasoning
--- until it has a final answer. That answer is printed to stdout. Everything else
-(turn headers, tool call logs, timing) goes to stderr.
+The final answer is written to standard output. Diagnostics such as turn logs, timing, and tool traces are written to standard error.
 
-This separation is intentional. You can pipe the output:
+If you want a clean output stream for scripting, use `--quiet` or `-q`.
 
 ```sh
 swival -q "Summarize the API surface of src/" > api-summary.txt
 ```
 
-The `-q` (or `--quiet`) flag suppresses all diagnostic output on stderr, so you
-get just the answer.
-
-### Giving the agent more power
-
-By default, Swival can read, write, and search files within the current
-directory. If you want it to run commands too:
+You can grant command execution when needed by explicitly whitelisting command names.
 
 ```sh
 swival --allowed-commands ls,git,python3 \
     "Create a tool that returns a random number between 0 and 42"
 ```
 
-The available commands influence the agent's behavior -- if you allow `bun` and
-`node`, it'll lean toward JavaScript. Allow `python3` and it'll write Python.
+That whitelist changes what the agent can do. If `python3` is available, it can use Python for implementation and verification. If no commands are whitelisted, `run_command` is unavailable unless you enable YOLO mode.
 
-### Exit codes
+A successful run exits with code `0`. A runtime or configuration failure exits with code `1`. A run that reaches the turn limit before finishing exits with code `2`.
 
-- `0` -- success, the agent produced an answer
-- `1` -- error (couldn't connect to LM Studio, invalid arguments, etc.)
-- `2` -- max turns exhausted without a final answer
+## Interactive Mode
 
-## Interactive mode (REPL)
+REPL mode keeps a shared conversation state, so each new question can build on earlier turns.
 
 ```sh
 swival --repl
 ```
 
-This gives you an interactive session with conversation history that carries
-across questions. It works like Claude Code or Codex -- ask a question, watch it
-work, ask a follow-up.
-
-You can also start a REPL with an initial question:
+You can also launch the REPL and send an initial question immediately.
 
 ```sh
 swival --repl "Look at the project structure and tell me what this does"
 ```
 
-### REPL commands
+The REPL is built on `prompt-toolkit`, so it supports input history, history search, and normal terminal line editing.
 
-- `/help` -- show available commands
-- `/clear` -- reset conversation history (keeps system prompt)
-- `/compact` -- compress context by truncating old tool results
-- `/compact --drop` -- more aggressive: drops entire middle turns
-- `/add-dir <path>` -- grant read/write access to an additional directory
-- `/extend` -- double the current max turns limit
-- `/extend <N>` -- set max turns to a specific number
-- `/continue` -- reset the turn counter and continue the agent loop
-- `/init` -- generate a AGENT.md file describing the project's conventions
-- `/exit` or `/quit` -- exit (Ctrl-D works too)
+## REPL Commands
 
-The REPL uses `prompt-toolkit`, so you get command history, history search, and
-line editing.
+`/help` prints the command reference in the terminal.
 
-## CLI flags
+`/clear` drops conversation history back to the initial system state and also resets internal thinking and file-tracking state.
 
-### Model and provider
+`/compact` compacts older tool output in memory. `/compact --drop` is more aggressive and also drops middle turns.
 
-| Flag         | Default                 | Description                                              |
-| ------------ | ----------------------- | -------------------------------------------------------- |
-| `--provider` | `lmstudio`              | LLM provider: `lmstudio`, `huggingface`, or `openrouter` |
-| `--model`    | auto-discovered         | Override model identifier                                |
-| `--base-url` | `http://127.0.0.1:1234` | Server base URL                                          |
-| `--api-key`  | from env                | API key (overrides `HF_TOKEN` / `OPENROUTER_API_KEY`)    |
+`/add-dir <path>` grants read and write access to an additional directory for the current session.
 
-### Behavior tuning
+`/extend` doubles the current turn budget. `/extend <N>` sets the turn budget to an exact value.
 
-| Flag                   | Default          | Description                                         |
-| ---------------------- | ---------------- | --------------------------------------------------- |
-| `--max-turns`          | `100`            | Maximum agent loop iterations                       |
-| `--max-output-tokens`  | `32768`          | Maximum output tokens per LLM call                  |
-| `--max-context-tokens` | from model       | Requested context length (may trigger model reload) |
-| `--temperature`        | provider default | Sampling temperature                                |
-| `--top-p`              | `1.0`            | Top-p (nucleus) sampling                            |
-| `--seed`               | none             | Random seed for reproducible outputs                |
+`/continue` restarts the agent loop for the existing conversation without adding a new user message.
 
-### Sandboxing
+`/init` runs a three-pass workflow that scans your project and generates an `AGENT.md` file.
 
-| Flag                 | Default | Description                                               |
-| -------------------- | ------- | --------------------------------------------------------- |
-| `--base-dir`         | `.`     | Base directory for file tools                             |
-| `--allowed-commands` | none    | Comma-separated command whitelist                         |
-| `--allow-dir`        | none    | Grant access to extra directories (repeatable)            |
-| `--yolo`             | off     | Disable sandbox and command whitelist entirely            |
-| `--no-read-guard`    | off     | Skip read-before-write guard (allow editing unread files) |
+`/exit` and `/quit` leave the REPL. Pressing `Ctrl-D` exits as well.
 
-### System prompt and instructions
+## CLI Flags
 
-| Flag                 | Default  | Description                             |
-| -------------------- | -------- | --------------------------------------- |
-| `--system-prompt`    | built-in | Custom system prompt (replaces default) |
-| `--no-system-prompt` | off      | Omit system message entirely            |
-| `--no-instructions`  | off      | Don't load CLAUDE.md or AGENT.md        |
+### Model And Provider Flags
 
-### Skills
+`--provider` chooses the backend provider and defaults to `lmstudio`. Valid values are `lmstudio`, `huggingface`, and `openrouter`.
 
-| Flag           | Default | Description                             |
-| -------------- | ------- | --------------------------------------- |
-| `--skills-dir` | none    | Additional skill directory (repeatable) |
-| `--no-skills`  | off     | Disable skill discovery                 |
+`--model` overrides auto-discovery with a fixed model identifier.
 
-### Output and reporting
+`--base-url` sets a custom API base URL. For LM Studio, the default base URL is `http://127.0.0.1:1234` when `--base-url` is not set.
 
-| Flag             | Default | Description                                                         |
-| ---------------- | ------- | ------------------------------------------------------------------- |
-| `-q` / `--quiet` | off     | Suppress all diagnostics; only print the final result               |
-| `--report FILE`  | off     | Write a JSON evaluation report instead of stdout                    |
-| `--reviewer EXE` | off     | Run external reviewer after each answer (see [Reviews](reviews.md)) |
-| `--no-history`   | off     | Don't write responses to `.swival/HISTORY.md`                       |
-| `--color`        | auto    | Force ANSI color on stderr                                          |
-| `--no-color`     | auto    | Disable ANSI color on stderr                                        |
+`--api-key` provides a key directly on the command line and takes precedence over provider environment variables such as `HF_TOKEN` or `OPENROUTER_API_KEY`.
 
-See [Reports](reports.md) for the full report schema, timeline event types, and
-benchmarking workflows. See [Reviews](reviews.md) for the reviewer protocol and
-how to build a reviewer script.
+### Behavior Tuning Flags
+
+`--max-turns` sets the maximum number of loop iterations and defaults to `100`.
+
+`--max-output-tokens` sets the model output budget per call and defaults to `32768`.
+
+`--max-context-tokens` requests a context window size. With LM Studio, this may trigger a model reload.
+
+`--temperature` controls sampling temperature and defaults to the provider default when omitted.
+
+`--top-p` controls nucleus sampling and defaults to `1.0`.
+
+`--seed` passes a random seed for providers that support reproducible sampling.
+
+### Sandboxing Flags
+
+`--base-dir` defines the base directory for file tools and defaults to the current directory.
+
+`--allowed-commands` enables command execution through a comma-separated whitelist.
+
+`--allow-dir` grants read and write access to additional directories and can be repeated.
+
+`--yolo` disables both filesystem sandbox checks and command whitelisting, except that filesystem root access is still blocked.
+
+`--no-read-guard` disables the read-before-write guard that normally prevents editing existing files before reading them.
+
+### System Prompt And Instruction Flags
+
+`--system-prompt` replaces the built-in prompt with your own prompt text.
+
+`--no-system-prompt` omits the system message entirely.
+
+`--no-instructions` prevents loading `CLAUDE.md` and `AGENT.md` from the base directory.
+
+`--system-prompt` and `--no-system-prompt` are mutually exclusive.
+
+### Skills Flags
+
+`--skills-dir` adds external skill directories and can be passed more than once.
+
+`--no-skills` disables skill discovery and removes the `use_skill` tool path.
+
+### Output And Reporting Flags
+
+`--quiet` and `-q` suppress diagnostics and keep terminal output focused on final answers.
+
+`--report FILE` writes a JSON run report to `FILE`. This flag is incompatible with `--repl`.
+
+`--reviewer EXECUTABLE` runs an external reviewer after each answer. This flag is also incompatible with `--repl`.
+
+`--no-history` disables writes to `.swival/HISTORY.md`.
+
+`--color` forces ANSI color on standard error, and `--no-color` disables ANSI color even on TTY output.
+
+For the full report schema and analysis workflow, see [Reports](reports.md). For the reviewer protocol and examples, see [Reviews](reviews.md).

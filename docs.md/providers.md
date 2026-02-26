@@ -1,84 +1,48 @@
 # Providers
 
-Swival supports three providers: LM Studio (local), HuggingFace Inference API
-(hosted), and OpenRouter (multi-provider API). Under the hood, all LLM calls go
-through [LiteLLM](https://docs.litellm.ai/), which normalizes the API
-differences.
+Swival supports LM Studio for local inference, HuggingFace Inference API for hosted inference, and OpenRouter for multi-provider access through a single API. All provider calls are normalized through [LiteLLM](https://docs.litellm.ai/), so the runtime loop stays consistent while credential and model routing change per provider.
 
 ## LM Studio
 
-This is the default and requires no configuration beyond having LM Studio
-running with a model loaded.
+LM Studio is the default provider and usually requires no flags when the local server is already running with a loaded model.
 
-### Auto-discovery
+At startup, Swival calls `http://127.0.0.1:1234/api/v1/models` unless you override `--base-url`. It looks for the first model entry with `type: "llm"` and a non-empty `loaded_instances` array, then extracts the model identifier and current context length from that payload. If no loaded model is found, Swival exits and asks you to load a model or pass `--model` explicitly.
 
-Swival queries `http://127.0.0.1:1234/api/v1/models` at startup to find the
-loaded model. It looks for the first entry with `type: "llm"` and a non-empty
-`loaded_instances` array. The model identifier and context length are extracted
-automatically.
-
-If no model is loaded, Swival exits with an error telling you to load one.
-
-### Custom base URL
-
-If LM Studio is running on a different host or port:
+If LM Studio is running on another host or port, set `--base-url`.
 
 ```sh
 swival --base-url http://192.168.1.100:1234 "task"
 ```
 
-### Manual model selection
-
-If auto-discovery doesn't find the right model (e.g., multiple models loaded),
-you can specify it:
+If you want to bypass auto-discovery, pass `--model`.
 
 ```sh
 swival --model "qwen3-coder-next" "task"
 ```
 
-### Context size configuration
-
-You can request a specific context length, which may trigger LM Studio to
-reload the model:
+If you pass `--max-context-tokens`, Swival may reload the model through LM Studio's `/api/v1/models/load` endpoint.
 
 ```sh
 swival --max-context-tokens 131072 "task"
 ```
 
-Swival calls LM Studio's `/api/v1/models/load` endpoint with the new context
-size. If the requested size matches what's already loaded, no reload happens.
-Reloads can be slow depending on the model and hardware.
+If the requested value already matches the loaded context length, no reload happens.
+When a reload is required, it can take noticeable time depending on model size and hardware.
 
-### How the LiteLLM call works
-
-For LM Studio, Swival prefixes the model identifier with `openai/` and sets
-`api_base` to `{base_url}/v1`. The API key is set to `"lm-studio"` (LM Studio
-doesn't require a real key). This tells LiteLLM to use the OpenAI-compatible
-API format.
+Internally, LM Studio calls are routed through LiteLLM as an OpenAI-compatible endpoint. Swival sends the model as `openai/<model_id>`, sets `api_base` to `<base_url>/v1`, and uses the placeholder API key `lm-studio`.
 
 ## HuggingFace Inference API
 
-For hosted inference without running a local model.
-
-### Basic usage
+For HuggingFace, `--model` is required and must be in `org/model` format. Authentication comes from `HF_TOKEN` by default or `--api-key` if you pass one explicitly.
 
 ```sh
 export HF_TOKEN=hf_your_token_here
 swival --provider huggingface --model zai-org/GLM-5 "task"
 ```
 
-The `--model` flag is required and must be in `org/model` format. Authentication
-comes from `HF_TOKEN` in the environment or `--api-key` on the command line
-(which takes precedence).
+Serverless HuggingFace endpoints often expose smaller context windows than local deployments, so long multi-turn coding sessions can hit context pressure sooner.
 
-Serverless endpoints typically have a 32k token context limit, which can be
-restrictive for agentic workloads that accumulate
-tool calls and file contents over many turns. If you're hitting context limits,
-consider a dedicated endpoint instead.
-
-### Dedicated endpoints
-
-For HuggingFace dedicated inference endpoints (private deployments):
+For dedicated endpoints, keep the same model identifier and pass your endpoint URL and key.
 
 ```sh
 swival --provider huggingface \
@@ -88,37 +52,19 @@ swival --provider huggingface \
     "task"
 ```
 
-The `--base-url` points to your endpoint. The model identifier still needs to
-match what's deployed there. Dedicated endpoints don't have the context size
-limits of serverless -- you control the deployment, so the full model context
-window is available.
-
-### How the LiteLLM call works
-
-For HuggingFace, Swival prefixes the model with `huggingface/` (stripping any
-existing prefix first) and passes the API key directly. If `--base-url` is set,
-it's passed as `api_base` to LiteLLM.
+Internally, Swival normalizes the model to `huggingface/<model_id>` for LiteLLM and strips an existing `huggingface/` prefix if you already included it. If `--base-url` is set, it is forwarded as `api_base`.
+Dedicated endpoints usually let you use the full deployed model context window rather than tighter serverless limits.
 
 ## OpenRouter
 
-For access to dozens of models from different providers (OpenAI, Anthropic,
-Meta, Google, and others) through a single API.
-
-### Basic usage
+For OpenRouter, `--model` is required and authentication comes from `OPENROUTER_API_KEY` or `--api-key`.
 
 ```sh
 export OPENROUTER_API_KEY=sk_or_your_token_here
 swival --provider openrouter --model openrouter/free "task"
 ```
 
-The `--model` flag is required. Use the model identifier from OpenRouter's
-catalog (e.g., ``). Authentication comes from
-`OPENROUTER_API_KEY` in the environment or `--api-key` on the command line
-(which takes precedence).
-
-### Custom base URL
-
-For custom OpenRouter-compatible endpoints:
+If you use an OpenRouter-compatible custom endpoint, set `--base-url`.
 
 ```sh
 swival --provider openrouter \
@@ -128,30 +74,16 @@ swival --provider openrouter \
     "task"
 ```
 
-### Context size
-
-OpenRouter models vary widely in context size (8K to 200K+ tokens). Swival
-defaults to whatever `--max-context-tokens` is set to; use it to match your
-model's actual limit:
+OpenRouter models vary widely in context limits, so you should set `--max-context-tokens` to match the model you chose.
 
 ```sh
 swival --provider openrouter --model openrouter/free \
     --max-context-tokens 131072 "task"
 ```
 
-### How the LiteLLM call works
+Internally, Swival normalizes OpenRouter models to LiteLLM's `openrouter/...` format. If you already pass a fully prefixed value like `openrouter/openrouter/free`, Swival keeps it stable instead of adding another prefix.
 
-For OpenRouter, Swival prefixes the model with `openrouter/` (stripping any
-existing prefix first) and passes the API key directly. If `--base-url` is set,
-it's passed as `api_base` to LiteLLM.
+## Adding More Providers Later
 
-## Future providers
-
-Since Swival uses LiteLLM for the actual API call, adding new providers is
-straightforward -- it's mostly a matter of building the right model string and
-passing the right credentials. The provider-specific logic in `call_llm()` is
-about 10 lines per provider.
-
-OpenRouter already provides access to dozens of models from different providers
-through a single API, so it's a good option if you need flexibility without
-configuring multiple credentials.
+Because API calls are already abstracted behind LiteLLM, adding a provider is mostly a matter of argument validation, model normalization, and credential wiring. The provider-specific branch in `call_llm()` is intentionally compact so new providers can be added without changing the rest of the agent loop.
+In practice, each provider branch is only about ten lines of routing logic.

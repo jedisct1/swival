@@ -54,76 +54,40 @@
         </aside>
         <article class="docs-content">
             <h1 id="skills">Skills</h1>
-<p>Skills are reusable instruction sets that teach the agent how to handle
-specific tasks. Instead of cramming everything into the system prompt, Swival
-uses progressive disclosure: the agent sees a compact catalog of available
-skills, and loads the full instructions only when it actually needs one.</p>
-<h2 id="creating-a-skill">Creating a skill</h2>
-<p>A skill lives in a directory with a <code>SKILL.md</code> file. The file starts with YAML
-frontmatter that defines the skill's name and description, followed by the full
-instructions:</p>
+<p>Skills are reusable instruction packages that let Swival load detailed guidance only when a task needs it. Instead of injecting every instruction into the base prompt, Swival uses progressive disclosure: the model sees a compact catalog first and loads a specific skill body on demand through <code>use_skill</code>.</p>
+<h2 id="creating-a-skill">Creating A Skill</h2>
+<p>A skill lives in its own directory and must include <code>SKILL.md</code>. The file begins with YAML frontmatter containing <code>name</code> and <code>description</code>, followed by the full instruction body.</p>
 <pre><code>skills/
   deploy/
     SKILL.md
     scripts/
       deploy.sh
 </code></pre>
-<p>Here's what <code>skills/deploy/SKILL.md</code> might look like:</p>
+<p>A typical <code>SKILL.md</code> file looks like this:</p>
 <pre><code class="language-markdown">---
 name: deploy
 description: Deploy the application to production using the deploy script.
 ---
 
-To deploy the application:
+Run `scripts/deploy.sh` from the skill directory, check the output for errors,
+and verify the deployment through the health endpoint.
 
-1. Run `scripts/deploy.sh` from the skill directory.
-2. Check the output for any errors.
-3. Verify the deployment by hitting the health endpoint.
-
-The deploy script expects the `DEPLOY_ENV` environment variable to be set.
-Use `production` for prod deploys, `staging` for staging.
+The deploy script expects `DEPLOY_ENV` to be set. Use `production` for prod
+and `staging` for staging.
 </code></pre>
-<h3 id="frontmatter-rules">Frontmatter rules</h3>
-<p>The frontmatter requires exactly two fields:</p>
-<ul>
-<li><code>name</code>: lowercase alphanumeric with hyphens (like <code>my-skill</code>). Must match
-  the directory name. Max 64 characters. No leading, trailing, or consecutive
-  hyphens.</li>
-<li><code>description</code>: a short summary (max 1024 characters). This is what the agent
-  sees in the catalog to decide whether to activate the skill.</li>
-</ul>
-<p>The body after the frontmatter closing <code>---</code> is the full instruction text. It
-can be up to 20,000 characters. Anything beyond that is truncated.</p>
-<h2 id="where-to-put-skills">Where to put skills</h2>
-<p>Swival looks for skills in two places:</p>
-<p><code>Project-local skills</code> live in a <code>skills/</code> directory inside the base
-directory. Each subdirectory with a <code>SKILL.md</code> file is a skill. These take
-precedence over external skills.</p>
-<p><code>External skills</code> are specified with <code>--skills-dir</code>:</p>
+<p>The <code>name</code> field must be lowercase alphanumeric with hyphens, must match the directory name, cannot contain leading or trailing hyphens, cannot contain consecutive hyphens, and cannot exceed 64 characters. The <code>description</code> field is what the model sees in the catalog and cannot exceed 1,024 characters. The instruction body after frontmatter can be up to 20,000 characters, and longer bodies are truncated.</p>
+<h2 id="skill-discovery-locations">Skill Discovery Locations</h2>
+<p>Swival checks project-local skills first under <code>skills/</code> inside the base directory. Every immediate subdirectory that contains <code>SKILL.md</code> is treated as a local skill. Local skills take precedence if a name collision happens.</p>
+<p>You can also add external skill locations with <code>--skills-dir</code>.</p>
 <pre><code class="language-sh">swival --skills-dir ~/my-skills &quot;task&quot;
 </code></pre>
-<p>The <code>--skills-dir</code> flag is repeatable. Each path can be either a directory
-containing <code>SKILL.md</code> directly (a single skill) or a parent directory whose
-subdirectories contain <code>SKILL.md</code> files.</p>
-<p>If the same skill name appears in both project-local and external locations,
-the project-local one wins. Among external directories, first occurrence wins.</p>
-<p>Disable skill discovery entirely with <code>--no-skills</code>.</p>
-<h2 id="how-progressive-disclosure-works">How progressive disclosure works</h2>
-<p>At startup, Swival scans for skills and builds a catalog. The catalog -- just
-names and descriptions, one line each -- is appended to the system prompt inside
-<code>&lt;available-skills&gt;</code> tags. The agent also gets a <code>use_skill</code> tool.</p>
-<p>When the agent encounters a task that matches a skill's description, it calls
-<code>use_skill</code> with the skill name. Swival loads the full <code>SKILL.md</code> body and
-returns it as a tool result wrapped in <code>&lt;skill-instructions&gt;</code> tags, along with
-the skill's directory path.</p>
-<p>This means the full instructions only enter the context window when actually
-needed. For a project with many skills, this keeps the system prompt lean.</p>
-<h2 id="file-access-for-external-skills">File access for external skills</h2>
-<p>Project-local skills (under <code>base_dir/skills/</code>) can access files through the
-normal sandbox -- they're already inside the base directory.</p>
-<p>External skills get their directory added to a read-only allowlist when
-activated. The agent can read supporting files in the skill directory (scripts,
-templates, examples) using absolute paths, but can't write to them.</p>
+<p>Each <code>--skills-dir</code> path can point directly at one skill directory that contains <code>SKILL.md</code>, or at a parent directory where nested subdirectories contain skill files. If duplicate skill names exist across external directories, first discovery wins. If both local and external skills define the same name, the local definition wins.</p>
+<p>If you do not want skill loading at all, use <code>--no-skills</code>.</p>
+<h2 id="how-progressive-disclosure-works">How Progressive Disclosure Works</h2>
+<p>At startup, Swival builds a compact skill catalog that includes only names and descriptions. That catalog is appended to the system prompt inside <code>&lt;available-skills&gt;</code> tags, and the <code>use_skill</code> tool is exposed.</p>
+<p>When the model decides a skill is relevant, it calls <code>use_skill</code> with the skill name. Swival then reads the full body from <code>SKILL.md</code> and returns it inside <code>&lt;skill-instructions&gt;</code> tags along with the skill directory path. This keeps base prompt size small while still allowing deep instructions when needed.</p>
+<h2 id="file-access-for-external-skills">File Access For External Skills</h2>
+<p>Project-local skills are already inside normal sandbox roots, so they use standard file access rules. External skills are added as read-only roots when activated. That means the model can read helper files under those skill directories with absolute paths, but cannot write into those external skill directories.</p>
         </article>
     </div>
     <footer class="site-footer">
