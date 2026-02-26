@@ -1,5 +1,6 @@
 """Public library API for swival: Session class and Result dataclass."""
 
+import copy
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -257,7 +258,7 @@ class Session:
         return Result(
             answer=answer,
             exhausted=exhausted,
-            messages=list(messages),
+            messages=copy.deepcopy(messages),
             report=report_dict,
         )
 
@@ -284,7 +285,7 @@ class Session:
         return Result(
             answer=answer,
             exhausted=exhausted,
-            messages=list(messages),
+            messages=copy.deepcopy(messages),
             report=None,
         )
 
