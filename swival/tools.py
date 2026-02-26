@@ -1385,6 +1385,18 @@ def _capture_process(proc: subprocess.Popen, timeout: int, base_dir: str) -> str
     return result
 
 
+_SHELL_CHARS = set("|&;><$`\\\"'*?~#!{}()[]\n\r")
+
+
+def _is_safe_to_split(s: str) -> bool:
+    """Check if a string can be safely split on whitespace into a command array.
+
+    Returns False if the string contains shell metacharacters that would make
+    naive whitespace splitting dangerous or semantically wrong.
+    """
+    return not (_SHELL_CHARS & set(s))
+
+
 def _run_shell_command(command: str, base_dir: str, timeout: int) -> str:
     """Execute a shell string via sh -c (Unix) or cmd.exe /c (Windows)."""
     base_path = Path(base_dir)
@@ -1453,20 +1465,26 @@ def _run_command(
         if repaired_command is None:
             if unrestricted:
                 return _run_shell_command(command, base_dir, timeout)
-            return _finalize(
-                'error: "command" must be a JSON array of strings, not a single string.\n'
-                'Wrong: "command": "grep -n pattern file.py"\n'
-                'Right: "command": ["grep", "-n", "pattern", "file.py"]\n'
-                "Each argument must be a separate element in the array.\n"
-                "Shell syntax (&&, |, >, 2>&1, etc.) is not supported — "
-                "run one command at a time.",
-                was_repaired,
-            )
-        command = repaired_command
-        was_repaired = True
+            # No shell metacharacters — safe to split on whitespace.
+            if _is_safe_to_split(command):
+                repaired_command = command.split()
+            else:
+                return (
+                    'error: "command" must be a JSON array of strings, '
+                    "not a single string.\n"
+                    'Wrong: "command": "grep -n pattern file.py"\n'
+                    'Right: "command": ["grep", "-n", "pattern", "file.py"]\n'
+                    "Each argument must be a separate element in the array.\n"
+                    "Shell syntax (&&, |, >, 2>&1, etc.) is not supported — "
+                    "run one command at a time."
+                )
+
+        if repaired_command is not None:
+            command = repaired_command
+            was_repaired = True
 
     if not command:
-        return _finalize("error: command list is empty", was_repaired)
+        return "error: command list is empty"
 
     base_path = Path(base_dir)
     if not base_path.exists():

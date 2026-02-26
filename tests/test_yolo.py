@@ -13,6 +13,7 @@ import pytest
 from swival.tools import (
     safe_resolve,
     _is_within_base,
+    _is_safe_to_split,
     _read_file,
     _write_file,
     _edit_file,
@@ -644,10 +645,10 @@ class TestShellStringCompat:
         assert "hello" in result
         assert "(auto-corrected:" in result
 
-    def test_shell_string_sandboxed_rejected(self, tmp_path):
-        """In sandboxed mode, plain strings still error."""
+    def test_shell_string_with_metachar_sandboxed_rejected(self, tmp_path):
+        """In sandboxed mode, strings with shell chars still error."""
         result = _run_command(
-            "ls -la",
+            "echo hello | cat",
             str(tmp_path),
             resolved_commands={},
             unrestricted=False,
@@ -802,6 +803,162 @@ class TestShellStringWindows:
         _run_shell_command("echo hello", str(tmp_path), timeout=30)
 
         assert "start_new_session" not in captured_kwargs
+
+
+# ---------------------------------------------------------------------------
+# Auto-split string commands in sandboxed mode
+# ---------------------------------------------------------------------------
+
+
+class TestIsSafeToSplit:
+    def test_plain_command(self):
+        assert _is_safe_to_split("ls -la src/")
+
+    def test_pipe_rejected(self):
+        assert not _is_safe_to_split("echo hello | cat")
+
+    def test_redirect_rejected(self):
+        assert not _is_safe_to_split("echo hello > out.txt")
+
+    def test_semicolon_rejected(self):
+        assert not _is_safe_to_split("echo a; echo b")
+
+    def test_dollar_rejected(self):
+        assert not _is_safe_to_split("echo $HOME")
+
+    def test_backtick_rejected(self):
+        assert not _is_safe_to_split("echo `whoami`")
+
+    def test_backslash_rejected(self):
+        assert not _is_safe_to_split("echo C:\\Users")
+
+    def test_single_quote_rejected(self):
+        assert not _is_safe_to_split("echo 'hello world'")
+
+    def test_double_quote_rejected(self):
+        assert not _is_safe_to_split('echo "hello world"')
+
+    def test_glob_star_rejected(self):
+        assert not _is_safe_to_split("ls *.py")
+
+    def test_newline_rejected(self):
+        assert not _is_safe_to_split("echo hello\necho world")
+
+    def test_carriage_return_rejected(self):
+        assert not _is_safe_to_split("echo hello\recho world")
+
+    def test_crlf_rejected(self):
+        assert not _is_safe_to_split("echo hello\r\necho world")
+
+    def test_empty_string(self):
+        assert _is_safe_to_split("")
+
+    def test_tabs_allowed(self):
+        assert _is_safe_to_split("ls\t-la")
+
+
+class TestAutoSplitStringCommand:
+    @_unix_only
+    def test_simple_string_auto_split(self, tmp_path):
+        """A plain string without shell chars is auto-split and executed."""
+        echo_path = _which("echo")
+        result = _run_command(
+            "echo hello",
+            str(tmp_path),
+            resolved_commands={"echo": echo_path},
+            unrestricted=False,
+        )
+        assert "hello" in result
+        assert "(auto-corrected:" in result
+
+    def test_shell_chars_rejected(self, tmp_path):
+        """Strings with shell metacharacters are rejected in sandboxed mode."""
+        result = _run_command(
+            "echo hello | cat",
+            str(tmp_path),
+            resolved_commands={},
+            unrestricted=False,
+        )
+        assert result.startswith('error: "command" must be a JSON array')
+        assert "(auto-corrected:" not in result
+
+    def test_whitespace_only_empty(self, tmp_path):
+        """Whitespace-only string splits to empty list."""
+        result = _run_command(
+            "   ",
+            str(tmp_path),
+            resolved_commands={},
+            unrestricted=False,
+        )
+        assert "error: command list is empty" in result
+
+    def test_json_array_string_still_works(self, tmp_path):
+        """JSON-encoded array in a string still takes the JSON parse path."""
+        echo_path = _which("echo")
+        result = _run_command(
+            '["echo", "hello"]',
+            str(tmp_path),
+            resolved_commands={"echo": echo_path},
+            unrestricted=False,
+        )
+        assert "hello" in result
+        assert "(auto-corrected:" in result
+
+    @_unix_only
+    def test_tab_separated_string(self, tmp_path):
+        """Tab-separated tokens are split correctly."""
+        echo_path = _which("echo")
+        result = _run_command(
+            "echo\thello",
+            str(tmp_path),
+            resolved_commands={"echo": echo_path},
+            unrestricted=False,
+        )
+        assert "hello" in result
+        assert "(auto-corrected:" in result
+
+    def test_backslash_rejected(self, tmp_path):
+        """Backslash in command string triggers the error path."""
+        result = _run_command(
+            "echo C:\\Users",
+            str(tmp_path),
+            resolved_commands={},
+            unrestricted=False,
+        )
+        assert result.startswith('error: "command" must be a JSON array')
+
+    def test_newline_rejected(self, tmp_path):
+        """Newlines in command string are rejected as shell metacharacters."""
+        result = _run_command(
+            "echo hello\necho world",
+            str(tmp_path),
+            resolved_commands={},
+            unrestricted=False,
+        )
+        assert result.startswith('error: "command" must be a JSON array')
+
+    def test_carriage_return_rejected(self, tmp_path):
+        """CR in command string is rejected as a shell metacharacter."""
+        result = _run_command(
+            "echo hello\recho world",
+            str(tmp_path),
+            resolved_commands={},
+            unrestricted=False,
+        )
+        assert result.startswith('error: "command" must be a JSON array')
+
+    @_unix_only
+    def test_yolo_string_still_uses_shell(self, tmp_path):
+        """In yolo mode, plain strings still go through shell execution."""
+        result = _run_command(
+            "echo hello && echo world",
+            str(tmp_path),
+            resolved_commands={},
+            unrestricted=True,
+        )
+        assert "hello" in result
+        assert "world" in result
+        assert "(auto-corrected:" not in result
 
 
 class TestKillProcessTreeWindows:

@@ -86,12 +86,11 @@ def test_empty_command_list(tmp_base):
 # ---------- Test 5b: String command errors are explicit ----------
 
 
-def test_string_command_requires_array(tmp_base):
-    result = _run_command("grep -n pattern file.py", tmp_base, {})
+def test_string_with_shell_chars_requires_array(tmp_base):
+    result = _run_command("grep -n pattern file.py | head", tmp_base, {})
     assert result.startswith(
         'error: "command" must be a JSON array of strings, not a single string.'
     )
-    assert 'Wrong: "command": "grep -n pattern file.py"' in result
     assert 'Right: "command": ["grep", "-n", "pattern", "file.py"]' in result
     assert "Each argument must be a separate element in the array." in result
 
@@ -131,19 +130,17 @@ def test_plain_string_runs_as_shell_in_yolo(tmp_base):
     assert "(auto-corrected:" not in result
 
 
-def test_auto_repair_plain_string_sandboxed_still_errors(tmp_base):
+def test_auto_repair_plain_string_sandboxed_auto_splits(tmp_base):
     echo_path = _which("echo")
     resolved = {"echo": echo_path}
     result = _run_command(
-        "echo should-not-run",
+        "echo auto-split-ok",
         tmp_base,
         resolved,
         unrestricted=False,
     )
-    assert result.startswith(
-        'error: "command" must be a JSON array of strings, not a single string.'
-    )
-    assert "(auto-corrected:" not in result
+    assert "auto-split-ok" in result
+    assert "(auto-corrected:" in result
 
 
 # ---------- Test 5e: Auto-repair annotation and error-prefix interaction ----------
