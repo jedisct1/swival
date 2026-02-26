@@ -127,6 +127,7 @@ class ReportCollector:
         turns: int,
         error_message: str | None = None,
         review_rounds: int = 0,
+        todo_stats: dict | None = None,
     ) -> dict:
         tool_calls_succeeded = sum(s["succeeded"] for s in self.tool_stats.values())
         tool_calls_failed = sum(s["failed"] for s in self.tool_stats.values())
@@ -162,6 +163,7 @@ class ReportCollector:
                 "total_tool_time_s": round(self.total_tool_time, 3),
                 "skills_used": list(self.skills_used),
                 "review_rounds": review_rounds,
+                **({"todo": todo_stats} if todo_stats else {}),
             },
             "timeline": self.events,
         }
@@ -184,6 +186,7 @@ class ReportCollector:
         turns: int,
         error_message: str | None = None,
         review_rounds: int = 0,
+        todo_stats: dict | None = None,
     ) -> dict:
         """Build the report and write it to disk in one step."""
         self._last_report = self.build_report(
@@ -197,5 +200,6 @@ class ReportCollector:
             turns=turns,
             error_message=error_message,
             review_rounds=review_rounds,
+            todo_stats=todo_stats,
         )
         return self._last_report

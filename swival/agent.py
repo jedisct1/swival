@@ -19,6 +19,7 @@ import tiktoken
 from . import fmt
 from .report import AgentError, ConfigError, ReportCollector
 from .thinking import ThinkingState, _safe_notes_path
+from .todo import TodoState
 from .tracker import FileAccessTracker
 from .tools import (
     TOOLS,
@@ -37,22 +38,21 @@ _encoder = tiktoken.get_encoding("cl100k_base")
 MAX_HISTORY_SIZE = 500 * 1024  # 500KB
 
 INIT_PROMPT = (
-    "Create or update the markdown file called AGENT.md describing the conventions "
-    "(style, doc, tools) used by this project. Only list unusual choices that you "
-    "didn't know about, are hard to guess and are unlikely to change in the future. "
-    "Be concise and not redundant. Start by listing files, then read a representative "
-    "sample of the source files. After reading each file, use the think tool to take "
-    "notes about its conventions. Once you have enough notes, create or update "
-    "the file AGENT.md with your findings."
+    "Describe the conventions (style, doc, tools) used by this project. Only list "
+    "unusual choices that you didn't know about, are hard to guess and are unlikely "
+    "to change in the future. Be concise and not redundant. Start by listing files "
+    "and use the todo tool to schedule which ones to review. Then read them one by "
+    "one, using the think tool to take notes about each file's conventions."
 )
 
 INIT_ENRICH_PROMPT = (
-    "Now read back the AGENT.md you created and the project source files again. "
-    "Create or update the file AGENT.md to enrich it with anything you missed in the "
-    "first pass — patterns, edge cases, implicit conventions, or non-obvious "
-    "architectural decisions. Remove anything that turned out to be wrong or redundant. "
-    "Keep it concise."
+    "Now read back what you wrote and the project source files again. Focus on "
+    "unexpected patterns you didn't know about — surprising conventions, non-obvious "
+    "rules, or implicit assumptions that would trip up a new contributor. Remove "
+    "anything that turned out to be wrong or redundant. Keep it concise."
 )
+
+INIT_WRITE_PROMPT = "Create or update a file named AGENT.md with that report."
 
 _CONTEXT_OVERFLOW_RE = re.compile(
     r"context.{0,10}(length|window|limit)"
@@ -315,6 +315,7 @@ def handle_tool_call(
     extra_write_roots=None,
     yolo=False,
     file_tracker=None,
+    todo_state=None,
 ):
     """Execute a single tool call and return (tool_msg, metadata).
 
@@ -339,7 +340,8 @@ def handle_tool_call(
             {"name": name, "arguments": None, "elapsed": 0.0, "succeeded": False},
         )
 
-    if name != "think" and verbose:
+    _skip_generic_log = name in ("think", "todo")
+    if not _skip_generic_log and verbose:
         pretty = json.dumps(parsed_args, indent=2)
         if len(pretty) > MAX_ARG_LOG:
             pretty = pretty[:MAX_ARG_LOG] + "\n... (truncated)"
@@ -352,6 +354,7 @@ def handle_tool_call(
             parsed_args,
             base_dir,
             thinking_state=thinking_state,
+            todo_state=todo_state,
             resolved_commands=resolved_commands or {},
             skills_catalog=skills_catalog or {},
             skill_read_roots=skill_read_roots if skill_read_roots is not None else [],
@@ -367,7 +370,7 @@ def handle_tool_call(
     elapsed = time.monotonic() - t0
 
     succeeded = not result.startswith("error:")
-    if name != "think" and verbose:
+    if not _skip_generic_log and verbose:
         if not succeeded:
             fmt.tool_error(name, result)
         else:
@@ -824,10 +827,19 @@ def main():
         skills_catalog=None,
         instructions_loaded=None,
         review_rounds=0,
+        todo_state=None,
     ):
         if not report:
             return
         effective_turns = turns if turns is not None else report.max_turn_seen
+        todo_stats = None
+        if todo_state is not None and todo_state._total_actions > 0:
+            remaining = sum(1 for i in todo_state.items if not i.done)
+            todo_stats = {
+                "added": todo_state.add_count,
+                "completed": todo_state.done_count,
+                "remaining": remaining,
+            }
         report.finalize(
             task=args.question or "",
             model=model_id,
@@ -839,6 +851,7 @@ def main():
             turns=effective_turns,
             error_message=error_message,
             review_rounds=review_rounds,
+            todo_stats=todo_stats,
         )
         try:
             report.write(args.report)
@@ -1139,6 +1152,7 @@ def _run_main(args, report, _write_report, parser):
     atexit.register(cleanup_old_cmd_outputs, base_dir)
 
     thinking_state = ThinkingState(verbose=args.verbose, notes_dir=base_dir)
+    todo_state = TodoState(notes_dir=base_dir, verbose=args.verbose)
     file_tracker = (
         None if getattr(args, "no_read_guard", False) else FileAccessTracker()
     )
@@ -1154,6 +1168,7 @@ def _run_main(args, report, _write_report, parser):
         context_length=context_length,
         base_dir=base_dir,
         thinking_state=thinking_state,
+        todo_state=todo_state,
         resolved_commands=resolved_commands,
         skills_catalog=skills_catalog,
         skill_read_roots=skill_read_roots,
@@ -1260,6 +1275,7 @@ def _run_main(args, report, _write_report, parser):
                 skills_catalog=skills_catalog,
                 instructions_loaded=instructions_loaded,
                 review_rounds=review_round,
+                todo_state=todo_state,
             )
         if exhausted:
             if args.verbose:
@@ -1295,6 +1311,7 @@ def run_agent_loop(
     context_length: int | None,
     base_dir: str,
     thinking_state: ThinkingState,
+    todo_state: TodoState,
     resolved_commands: dict,
     skills_catalog: dict,
     skill_read_roots: list,
@@ -1532,6 +1549,10 @@ def run_agent_loop(
                 summary = thinking_state.summary_line()
                 if summary:
                     fmt.think_summary(summary)
+                if todo_state:
+                    summary = todo_state.summary_line()
+                    if summary:
+                        fmt.todo_summary(summary)
             return msg.content or "", False
 
         interventions: list[str] = []
@@ -1547,6 +1568,7 @@ def run_agent_loop(
                 extra_write_roots=extra_write_roots,
                 yolo=yolo,
                 file_tracker=file_tracker,
+                todo_state=todo_state,
             )
             messages.append(tool_msg)
 
@@ -1635,6 +1657,10 @@ def run_agent_loop(
         summary = thinking_state.summary_line()
         if summary:
             fmt.think_summary(summary)
+        if todo_state:
+            summary = todo_state.summary_line()
+            if summary:
+                fmt.todo_summary(summary)
     return last_text, True
 
 
@@ -1662,6 +1688,7 @@ def _repl_clear(
     messages: list,
     thinking_state: ThinkingState,
     file_tracker: FileAccessTracker | None = None,
+    todo_state: TodoState | None = None,
 ) -> None:
     """Clear conversation history, keeping only the leading system messages."""
     leading = []
@@ -1691,6 +1718,9 @@ def _repl_clear(
 
     if file_tracker is not None:
         file_tracker.reset()
+
+    if todo_state is not None:
+        todo_state.reset()
 
     fmt.info(f"context cleared ({dropped} messages removed)")
 
@@ -1766,6 +1796,7 @@ def repl_loop(
     context_length: int | None,
     base_dir: str,
     thinking_state: ThinkingState,
+    todo_state: TodoState,
     resolved_commands: dict,
     skills_catalog: dict,
     skill_read_roots: list,
@@ -1818,7 +1849,12 @@ def repl_loop(
             _repl_help()
             continue
         elif cmd == "/clear":
-            _repl_clear(messages, thinking_state, file_tracker=file_tracker)
+            _repl_clear(
+                messages,
+                thinking_state,
+                file_tracker=file_tracker,
+                todo_state=todo_state,
+            )
             continue
         elif cmd == "/add-dir":
             _repl_add_dir(cmd_arg, extra_write_roots)
@@ -1832,9 +1868,9 @@ def repl_loop(
         elif cmd == "/init":
             if cmd_arg:
                 fmt.warning(f"/init takes no arguments, ignoring {cmd_arg!r}")
-            # Two-pass init: first create AGENT.md, then enrich it
+            # Three-pass init: explore, enrich, then write to file
             for _pass, prompt in enumerate(
-                (INIT_PROMPT, INIT_ENRICH_PROMPT), 1
+                (INIT_PROMPT, INIT_ENRICH_PROMPT, INIT_WRITE_PROMPT), 1
             ):
                 messages.append({"role": "user", "content": prompt})
                 try:
@@ -1851,6 +1887,7 @@ def repl_loop(
                         context_length=context_length,
                         base_dir=base_dir,
                         thinking_state=thinking_state,
+                        todo_state=todo_state,
                         resolved_commands=resolved_commands,
                         skills_catalog=skills_catalog,
                         skill_read_roots=skill_read_roots,
@@ -1865,13 +1902,17 @@ def repl_loop(
                     break
                 if not no_history and answer:
                     append_history(
-                        base_dir, f"/init pass {_pass}", answer,
+                        base_dir,
+                        f"/init pass {_pass}",
+                        answer,
                         diagnostics=verbose,
                     )
                 if answer is not None:
                     print(answer)
-                if exhausted and verbose:
-                    fmt.warning("max turns reached during /init.")
+                if exhausted:
+                    if verbose:
+                        fmt.warning("max turns reached during /init.")
+                    break
             continue
         elif cmd == "/continue":
             fmt.info("continuing agent loop...")
@@ -1889,6 +1930,7 @@ def repl_loop(
                     context_length=context_length,
                     base_dir=base_dir,
                     thinking_state=thinking_state,
+                    todo_state=todo_state,
                     resolved_commands=resolved_commands,
                     skills_catalog=skills_catalog,
                     skill_read_roots=skill_read_roots,
@@ -1924,6 +1966,7 @@ def repl_loop(
                 context_length=context_length,
                 base_dir=base_dir,
                 thinking_state=thinking_state,
+                todo_state=todo_state,
                 resolved_commands=resolved_commands,
                 skills_catalog=skills_catalog,
                 skill_read_roots=skill_read_roots,

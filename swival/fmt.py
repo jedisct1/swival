@@ -115,6 +115,18 @@ def think_step(
     _console.print(line)
 
 
+# -- Todo updates ------------------------------------------------------------
+
+
+def todo_update(action: str, detail: str) -> None:
+    prefix_map = {"add": "+1", "done": "\u2713", "remove": "-1", "cleared": "cleared"}
+    tag = prefix_map.get(action, action)
+    line = Text()
+    line.append(f"  [todo {tag}]", style="yellow")
+    line.append(f" {detail}", style="dim italic")
+    _console.print(line)
+
+
 # -- Assistant text ----------------------------------------------------------
 
 
@@ -141,6 +153,10 @@ def context_stats(label: str, tokens: int) -> None:
 
 
 def think_summary(line: str) -> None:
+    _console.print(Text(f"  {line}", style="dim"))
+
+
+def todo_summary(line: str) -> None:
     _console.print(Text(f"  {line}", style="dim"))
 
 

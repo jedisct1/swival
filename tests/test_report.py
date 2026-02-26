@@ -168,6 +168,35 @@ class TestReportCollector:
         rc.record_llm_call(3, 0.1, 100, "stop")  # out of order
         assert rc.max_turn_seen == 5
 
+    def test_todo_stats_included(self):
+        rc = ReportCollector()
+        r = rc.build_report(
+            task="t",
+            model="m",
+            provider="lmstudio",
+            settings={},
+            outcome="success",
+            answer="ok",
+            exit_code=0,
+            turns=1,
+            todo_stats={"added": 3, "completed": 2, "remaining": 1},
+        )
+        assert r["stats"]["todo"] == {"added": 3, "completed": 2, "remaining": 1}
+
+    def test_todo_stats_omitted_when_none(self):
+        rc = ReportCollector()
+        r = rc.build_report(
+            task="t",
+            model="m",
+            provider="lmstudio",
+            settings={},
+            outcome="success",
+            answer="ok",
+            exit_code=0,
+            turns=1,
+        )
+        assert "todo" not in r["stats"]
+
 
 # ---------------------------------------------------------------------------
 # handle_tool_call tuple return
@@ -333,6 +362,7 @@ class TestOverflowRetrySeed:
                 context_length=None,
                 base_dir="/tmp",
                 thinking_state=MagicMock(),
+                todo_state=MagicMock(),
                 resolved_commands={},
                 skills_catalog={},
                 skill_read_roots=[],
@@ -386,6 +416,7 @@ class TestNonOverflowLLMFailure:
                     context_length=None,
                     base_dir="/tmp",
                     thinking_state=MagicMock(),
+                    todo_state=MagicMock(),
                     resolved_commands={},
                     skills_catalog={},
                     skill_read_roots=[],

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .report import ConfigError, ReportCollector
 from .thinking import ThinkingState
+from .todo import TodoState
 from .tracker import FileAccessTracker
 
 
@@ -187,6 +188,7 @@ class Session:
             "thinking_state": ThinkingState(
                 verbose=self.verbose, notes_dir=self.base_dir
             ),
+            "todo_state": TodoState(notes_dir=self.base_dir, verbose=self.verbose),
             "file_tracker": FileAccessTracker() if self.read_guard else None,
             "skill_read_roots": [],
             "messages": self._make_initial_messages(),
@@ -205,6 +207,7 @@ class Session:
             context_length=self._context_length,
             base_dir=self.base_dir,
             thinking_state=state["thinking_state"],
+            todo_state=state["todo_state"],
             resolved_commands=self._resolved_commands,
             skills_catalog=self._skills_catalog,
             skill_read_roots=state["skill_read_roots"],

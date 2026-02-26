@@ -276,6 +276,43 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "todo",
+            "description": (
+                "Manage a task list. Use this to track work items as you discover them "
+                "and mark them done as you complete them. Every action returns the current "
+                "list. The list is saved to .swival/todo.md and survives context compaction."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["add", "done", "remove", "clear", "list"],
+                        "description": (
+                            "add: Add a new task. "
+                            "done: Mark a task as completed (no-op if already done). "
+                            "remove: Remove a task entirely. "
+                            "clear: Remove all tasks and start fresh. "
+                            "list: Return the current list (no other params needed)."
+                        ),
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": (
+                            "For 'add': the task description (max 500 chars). "
+                            "For 'done'/'remove': text that matches an existing task "
+                            "(prefix match, case-insensitive). "
+                            "Not needed for 'list' or 'clear'."
+                        ),
+                    },
+                },
+                "required": ["action"],
+            },
+        },
+    },
 ]
 
 DELETE_FILE_TOOL = {
@@ -1591,6 +1628,11 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
             extra_write_roots=extra_write_roots,
             unrestricted=yolo,
         )
+    elif name == "todo":
+        todo_state = kwargs.get("todo_state")
+        if todo_state is None:
+            return "error: todo tool is not available"
+        return todo_state.process(args)
     elif name == "fetch_url":
         from .fetch import fetch_url as _fetch_url
 

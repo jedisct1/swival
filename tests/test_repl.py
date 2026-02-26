@@ -12,6 +12,7 @@ from swival.agent import (
     ContextOverflowError,
     INIT_PROMPT,
     INIT_ENRICH_PROMPT,
+    INIT_WRITE_PROMPT,
     _repl_help,
     _repl_clear,
     _repl_add_dir,
@@ -19,6 +20,7 @@ from swival.agent import (
     _repl_extend,
 )
 from swival.thinking import ThinkingState
+from swival.todo import TodoState
 from swival.tools import dispatch
 
 
@@ -75,6 +77,7 @@ def _loop_kwargs(tmp_path, **overrides):
         verbose=False,
         llm_kwargs={"provider": "lmstudio", "api_key": None},
         file_tracker=None,
+        todo_state=TodoState(notes_dir=str(tmp_path), verbose=False),
     )
     defaults.update(overrides)
     return defaults
@@ -901,7 +904,7 @@ class TestInitCommand:
         return mock_session
 
     def test_init_sends_prompt(self, tmp_path):
-        """/init runs two passes: INIT_PROMPT then INIT_ENRICH_PROMPT."""
+        """/init runs three passes: explore, enrich, write."""
         messages = [_sys("system")]
 
         call_messages = []
@@ -919,12 +922,13 @@ class TestInitCommand:
         ):
             repl_loop(messages, [], **_loop_kwargs(tmp_path))
 
-        assert mock_loop.call_count == 2
+        assert mock_loop.call_count == 3
         assert call_messages[0][1]["content"] == INIT_PROMPT
         assert call_messages[1][2]["content"] == INIT_ENRICH_PROMPT
+        assert call_messages[2][3]["content"] == INIT_WRITE_PROMPT
 
     def test_init_ignores_args_with_warning(self, tmp_path, capsys):
-        """/init foo warns about the argument but still runs both passes."""
+        """/init foo warns about the argument but still runs all three passes."""
         messages = [_sys("system")]
 
         inputs = ["/init foo", "/exit"]
@@ -938,7 +942,7 @@ class TestInitCommand:
         ):
             repl_loop(messages, [], **_loop_kwargs(tmp_path))
 
-        assert mock_loop.call_count == 2
+        assert mock_loop.call_count == 3
         captured = capsys.readouterr()
         assert "/init takes no arguments" in captured.err
 
