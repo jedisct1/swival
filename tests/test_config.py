@@ -45,7 +45,7 @@ def _make_args(**overrides):
         "no_system_prompt": _UNSET,
         "allowed_commands": _UNSET,
         "yolo": _UNSET,
-        "allow_dir": None,  # append actions use None sentinel
+        "add_dir": None,  # append actions use None sentinel
         "no_read_guard": _UNSET,
         "no_instructions": _UNSET,
         "no_skills": _UNSET,
@@ -136,13 +136,17 @@ class TestTypeValidation:
     def test_string_where_int_expected(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
         _write_toml(tmp_path / "swival.toml", 'max_output_tokens = "big"\n')
-        with pytest.raises(ConfigError, match="max_output_tokens.*expected int.*got str"):
+        with pytest.raises(
+            ConfigError, match="max_output_tokens.*expected int.*got str"
+        ):
             load_config(tmp_path)
 
     def test_mixed_type_list(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
         _write_toml(tmp_path / "swival.toml", 'allowed_commands = ["ls", 42]\n')
-        with pytest.raises(ConfigError, match=r"allowed_commands\[1\].*expected string.*got int"):
+        with pytest.raises(
+            ConfigError, match=r"allowed_commands\[1\].*expected string.*got int"
+        ):
             load_config(tmp_path)
 
     def test_empty_list_is_valid(self, tmp_path, monkeypatch):
@@ -219,7 +223,9 @@ class TestMutualExclusion:
 
 
 class TestPathResolution:
-    def test_relative_allowed_dirs_resolves_to_config_parent(self, tmp_path, monkeypatch):
+    def test_relative_allowed_dirs_resolves_to_config_parent(
+        self, tmp_path, monkeypatch
+    ):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
         _write_toml(tmp_path / "swival.toml", 'allowed_dirs = ["../sibling"]\n')
         result = load_config(tmp_path)
@@ -327,15 +333,15 @@ class TestApplyConfigToArgs:
         apply_config_to_args(args, {"color": True})
         assert args.no_color is True  # CLI wins
 
-    def test_allowed_dirs_maps_to_allow_dir(self):
+    def test_allowed_dirs_maps_to_add_dir(self):
         args = _make_args()
         apply_config_to_args(args, {"allowed_dirs": ["/foo", "/bar"]})
-        assert args.allow_dir == ["/foo", "/bar"]
+        assert args.add_dir == ["/foo", "/bar"]
 
     def test_allowed_dirs_cli_overrides(self):
-        args = _make_args(allow_dir=["/cli-dir"])
+        args = _make_args(add_dir=["/cli-dir"])
         apply_config_to_args(args, {"allowed_dirs": ["/config-dir"]})
-        assert args.allow_dir == ["/cli-dir"]
+        assert args.add_dir == ["/cli-dir"]
 
     def test_skills_dir_from_config(self):
         args = _make_args()
@@ -348,10 +354,10 @@ class TestApplyConfigToArgs:
         assert args.skills_dir == ["/from-cli"]
 
     def test_none_sentinel_defaults_to_empty_list(self):
-        """append-action dests (allow_dir, skills_dir) default to [] when unset."""
+        """append-action dests (add_dir, skills_dir) default to [] when unset."""
         args = _make_args()
         apply_config_to_args(args, {})
-        assert args.allow_dir == []
+        assert args.add_dir == []
         assert args.skills_dir == []
 
 

@@ -142,12 +142,12 @@ class TestReadFileTail:
         assert result_no_tail == result_with_tail
 
     def test_tail_nonpositive_clamped(self, tmp_path):
-        """tail=0 and tail=-3 both behave like tail=1 (return last line)."""
+        """tail=0 and tail=-3 clamp to 1, then promote to limit (returns whole file)."""
         self._make_file(tmp_path, 5)
         for t in [0, -3]:
             result = _read_file("data.txt", str(tmp_path), tail=t)
             assert "5: line5" in result
-            assert "4: line4" not in result
+            assert "1: line1" in result
 
     def test_tail_numeric_string_coerced(self, tmp_path):
         """tail='5' (numeric string) is coerced to int and works."""
@@ -174,6 +174,15 @@ class TestReadFileTail:
         )
         assert "8: line8" in result
         assert "10: line10" in result
+
+    def test_tail_1_with_large_limit_uses_limit(self, tmp_path):
+        """tail=1 with limit>1 is treated as tail=limit (model meant 'from the end')."""
+        self._make_file(tmp_path, 20)
+        result = _read_file("data.txt", str(tmp_path), tail=1, limit=5)
+        # Should return last 5 lines, not last 1 line
+        assert "16: line16" in result
+        assert "20: line20" in result
+        assert "15: line15" not in result
 
 
 # =========================================================================

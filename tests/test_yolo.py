@@ -298,14 +298,14 @@ class TestAbsolutePatternUnrestricted:
 
 
 # ---------------------------------------------------------------------------
-# Absolute patterns with --allow-dir (non-yolo)
+# Absolute patterns with --add-dir (non-yolo)
 # ---------------------------------------------------------------------------
 
 
-class TestAbsolutePatternAllowDir:
+class TestAbsolutePatternAddDir:
     """Absolute glob patterns should work when the path is within extra roots."""
 
-    def test_list_files_absolute_pattern_via_allow_dir(self, setup_dirs):
+    def test_list_files_absolute_pattern_via_add_dir(self, setup_dirs):
         base, outside = setup_dirs
         result = _list_files(
             f"{outside}/*.txt",
@@ -338,7 +338,7 @@ class TestAbsolutePatternAllowDir:
         assert "out.txt" in result
         assert not result.startswith("error:")
 
-    def test_grep_path_via_allow_dir(self, setup_dirs):
+    def test_grep_path_via_add_dir(self, setup_dirs):
         base, outside = setup_dirs
         result = _grep(
             "outside",

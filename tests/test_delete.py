@@ -181,8 +181,8 @@ class TestDeleteRoots:
         result = _delete_file("f.txt", str(tmp_path), unrestricted=True)
         assert result.startswith("Trashed")
 
-    def test_delete_allow_dir_absolute_path(self, tmp_path):
-        """File in --allow-dir records absolute original_path in index."""
+    def test_delete_add_dir_absolute_path(self, tmp_path):
+        """File in --add-dir records absolute original_path in index."""
         allowed = tmp_path / "ext"
         allowed.mkdir()
         (allowed / "dump.csv").write_text("x")
@@ -487,7 +487,7 @@ class TestThinkNudge:
             repl=False,
             max_context_tokens=None,
             allowed_commands=None,
-            allow_dir=[],
+            add_dir=[],
             provider="lmstudio",
             api_key=None,
             color=False,

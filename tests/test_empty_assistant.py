@@ -42,7 +42,7 @@ def _base_args(tmp_path, **overrides):
         repl=False,
         max_context_tokens=None,
         allowed_commands=None,
-        allow_dir=[],
+        add_dir=[],
         provider="lmstudio",
         api_key=None,
         color=False,
@@ -167,7 +167,8 @@ def test_empty_response_message_has_content_in_history(tmp_path, monkeypatch):
     # and the continuation prompt
     second_call_msgs = captured_messages[1]
     assistant_msgs = [
-        m for m in second_call_msgs
+        m
+        for m in second_call_msgs
         if (m.get("role") if isinstance(m, dict) else getattr(m, "role", None))
         == "assistant"
     ]

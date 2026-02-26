@@ -590,9 +590,7 @@ def call_llm(
             # messages in place and retry once.
             if _sanitize_assistant_messages(messages):
                 if verbose:
-                    fmt.warning(
-                        "Fixed empty assistant message in history, retrying..."
-                    )
+                    fmt.warning("Fixed empty assistant message in history, retrying...")
                 try:
                     response = litellm.completion(**completion_kwargs)
                 except Exception as e2:
@@ -779,7 +777,7 @@ def build_parser():
         help="Don't load or discover any skills.",
     )
     parser.add_argument(
-        "--allow-dir",
+        "--add-dir",
         type=str,
         action="append",
         default=None,
@@ -860,7 +858,10 @@ def _handle_init_config(args):
         dest = _global_config_dir() / "config.toml"
 
     if dest.exists():
-        print(f"Error: {dest} already exists. Remove it first to regenerate.", file=sys.stderr)
+        print(
+            f"Error: {dest} already exists. Remove it first to regenerate.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -1231,14 +1232,14 @@ def _run_main(args, report, _write_report, parser):
     # Stash resolved model_id for error reporting
     args._resolved_model_id = model_id
 
-    # Resolve --allow-dir paths
+    # Resolve --add-dir paths
     allowed_dirs: list[Path] = []
-    for d in args.allow_dir:
+    for d in args.add_dir:
         p = Path(d).expanduser().resolve()
         if not p.is_dir():
-            raise AgentError(f"--allow-dir path is not a directory: {d}")
+            raise AgentError(f"--add-dir path is not a directory: {d}")
         if p == Path(p.anchor):
-            raise AgentError(f"--allow-dir cannot be the filesystem root: {d}")
+            raise AgentError(f"--add-dir cannot be the filesystem root: {d}")
         allowed_dirs.append(p)
 
     base_dir = args.base_dir

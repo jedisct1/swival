@@ -493,7 +493,7 @@ class TestReportIntegration:
             no_instructions=True,
             skills_dir=[],
             no_skills=True,
-            allow_dir=[],
+            add_dir=[],
             yolo=False,
             color=False,
             no_color=True,

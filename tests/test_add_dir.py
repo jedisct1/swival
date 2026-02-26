@@ -1,4 +1,4 @@
-"""Tests for --allow-dir feature (extra_write_roots)."""
+"""Tests for --add-dir feature (extra_write_roots)."""
 
 import os
 import sys
@@ -229,10 +229,10 @@ class TestListGrepExtraWriteRoots:
 # =========================================================================
 
 
-class TestAllowDirCLIValidation:
-    """Integration tests that call agent.main() to verify --allow-dir validation."""
+class TestAddDirCLIValidation:
+    """Integration tests that call agent.main() to verify --add-dir validation."""
 
-    def test_allow_dir_nonexistent(self, tmp_path, monkeypatch):
+    def test_add_dir_nonexistent(self, tmp_path, monkeypatch):
         """Passing a non-existent path exits with sys.exit(1)."""
         from swival import agent
 
@@ -243,7 +243,7 @@ class TestAllowDirCLIValidation:
                 "agent",
                 "--base-dir",
                 str(tmp_path),
-                "--allow-dir",
+                "--add-dir",
                 str(tmp_path / "nope"),
                 "question",
             ],
@@ -252,7 +252,7 @@ class TestAllowDirCLIValidation:
             agent.main()
         assert exc_info.value.code == 1
 
-    def test_allow_dir_is_file(self, tmp_path, monkeypatch):
+    def test_add_dir_is_file(self, tmp_path, monkeypatch):
         """Passing a file (not directory) exits with sys.exit(1)."""
         f = tmp_path / "afile.txt"
         f.write_text("hi", encoding="utf-8")
@@ -262,26 +262,26 @@ class TestAllowDirCLIValidation:
         monkeypatch.setattr(
             sys,
             "argv",
-            ["agent", "--base-dir", str(tmp_path), "--allow-dir", str(f), "question"],
+            ["agent", "--base-dir", str(tmp_path), "--add-dir", str(f), "question"],
         )
         with pytest.raises(SystemExit) as exc_info:
             agent.main()
         assert exc_info.value.code == 1
 
-    def test_allow_dir_root_rejected(self, tmp_path, monkeypatch):
+    def test_add_dir_root_rejected(self, tmp_path, monkeypatch):
         """Passing / (filesystem root) exits with sys.exit(1)."""
         from swival import agent
 
         monkeypatch.setattr(
             sys,
             "argv",
-            ["agent", "--base-dir", str(tmp_path), "--allow-dir", "/", "question"],
+            ["agent", "--base-dir", str(tmp_path), "--add-dir", "/", "question"],
         )
         with pytest.raises(SystemExit) as exc_info:
             agent.main()
         assert exc_info.value.code == 1
 
-    def test_allow_dir_tilde_expansion(self, tmp_path, monkeypatch):
+    def test_add_dir_tilde_expansion(self, tmp_path, monkeypatch):
         """~/somedir resolves correctly via expanduser() in main()."""
         target = tmp_path / "homedir"
         target.mkdir()
@@ -309,7 +309,7 @@ class TestAllowDirCLIValidation:
                 "agent",
                 "--base-dir",
                 str(tmp_path),
-                "--allow-dir",
+                "--add-dir",
                 "~/homedir",
                 "question",
             ],
@@ -319,8 +319,8 @@ class TestAllowDirCLIValidation:
         assert len(captured["extra_write_roots"]) == 1
         assert captured["extra_write_roots"][0] == target.resolve()
 
-    def test_allow_dir_with_yolo_valid(self, tmp_path, monkeypatch):
-        """--yolo --allow-dir <valid> validates at startup but doesn't error."""
+    def test_add_dir_with_yolo_valid(self, tmp_path, monkeypatch):
+        """--yolo --add-dir <valid> validates at startup but doesn't error."""
         extra = tmp_path / "extra"
         extra.mkdir()
 
@@ -346,7 +346,7 @@ class TestAllowDirCLIValidation:
                 "--base-dir",
                 str(tmp_path),
                 "--yolo",
-                "--allow-dir",
+                "--add-dir",
                 str(extra),
                 "question",
             ],
@@ -356,8 +356,8 @@ class TestAllowDirCLIValidation:
         assert captured["yolo"] is True
         assert len(captured["extra_write_roots"]) == 1
 
-    def test_allow_dir_with_yolo_invalid(self, tmp_path, monkeypatch):
-        """--yolo --allow-dir <nonexistent> still exits with sys.exit(1)."""
+    def test_add_dir_with_yolo_invalid(self, tmp_path, monkeypatch):
+        """--yolo --add-dir <nonexistent> still exits with sys.exit(1)."""
         from swival import agent
 
         monkeypatch.setattr(
@@ -372,7 +372,7 @@ class TestAllowDirCLIValidation:
                 "--base-dir",
                 str(tmp_path),
                 "--yolo",
-                "--allow-dir",
+                "--add-dir",
                 str(tmp_path / "nope"),
                 "question",
             ],

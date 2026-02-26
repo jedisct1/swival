@@ -19,10 +19,10 @@ Even in YOLO mode, Swival blocks the filesystem root itself. You cannot grant th
 
 ## Additional Allowed Directories
 
-When the agent needs access outside `--base-dir`, pass one or more `--allow-dir` flags.
+When the agent needs access outside `--base-dir`, pass one or more `--add-dir` flags.
 
 ```sh
-swival --allow-dir ~/shared-data --allow-dir /opt/configs "Update the config"
+swival --add-dir ~/shared-data --add-dir /opt/configs "Update the config"
 ```
 
 Each allowed directory must already exist, must be a directory, and cannot be the filesystem root. In REPL mode, you can grant the same access dynamically with `/add-dir <path>`.

@@ -455,7 +455,7 @@ def safe_resolve(
         if resolved.is_relative_to(root):
             return resolved
 
-    # Check extra write roots (--allow-dir paths, read+write access)
+    # Check extra write roots (--add-dir paths, read+write access)
     for root in extra_write_roots:
         if resolved.is_relative_to(root):
             return resolved
@@ -848,6 +848,8 @@ def _read_file(
         if not isinstance(tail, int):
             return f"error: tail must be an integer, got {type(tail).__name__}"
         tail = max(tail, 1)
+        if tail == 1 and limit > 1:
+            tail = limit
         start = max(len(lines) - tail, 0)
     else:
         start = max(offset - 1, 0)

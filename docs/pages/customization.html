@@ -66,9 +66,9 @@ swival --init-config --project  # project config in current directory
 <p>Settings use the same names as CLI flags. Lists use TOML arrays instead of comma-separated strings.</p>
 <pre><code class="language-toml">provider = &quot;openrouter&quot;
 model = &quot;qwen/qwen3-235b-a22b&quot;
-max_turns = 50
+max_turns = 250
 allowed_commands = [&quot;ls&quot;, &quot;git&quot;, &quot;python3&quot;]
-allowed_dirs = [&quot;../shared-lib&quot;]
+allowed_dirs = [&quot;/opt/zig/lib/std&quot;]
 quiet = false
 </code></pre>
 <p>Relative paths in <code>allowed_dirs</code>, <code>skills_dir</code>, and <code>reviewer</code> resolve against the config file's parent directory, not the working directory. Tilde paths like <code>~/projects</code> expand to the home directory.</p>

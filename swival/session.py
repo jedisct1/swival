@@ -123,7 +123,7 @@ class Session:
             verbose=self.verbose,
         )
 
-        # Resolve --allow-dir paths
+        # Resolve --add-dir paths
         self._allowed_dir_paths = []
         for d in self.allowed_dirs:
             p = Path(d).expanduser().resolve()

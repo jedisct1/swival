@@ -95,7 +95,7 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 
 `--allowed-commands` enables command execution through a comma-separated whitelist.
 
-`--allow-dir` grants read and write access to additional directories and can be repeated.
+`--add-dir` grants read and write access to additional directories and can be repeated.
 
 `--yolo` disables both filesystem sandbox checks and command whitelisting, except that filesystem root access is still blocked.
 

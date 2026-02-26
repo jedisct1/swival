@@ -49,7 +49,7 @@ _LIST_OF_STR_KEYS = {"allowed_commands", "allowed_dirs", "skills_dir"}
 
 # Config key -> argparse dest (only where they differ)
 _CONFIG_TO_ARGPARSE: dict[str, str] = {
-    "allowed_dirs": "allow_dir",
+    "allowed_dirs": "add_dir",
 }
 
 # Argparse dest -> hardcoded default
@@ -68,7 +68,7 @@ _ARGPARSE_DEFAULTS: dict[str, Any] = {
     "no_system_prompt": False,
     "allowed_commands": None,
     "yolo": False,
-    "allow_dir": [],
+    "add_dir": [],
     "no_read_guard": False,
     "no_instructions": False,
     "no_skills": False,
@@ -113,9 +113,7 @@ def _validate_config(config: dict, source: str) -> None:
                 type_name = " or ".join(t.__name__ for t in expected)
             else:
                 type_name = expected.__name__
-            raise ConfigError(
-                f"{source}: {key!r} expected {type_name}, got bool"
-            )
+            raise ConfigError(f"{source}: {key!r} expected {type_name}, got bool")
         if not isinstance(value, expected):
             if expected is list:
                 type_name = "list"
@@ -245,7 +243,7 @@ def apply_config_to_args(args: argparse.Namespace, config: dict) -> None:
     replaces them with hardcoded defaults from _ARGPARSE_DEFAULTS.
     """
     # Dests that use None as sentinel (argparse append actions can't use _UNSET)
-    _NONE_SENTINEL_DESTS = {"allow_dir", "skills_dir"}
+    _NONE_SENTINEL_DESTS = {"add_dir", "skills_dir"}
 
     def _is_unset(dest: str) -> bool:
         val = getattr(args, dest, _UNSET)
