@@ -52,7 +52,7 @@ class TestWriteFileMoveFromGuard:
         (tmp_path / "src.txt").write_text("content")
         tracker = FileAccessTracker()
         result = _write_file(
-            "dst.txt", "content", str(tmp_path), move_from="src.txt", tracker=tracker
+            "dst.txt", None, str(tmp_path), move_from="src.txt", tracker=tracker
         )
         assert result.startswith("Moved")
         assert (tmp_path / "dst.txt").exists()
@@ -63,10 +63,9 @@ class TestWriteFileMoveFromGuard:
         (tmp_path / "src.txt").write_text("source content")
         (tmp_path / "dst.txt").write_text("existing content")
         tracker = FileAccessTracker()
-        _read_file("src.txt", str(tmp_path), tracker=tracker)
-        # dst.txt exists but was not read — write should be blocked.
+        # dst.txt exists but was not read — rename should be blocked.
         result = _write_file(
-            "dst.txt", "new content", str(tmp_path), move_from="src.txt", tracker=tracker
+            "dst.txt", None, str(tmp_path), move_from="src.txt", tracker=tracker
         )
         assert result.startswith("error:")
         assert "hasn't been read" in result
@@ -75,24 +74,23 @@ class TestWriteFileMoveFromGuard:
         assert (tmp_path / "dst.txt").read_text() == "existing content"
 
     def test_move_from_dst_existing_allowed_after_dst_read(self, tmp_path):
-        """move_from succeeds when both source and existing destination have been read."""
+        """move_from succeeds when existing destination has been read."""
         (tmp_path / "src.txt").write_text("source content")
         (tmp_path / "dst.txt").write_text("existing content")
         tracker = FileAccessTracker()
-        _read_file("src.txt", str(tmp_path), tracker=tracker)
         _read_file("dst.txt", str(tmp_path), tracker=tracker)
         result = _write_file(
-            "dst.txt", "new content", str(tmp_path), move_from="src.txt", tracker=tracker
+            "dst.txt", None, str(tmp_path), move_from="src.txt", tracker=tracker
         )
         assert result.startswith("Moved")
-        assert (tmp_path / "dst.txt").read_text() == "new content"
+        assert (tmp_path / "dst.txt").read_text() == "source content"
         assert not (tmp_path / "src.txt").exists()
 
     def test_move_from_tracker_none_allows_all(self, tmp_path):
         """With tracker=None, move_from succeeds without reading."""
         (tmp_path / "src.txt").write_text("content")
         result = _write_file(
-            "dst.txt", "content", str(tmp_path), move_from="src.txt", tracker=None
+            "dst.txt", None, str(tmp_path), move_from="src.txt", tracker=None
         )
         assert result.startswith("Moved")
 
