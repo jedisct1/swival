@@ -38,6 +38,10 @@ Trash retention is enforced automatically. Entries older than seven days are rem
 
 `think` is structured scratchpad reasoning. It lets the model capture numbered thoughts, revise earlier thoughts, and branch from a prior thought to compare alternative approaches. This is especially helpful for debugging and multi-step refactors.
 
+The only required parameter is `thought`. Everything else is optional. A `mode` parameter (`"new"`, `"revision"`, `"branch"`) selects the type of thought. Revision mode requires `revises_thought` to reference an earlier thought number. Branch mode requires `branch_from_thought` plus a `branch_id` label.
+
+The tool applies tolerant coercion so models that send extra or contradictory fields don't get stuck in validation loops. Incompatible fields are stripped based on the inferred mode, and corrective error messages include valid thought numbers when a reference is wrong.
+
 ## `todo`
 
 `todo` tracks work items during a run. The list is stored in `.swival/todo.md`, so the agent can recover state even after context compaction. Actions include `add`, `done`, `remove`, `clear`, and `list`, and each action returns the full current list.

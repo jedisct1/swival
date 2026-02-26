@@ -196,9 +196,7 @@ TOOLS = [
             "description": (
                 "Think step-by-step before acting. This is your scratchpad for reasoning — "
                 "use it to plan, debug, weigh alternatives, or track what you've learned. "
-                "Using think before complex actions leads to better outcomes. "
-                "Pass a `note` to save important findings to disk — these persist even when "
-                "older messages are dropped during context compaction."
+                "Using think before complex actions leads to better outcomes."
             ),
             "parameters": {
                 "type": "object",
