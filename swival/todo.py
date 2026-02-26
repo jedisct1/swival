@@ -86,7 +86,7 @@ class TodoState:
             if self.verbose:
                 remaining = sum(1 for i in self.items if not i.done)
                 fmt.todo_update("add", f"Already listed: {task[:80]} ({remaining} remaining)")
-            return self._response("add")
+            return self._response("add", note=f"'{task}' already in list — not added. Continue with your next action.")
         if len(self.items) >= MAX_ITEMS:
             return f"error: todo list full ({MAX_ITEMS} items max)"
         self.items.append(TodoItem(text=task))
@@ -158,17 +158,18 @@ class TodoState:
     def _task_key(task: str) -> str:
         return task.casefold()
 
-    def _response(self, action: str) -> str:
+    def _response(self, action: str, note: str | None = None) -> str:
         items = [{"task": i.text, "done": i.done} for i in self.items]
         remaining = sum(1 for i in self.items if not i.done)
-        return json.dumps(
-            {
-                "action": action,
-                "total": len(self.items),
-                "remaining": remaining,
-                "items": items,
-            }
-        )
+        resp: dict = {
+            "action": action,
+            "total": len(self.items),
+            "remaining": remaining,
+            "items": items,
+        }
+        if note:
+            resp["note"] = note
+        return json.dumps(resp)
 
     def _save(self) -> None:
         if self.notes_dir is None:

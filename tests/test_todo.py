@@ -21,6 +21,7 @@ class TestAdd:
         assert result["total"] == 1
         assert result["remaining"] == 1
         assert result["items"] == [{"task": "Fix the bug", "done": False}]
+        assert "note" not in result
 
     def test_add_multiple(self):
         state = TodoState()
@@ -36,6 +37,9 @@ class TestAdd:
         assert result["total"] == 1
         assert result["remaining"] == 1
         assert state.add_count == 1
+        # Duplicate response must include a note so models know to move on
+        assert "note" in result
+        assert "already in list" in result["note"]
 
     def test_add_deduplicates_case_insensitive(self):
         state = TodoState()
@@ -43,6 +47,7 @@ class TestAdd:
         result = json.loads(state.process({"action": "add", "task": "fix login bug"}))
         assert result["total"] == 1
         assert result["items"] == [{"task": "Fix login bug", "done": False}]
+        assert "note" in result
 
     def test_add_without_task(self):
         state = TodoState()
