@@ -36,6 +36,7 @@ MAX_INSTRUCTIONS_CHARS = 10_000
 _encoder = tiktoken.get_encoding("cl100k_base")
 
 MAX_HISTORY_SIZE = 500 * 1024  # 500KB
+TODO_REMINDER_INTERVAL = 3  # remind after N turns of no todo usage
 
 INIT_PROMPT = (
     "Describe the conventions (style, doc, tools) used by this project. Only list "
@@ -1334,6 +1335,7 @@ def run_agent_loop(
     turns = 0
     think_used = False
     think_nudge_fired = False
+    todo_last_used = 0
 
     while turns < max_turns:
         turns += 1
@@ -1586,6 +1588,8 @@ def run_agent_loop(
             tool_name = tool_meta["name"]
             if tool_name == "think":
                 think_used = True
+            if tool_name == "todo":
+                todo_last_used = turns
 
             result = tool_msg["content"]
             if result.startswith("error:"):
@@ -1631,6 +1635,19 @@ def run_agent_loop(
                 interventions.append(
                     "Tip: Consider using the `think` tool before making edits. "
                     "Planning your approach first leads to better outcomes."
+                )
+
+        # Todo reminder: nudge when items remain and todo hasn't been used recently.
+        if todo_state is not None:
+            remaining = sum(1 for i in todo_state.items if not i.done)
+            if remaining > 0 and (turns - todo_last_used) >= TODO_REMINDER_INTERVAL:
+                todo_last_used = turns  # reset so we don't nag every turn
+                items_preview = "; ".join(
+                    i.text[:60] for i in todo_state.items if not i.done
+                )[:200]
+                interventions.append(
+                    f"Reminder: You have {remaining} unfinished todo item(s): {items_preview}. "
+                    "Use the `todo` tool to review and work through them."
                 )
 
         if interventions:
@@ -1909,10 +1926,8 @@ def repl_loop(
                     )
                 if answer is not None:
                     print(answer)
-                if exhausted:
-                    if verbose:
-                        fmt.warning("max turns reached during /init.")
-                    break
+                if exhausted and verbose:
+                    fmt.warning(f"max turns reached during /init pass {_pass}.")
             continue
         elif cmd == "/continue":
             fmt.info("continuing agent loop...")

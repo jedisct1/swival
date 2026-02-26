@@ -2,6 +2,8 @@
 
 import json
 import os
+import sys
+import types
 
 
 from swival.todo import TodoState, MAX_ITEMS, MAX_ITEM_TEXT
@@ -506,3 +508,277 @@ class TestAgentLogSkip:
 
         # No fmt.tool_* calls should have been made for todo
         assert not calls, f"unexpected fmt calls for todo: {calls}"
+
+
+# ---------------------------------------------------------------------------
+# Todo reminder tests (agent loop intervention)
+# ---------------------------------------------------------------------------
+
+
+def _make_message(content=None, tool_calls=None):
+    msg = types.SimpleNamespace()
+    msg.content = content
+    msg.tool_calls = tool_calls
+    msg.role = "assistant"
+    msg.get = lambda key, default=None: getattr(msg, key, default)
+    return msg
+
+
+def _make_tool_call(name, arguments, call_id):
+    tc = types.SimpleNamespace()
+    tc.id = call_id
+    tc.function = types.SimpleNamespace()
+    tc.function.name = name
+    tc.function.arguments = arguments
+    return tc
+
+
+def _base_args(tmp_path, **overrides):
+    defaults = dict(
+        base_url="http://fake",
+        model="test-model",
+        max_output_tokens=1024,
+        temperature=0.55,
+        top_p=1.0,
+        seed=None,
+        quiet=False,
+        max_turns=10,
+        base_dir=str(tmp_path),
+        no_system_prompt=True,
+        no_instructions=True,
+        no_skills=True,
+        skills_dir=[],
+        system_prompt=None,
+        question="test todo reminder",
+        repl=False,
+        max_context_tokens=None,
+        allowed_commands=None,
+        allow_dir=[],
+        provider="lmstudio",
+        api_key=None,
+        color=False,
+        no_color=False,
+        yolo=False,
+        report=None,
+        reviewer=None,
+        version=False,
+        no_read_guard=False,
+    )
+    defaults.update(overrides)
+    return types.SimpleNamespace(**defaults)
+
+
+def _user_messages(messages):
+    """Extract user-role message contents from the messages list."""
+    out = []
+    for msg in messages:
+        role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
+        if role == "user":
+            content = (
+                msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", "")
+            )
+            out.append(content)
+    return out
+
+
+class TestTodoReminder:
+    """Test that the agent loop injects todo reminders after inactivity."""
+
+    def test_reminder_fires_after_interval(self, tmp_path, monkeypatch):
+        """Reminder fires after TODO_REMINDER_INTERVAL turns of non-todo tool use."""
+        from swival import agent, fmt
+
+        fmt.init(color=False, no_color=False)
+
+        snapshots = []
+        call_count = 0
+
+        # Turn 1: model calls todo add (sets todo_last_used=1)
+        # Turn 2-4: model calls read_file (non-todo) — 3 turns of inactivity
+        # Turn 4 should trigger a reminder (turns - todo_last_used >= 3)
+        # Turn 5: model returns final answer
+        def fake_call_llm(*args, **kwargs):
+            nonlocal call_count
+            snapshots.append(list(args[2]))
+            call_count += 1
+            if call_count == 1:
+                tc = _make_tool_call(
+                    "todo",
+                    json.dumps({"action": "add", "task": "Implement feature X"}),
+                    "call_1",
+                )
+                return _make_message(tool_calls=[tc]), "tool_calls"
+            if call_count <= 4:
+                # Create a file so read_file succeeds
+                (tmp_path / "test.txt").write_text("hello")
+                tc = _make_tool_call(
+                    "read_file",
+                    json.dumps({"file_path": "test.txt"}),
+                    f"call_{call_count}",
+                )
+                return _make_message(tool_calls=[tc]), "tool_calls"
+            return _make_message(content="done"), "stop"
+
+        monkeypatch.setattr(agent, "call_llm", fake_call_llm)
+        monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+
+        args = _base_args(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["agent", "test todo reminder"])
+        monkeypatch.setattr("argparse.ArgumentParser.parse_args", lambda self: args)
+
+        agent.main()
+
+        # The reminder should be injected as a user message containing "Reminder:"
+        # Check the snapshot seen by turn 5 (the final answer turn)
+        all_user_msgs = _user_messages(snapshots[-1])
+        reminder_msgs = [m for m in all_user_msgs if "Reminder:" in m and "todo" in m.lower()]
+        assert len(reminder_msgs) == 1, f"Expected 1 reminder, got {len(reminder_msgs)}: {reminder_msgs}"
+        assert "Implement feature X" in reminder_msgs[0]
+
+    def test_no_reminder_when_all_done(self, tmp_path, monkeypatch):
+        """No reminder when all todo items are completed."""
+        from swival import agent, fmt
+
+        fmt.init(color=False, no_color=False)
+
+        call_count = 0
+        snapshots = []
+
+        # Turn 1: add a todo item
+        # Turn 2: mark it done
+        # Turns 3-5: non-todo tool use — should NOT trigger reminder
+        # Turn 6: final answer
+        def fake_call_llm(*args, **kwargs):
+            nonlocal call_count
+            snapshots.append(list(args[2]))
+            call_count += 1
+            if call_count == 1:
+                tc = _make_tool_call(
+                    "todo",
+                    json.dumps({"action": "add", "task": "Task A"}),
+                    "call_1",
+                )
+                return _make_message(tool_calls=[tc]), "tool_calls"
+            if call_count == 2:
+                tc = _make_tool_call(
+                    "todo",
+                    json.dumps({"action": "done", "task": "Task A"}),
+                    "call_2",
+                )
+                return _make_message(tool_calls=[tc]), "tool_calls"
+            if call_count <= 5:
+                (tmp_path / "test.txt").write_text("hello")
+                tc = _make_tool_call(
+                    "read_file",
+                    json.dumps({"file_path": "test.txt"}),
+                    f"call_{call_count}",
+                )
+                return _make_message(tool_calls=[tc]), "tool_calls"
+            return _make_message(content="done"), "stop"
+
+        monkeypatch.setattr(agent, "call_llm", fake_call_llm)
+        monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+
+        args = _base_args(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["agent", "test"])
+        monkeypatch.setattr("argparse.ArgumentParser.parse_args", lambda self: args)
+
+        agent.main()
+
+        all_user_msgs = _user_messages(snapshots[-1])
+        reminder_msgs = [m for m in all_user_msgs if "Reminder:" in m and "todo" in m.lower()]
+        assert len(reminder_msgs) == 0, f"Expected no reminders, got: {reminder_msgs}"
+
+    def test_no_reminder_within_interval(self, tmp_path, monkeypatch):
+        """No reminder when todo was used recently (within interval)."""
+        from swival import agent, fmt
+
+        fmt.init(color=False, no_color=False)
+
+        call_count = 0
+        snapshots = []
+
+        # Turn 1: add a todo item
+        # Turn 2-3: non-todo tool use (only 2 turns of inactivity, < interval of 3)
+        # Turn 4: final answer — no reminder expected
+        def fake_call_llm(*args, **kwargs):
+            nonlocal call_count
+            snapshots.append(list(args[2]))
+            call_count += 1
+            if call_count == 1:
+                tc = _make_tool_call(
+                    "todo",
+                    json.dumps({"action": "add", "task": "Task B"}),
+                    "call_1",
+                )
+                return _make_message(tool_calls=[tc]), "tool_calls"
+            if call_count <= 3:
+                (tmp_path / "test.txt").write_text("hello")
+                tc = _make_tool_call(
+                    "read_file",
+                    json.dumps({"file_path": "test.txt"}),
+                    f"call_{call_count}",
+                )
+                return _make_message(tool_calls=[tc]), "tool_calls"
+            return _make_message(content="done"), "stop"
+
+        monkeypatch.setattr(agent, "call_llm", fake_call_llm)
+        monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+
+        args = _base_args(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["agent", "test"])
+        monkeypatch.setattr("argparse.ArgumentParser.parse_args", lambda self: args)
+
+        agent.main()
+
+        all_user_msgs = _user_messages(snapshots[-1])
+        reminder_msgs = [m for m in all_user_msgs if "Reminder:" in m and "todo" in m.lower()]
+        assert len(reminder_msgs) == 0, f"Expected no reminders, got: {reminder_msgs}"
+
+    def test_reminder_resets_interval(self, tmp_path, monkeypatch):
+        """After a reminder fires, the interval resets (no back-to-back reminders)."""
+        from swival import agent, fmt
+
+        fmt.init(color=False, no_color=False)
+
+        call_count = 0
+        snapshots = []
+
+        # Turn 1: add a todo item (todo_last_used=1)
+        # Turns 2-4: non-todo (fires reminder at turn 4, resets todo_last_used=4)
+        # Turn 5: non-todo (only 1 turn since reset, no reminder)
+        # Turn 6: final answer
+        def fake_call_llm(*args, **kwargs):
+            nonlocal call_count
+            snapshots.append(list(args[2]))
+            call_count += 1
+            if call_count == 1:
+                tc = _make_tool_call(
+                    "todo",
+                    json.dumps({"action": "add", "task": "Task C"}),
+                    "call_1",
+                )
+                return _make_message(tool_calls=[tc]), "tool_calls"
+            if call_count <= 5:
+                (tmp_path / "test.txt").write_text("hello")
+                tc = _make_tool_call(
+                    "read_file",
+                    json.dumps({"file_path": "test.txt"}),
+                    f"call_{call_count}",
+                )
+                return _make_message(tool_calls=[tc]), "tool_calls"
+            return _make_message(content="done"), "stop"
+
+        monkeypatch.setattr(agent, "call_llm", fake_call_llm)
+        monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+
+        args = _base_args(tmp_path)
+        monkeypatch.setattr(sys, "argv", ["agent", "test"])
+        monkeypatch.setattr("argparse.ArgumentParser.parse_args", lambda self: args)
+
+        agent.main()
+
+        all_user_msgs = _user_messages(snapshots[-1])
+        reminder_msgs = [m for m in all_user_msgs if "Reminder:" in m and "todo" in m.lower()]
+        # Should have exactly 1 reminder (at turn 4), not 2
+        assert len(reminder_msgs) == 1, f"Expected 1 reminder, got {len(reminder_msgs)}: {reminder_msgs}"
