@@ -74,11 +74,48 @@ _CONTEXT_OVERFLOW_RE = re.compile(
     re.IGNORECASE,
 )
 
+_EMPTY_ASSISTANT_RE = re.compile(
+    r"must have either content or tool_calls"
+    r"|must have either 'content' or 'tool_calls'"
+    r"|must have non-null content or tool_calls",
+    re.IGNORECASE,
+)
+
 
 class ContextOverflowError(Exception):
     """Raised when the LLM call fails due to context window overflow."""
 
     pass
+
+
+def _sanitize_assistant_messages(messages: list) -> bool:
+    """Fix assistant messages that have neither content nor tool_calls.
+
+    Some providers (e.g. Mistral via OpenRouter) reject conversations containing
+    assistant messages with both content and tool_calls absent.  Setting content
+    to an empty string satisfies validation.
+
+    Returns True if any messages were fixed.
+    """
+    fixed = False
+    for msg in messages:
+        if isinstance(msg, dict):
+            if msg.get("role") != "assistant":
+                continue
+            has_content = bool(msg.get("content"))
+            has_tools = bool(msg.get("tool_calls"))
+            if not has_content and not has_tools:
+                msg["content"] = ""
+                fixed = True
+        else:
+            if getattr(msg, "role", None) != "assistant":
+                continue
+            has_content = bool(getattr(msg, "content", None))
+            has_tools = bool(getattr(msg, "tool_calls", None))
+            if not has_content and not has_tools:
+                msg.content = ""
+                fixed = True
+    return fixed
 
 
 def _safe_history_path(base_dir: str) -> Path:
@@ -547,6 +584,23 @@ def call_llm(
         msg_text = str(e)
         if _CONTEXT_OVERFLOW_RE.search(msg_text):
             raise ContextOverflowError(f"context window exceeded (inferred): {e}")
+        if _EMPTY_ASSISTANT_RE.search(msg_text):
+            # Provider rejected an assistant message with no content and no
+            # tool_calls (common with Mistral via OpenRouter).  Fix the
+            # messages in place and retry once.
+            if _sanitize_assistant_messages(messages):
+                if verbose:
+                    fmt.warning(
+                        "Fixed empty assistant message in history, retrying..."
+                    )
+                try:
+                    response = litellm.completion(**completion_kwargs)
+                except Exception as e2:
+                    raise AgentError(
+                        f"LLM call failed after message sanitization: {e2}"
+                    )
+                choice = response.choices[0]
+                return choice.message, choice.finish_reason
         raise AgentError(f"LLM call failed: {e}")
     except Exception as e:
         raise AgentError(f"LLM call failed: {e}")
@@ -1616,6 +1670,26 @@ def run_agent_loop(
                 report.record_llm_call(
                     turns + turn_offset, elapsed, token_est, finish_reason
                 )
+        # Handle empty assistant response (no content, no tool_calls).
+        # Some providers return these occasionally; appending them as-is
+        # would poison the history and cause BadRequestError on the next call.
+        if not getattr(msg, "content", None) and not getattr(msg, "tool_calls", None):
+            if verbose:
+                fmt.warning("LLM returned empty response, requesting continuation...")
+            # Give the message minimal content so it's valid in history
+            msg.content = ""
+            messages.append(msg)
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "Your response was empty. Please continue working on "
+                        "the task using the available tools."
+                    ),
+                }
+            )
+            continue
+
         messages.append(msg)
 
         # Log intermediate assistant text (reasoning before tool calls, or truncated responses)
