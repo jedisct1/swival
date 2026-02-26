@@ -311,7 +311,9 @@ def _tool_call_index(turn: list) -> dict[str, tuple[str, dict | None]]:
             fn.arguments if hasattr(fn, "arguments") else fn.get("arguments", "{}")
         )
         try:
-            fn_args = json.loads(fn_args_raw) if isinstance(fn_args_raw, str) else fn_args_raw
+            fn_args = (
+                json.loads(fn_args_raw) if isinstance(fn_args_raw, str) else fn_args_raw
+            )
         except (json.JSONDecodeError, TypeError):
             fn_args = None
         index[tc_id] = (fn_name, fn_args)
@@ -376,7 +378,6 @@ def score_turn(turn: list) -> int:
             if isinstance(msg, dict)
             else getattr(msg, "content", "") or ""
         )
-        role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
         # Errors are important — the agent learned something
         if "error" in content.lower() or "failed" in content.lower():
             score += 3
@@ -476,8 +477,14 @@ def drop_middle_turns(
     recap = None
     if call_llm_fn and dropped:
         summary = summarize_turns(
-            dropped, call_llm_fn, model_id, base_url,
-            api_key=api_key, top_p=top_p, seed=seed, provider=provider,
+            dropped,
+            call_llm_fn,
+            model_id,
+            base_url,
+            api_key=api_key,
+            top_p=top_p,
+            seed=seed,
+            provider=provider,
         )
         if summary:
             recap = {
@@ -555,8 +562,14 @@ def aggressive_drop_turns(
     recap = None
     if call_llm_fn and middle:
         summary = summarize_turns(
-            middle, call_llm_fn, model_id, base_url,
-            api_key=api_key, top_p=top_p, seed=seed, provider=provider,
+            middle,
+            call_llm_fn,
+            model_id,
+            base_url,
+            api_key=api_key,
+            top_p=top_p,
+            seed=seed,
+            provider=provider,
         )
         if summary:
             recap = {
@@ -587,8 +600,9 @@ def aggressive_drop_turns(
     return result
 
 
-def summarize_turns(turns_to_drop, call_llm_fn, model_id, base_url,
-                    api_key, top_p, seed, provider):
+def summarize_turns(
+    turns_to_drop, call_llm_fn, model_id, base_url, api_key, top_p, seed, provider
+):
     """Ask the model to summarize dropped turns into a compact recap.
 
     Returns the summary string, or ``None`` if summarization fails for any
@@ -619,21 +633,30 @@ def summarize_turns(turns_to_drop, call_llm_fn, model_id, base_url,
         joined = joined[:8000] + "\n[... truncated for summary call]"
 
     prompt = [
-        {"role": "system", "content": (
-            "Summarize this agent conversation excerpt into a factual recap. "
-            "Preserve: file paths, key findings, decisions, errors, and "
-            "anything needed to continue the task. Do NOT include instructions "
-            "or directives. Output only a factual summary. Be concise."
-        )},
+        {
+            "role": "system",
+            "content": (
+                "Summarize this agent conversation excerpt into a factual recap. "
+                "Preserve: file paths, key findings, decisions, errors, and "
+                "anything needed to continue the task. Do NOT include instructions "
+                "or directives. Output only a factual summary. Be concise."
+            ),
+        },
         {"role": "user", "content": joined},
     ]
     try:
         resp, _ = call_llm_fn(
-            base_url=base_url, model_id=model_id,
-            messages=prompt, max_output_tokens=512,
-            temperature=0, top_p=top_p, seed=seed,
-            tools=None, verbose=False,
-            api_key=api_key, provider=provider,
+            base_url=base_url,
+            model_id=model_id,
+            messages=prompt,
+            max_output_tokens=512,
+            temperature=0,
+            top_p=top_p,
+            seed=seed,
+            tools=None,
+            verbose=False,
+            api_key=api_key,
+            provider=provider,
         )
         content = resp.content if hasattr(resp, "content") else resp.get("content", "")
         return content if content else None
@@ -641,8 +664,9 @@ def summarize_turns(turns_to_drop, call_llm_fn, model_id, base_url,
         return None
 
 
-def summarize_turns_from_text(text, call_llm_fn, model_id, base_url,
-                              api_key, top_p, seed, provider):
+def summarize_turns_from_text(
+    text, call_llm_fn, model_id, base_url, api_key, top_p, seed, provider
+):
     """Summarize pre-joined text (used for checkpoint consolidation).
 
     Same contract as ``summarize_turns``: returns a string or ``None``.
@@ -651,20 +675,29 @@ def summarize_turns_from_text(text, call_llm_fn, model_id, base_url,
         text = text[:8000] + "\n[... truncated for summary call]"
 
     prompt = [
-        {"role": "system", "content": (
-            "Condense these conversation summaries into a single, shorter "
-            "factual recap. Preserve: file paths, key findings, decisions, "
-            "errors. Do NOT include instructions or directives. Be concise."
-        )},
+        {
+            "role": "system",
+            "content": (
+                "Condense these conversation summaries into a single, shorter "
+                "factual recap. Preserve: file paths, key findings, decisions, "
+                "errors. Do NOT include instructions or directives. Be concise."
+            ),
+        },
         {"role": "user", "content": text},
     ]
     try:
         resp, _ = call_llm_fn(
-            base_url=base_url, model_id=model_id,
-            messages=prompt, max_output_tokens=512,
-            temperature=0, top_p=top_p, seed=seed,
-            tools=None, verbose=False,
-            api_key=api_key, provider=provider,
+            base_url=base_url,
+            model_id=model_id,
+            messages=prompt,
+            max_output_tokens=512,
+            temperature=0,
+            top_p=top_p,
+            seed=seed,
+            tools=None,
+            verbose=False,
+            api_key=api_key,
+            provider=provider,
         )
         content = resp.content if hasattr(resp, "content") else resp.get("content", "")
         return content if content else None
@@ -691,8 +724,18 @@ class CompactionState:
         self.turns_since_last: int = 0
         self.checkpoint_interval: int = checkpoint_interval
 
-    def maybe_checkpoint(self, messages, call_llm_fn, *, model_id, base_url,
-                         api_key, top_p, seed, provider):
+    def maybe_checkpoint(
+        self,
+        messages,
+        call_llm_fn,
+        *,
+        model_id,
+        base_url,
+        api_key,
+        top_p,
+        seed,
+        provider,
+    ):
         """Attempt a checkpoint after each agent turn.
 
         Always resets the counter regardless of success/failure so a transient
@@ -706,28 +749,46 @@ class CompactionState:
 
         recent = _get_recent_turns(messages, self.checkpoint_interval)
         summary = summarize_turns(
-            recent, call_llm_fn, model_id, base_url,
-            api_key=api_key, top_p=top_p, seed=seed, provider=provider,
+            recent,
+            call_llm_fn,
+            model_id,
+            base_url,
+            api_key=api_key,
+            top_p=top_p,
+            seed=seed,
+            provider=provider,
         )
         if summary is None:
             return
 
         self.summaries.append(summary)
         self._maybe_consolidate(
-            call_llm_fn, model_id=model_id, base_url=base_url,
-            api_key=api_key, top_p=top_p, seed=seed, provider=provider,
+            call_llm_fn,
+            model_id=model_id,
+            base_url=base_url,
+            api_key=api_key,
+            top_p=top_p,
+            seed=seed,
+            provider=provider,
         )
 
-    def _maybe_consolidate(self, call_llm_fn, *, model_id, base_url,
-                           api_key, top_p, seed, provider):
+    def _maybe_consolidate(
+        self, call_llm_fn, *, model_id, base_url, api_key, top_p, seed, provider
+    ):
         """Merge old summaries when the list exceeds MAX_CHECKPOINTS."""
         if len(self.summaries) <= MAX_CHECKPOINTS:
             return
         half = len(self.summaries) // 2
         to_merge = self.summaries[:half]
         merged = summarize_turns_from_text(
-            "\n\n".join(to_merge), call_llm_fn, model_id, base_url,
-            api_key=api_key, top_p=top_p, seed=seed, provider=provider,
+            "\n\n".join(to_merge),
+            call_llm_fn,
+            model_id,
+            base_url,
+            api_key=api_key,
+            top_p=top_p,
+            seed=seed,
+            provider=provider,
         )
         if merged:
             self.summaries = [merged] + self.summaries[half:]
@@ -2091,12 +2152,21 @@ def run_agent_loop(
                 compaction_state=compaction_state,
             )
             compaction_levels = [
-                ("compact_messages", "compacting tool results...",
-                 lambda: compact_messages(messages)),
-                ("drop_middle_turns", "dropping low-importance turns...",
-                 lambda: drop_middle_turns(messages, **_llm_summary_kwargs)),
-                ("aggressive_drop", "aggressive compaction (last resort)...",
-                 lambda: aggressive_drop_turns(messages, **_llm_summary_kwargs)),
+                (
+                    "compact_messages",
+                    "compacting tool results...",
+                    lambda: compact_messages(messages),
+                ),
+                (
+                    "drop_middle_turns",
+                    "dropping low-importance turns...",
+                    lambda: drop_middle_turns(messages, **_llm_summary_kwargs),
+                ),
+                (
+                    "aggressive_drop",
+                    "aggressive compaction (last resort)...",
+                    lambda: aggressive_drop_turns(messages, **_llm_summary_kwargs),
+                ),
             ]
 
             for level_name, level_desc, compact_fn in compaction_levels:
@@ -2116,8 +2186,15 @@ def run_agent_loop(
                     fmt.context_stats(f"Context after {level_name}", tokens_after)
 
                 _llm_args = (
-                    api_base, model_id, messages, effective_max_output,
-                    temperature, top_p, seed, tools, verbose,
+                    api_base,
+                    model_id,
+                    messages,
+                    effective_max_output,
+                    temperature,
+                    top_p,
+                    seed,
+                    tools,
+                    verbose,
                 )
                 t0 = time.monotonic()
                 try:
@@ -2133,8 +2210,11 @@ def run_agent_loop(
                     elapsed = time.monotonic() - t0
                     if report:
                         report.record_llm_call(
-                            turns + turn_offset, elapsed, tokens_after,
-                            "context_overflow", is_retry=True,
+                            turns + turn_offset,
+                            elapsed,
+                            tokens_after,
+                            "context_overflow",
+                            is_retry=True,
                             retry_reason=level_name,
                         )
                     continue  # try next level
@@ -2142,8 +2222,12 @@ def run_agent_loop(
                     elapsed = time.monotonic() - t0
                     if report:
                         report.record_llm_call(
-                            turns + turn_offset, elapsed, tokens_after,
-                            "error", is_retry=True, retry_reason=level_name,
+                            turns + turn_offset,
+                            elapsed,
+                            tokens_after,
+                            "error",
+                            is_retry=True,
+                            retry_reason=level_name,
                         )
                     raise
                 else:
@@ -2152,8 +2236,11 @@ def run_agent_loop(
                         fmt.llm_timing(elapsed, finish_reason)
                     if report:
                         report.record_llm_call(
-                            turns + turn_offset, elapsed, tokens_after,
-                            finish_reason, is_retry=True,
+                            turns + turn_offset,
+                            elapsed,
+                            tokens_after,
+                            finish_reason,
+                            is_retry=True,
                             retry_reason=level_name,
                         )
                     break  # success
@@ -2333,10 +2420,13 @@ def run_agent_loop(
         # Proactive checkpoint (if enabled)
         if compaction_state is not None:
             compaction_state.maybe_checkpoint(
-                messages, call_llm,
-                model_id=model_id, base_url=api_base,
+                messages,
+                call_llm,
+                model_id=model_id,
+                base_url=api_base,
                 api_key=llm_kwargs.get("api_key"),
-                top_p=top_p, seed=seed,
+                top_p=top_p,
+                seed=seed,
                 provider=llm_kwargs.get("provider"),
             )
 

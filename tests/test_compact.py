@@ -212,7 +212,9 @@ class TestCompactMessages:
 class TestCompactToolResult:
     def test_short_content_unchanged(self):
         content = "short result"
-        assert compact_tool_result("read_file", {"file_path": "f.py"}, content) == content
+        assert (
+            compact_tool_result("read_file", {"file_path": "f.py"}, content) == content
+        )
 
     def test_read_file(self):
         content = "line\n" * 500  # >1000 chars, 500 newlines
@@ -223,7 +225,9 @@ class TestCompactToolResult:
 
     def test_grep(self):
         content = "match\n" * 300
-        result = compact_tool_result("grep", {"pattern": "TODO", "path": "src/"}, content)
+        result = compact_tool_result(
+            "grep", {"pattern": "TODO", "path": "src/"}, content
+        )
         assert result.startswith("[grep: 'TODO' in src/,")
         assert "~300 matches" in result
         assert "compacted" in result
@@ -238,7 +242,9 @@ class TestCompactToolResult:
 
     def test_run_command(self):
         content = "output " * 200  # >1000 chars
-        result = compact_tool_result("run_command", {"command": ["pytest", "-v"]}, content)
+        result = compact_tool_result(
+            "run_command", {"command": ["pytest", "-v"]}, content
+        )
         assert "[run_command: `pytest -v`" in result
         assert "first 200 chars" in result
         assert "last 200 chars" in result
@@ -276,7 +282,9 @@ class TestCompactToolResult:
 
     def test_exactly_1000_chars_unchanged(self):
         content = "x" * 1000
-        assert compact_tool_result("read_file", {"file_path": "f.py"}, content) == content
+        assert (
+            compact_tool_result("read_file", {"file_path": "f.py"}, content) == content
+        )
 
     def test_1001_chars_compacted(self):
         content = "x" * 1001
@@ -286,15 +294,14 @@ class TestCompactToolResult:
 
     def test_compact_messages_uses_structured_summaries(self):
         """compact_messages should produce per-tool summaries, not generic ones."""
-        tc = _assistant_tc(
-            [("tc1", "grep", '{"pattern": "error", "path": "logs/"}')]
-        )
+        tc = _assistant_tc([("tc1", "grep", '{"pattern": "error", "path": "logs/"}')])
         big_content = "match: error found\n" * 100  # >1000 chars
         tr = _tool("tc1", big_content)
         msgs = [_sys("sys"), _user("q"), tc, tr, _assistant("mid"), _assistant("done")]
         result = compact_messages(msgs)
         tool_msgs = [
-            m for m in result
+            m
+            for m in result
             if (m.get("role") if isinstance(m, dict) else None) == "tool"
         ]
         assert len(tool_msgs) == 1
@@ -448,14 +455,25 @@ class TestDropMiddleTurns:
         tc5 = _assistant_tc([("tc5", "read_file", "{}")])
         tr5 = _tool("tc5", "r5")
         msgs = [
-            _sys("s"), _user("q"),
-            tc1, tr1, user_mid, tc2, tr2,
-            tc3, tr3, tc4, tr4, tc5, tr5,
+            _sys("s"),
+            _user("q"),
+            tc1,
+            tr1,
+            user_mid,
+            tc2,
+            tr2,
+            tc3,
+            tr3,
+            tc4,
+            tr4,
+            tc5,
+            tr5,
         ]
         result = drop_middle_turns(msgs)
         # The mid-conversation user message must survive
         user_contents = [
-            m["content"] for m in result
+            m["content"]
+            for m in result
             if isinstance(m, dict) and m.get("role") == "user"
         ]
         assert "can you also check bar.py?" in user_contents
@@ -479,14 +497,22 @@ class TestDropMiddleTurns:
         tc_tail3 = _assistant_tc([("t3", "read_file", "{}")])
         tr_tail3 = _tool("t3", "t")
         msgs = [
-            _sys("s"), _user("q"),
-            tc_read1, tr_read1,
-            tc_read2, tr_read2,
-            tc_edit, tr_edit,
-            tc_read3, tr_read3,
-            tc_tail1, tr_tail1,
-            tc_tail2, tr_tail2,
-            tc_tail3, tr_tail3,
+            _sys("s"),
+            _user("q"),
+            tc_read1,
+            tr_read1,
+            tc_read2,
+            tr_read2,
+            tc_edit,
+            tr_edit,
+            tc_read3,
+            tr_read3,
+            tc_tail1,
+            tr_tail1,
+            tc_tail2,
+            tr_tail2,
+            tc_tail3,
+            tr_tail3,
         ]
         result = drop_middle_turns(msgs)
         # The edit turn (high score) should still be in the result
@@ -499,7 +525,11 @@ class TestDropMiddleTurns:
             )
             if tcs:
                 for tc in tcs:
-                    fn = tc.function if hasattr(tc, "function") else tc.get("function", {})
+                    fn = (
+                        tc.function
+                        if hasattr(tc, "function")
+                        else tc.get("function", {})
+                    )
                     fn_name = fn.name if hasattr(fn, "name") else fn.get("name", "")
                     tc_ids_in_result.add(fn_name)
         assert "edit_file" in tc_ids_in_result
@@ -659,23 +689,26 @@ class TestContextOverflowClassifier:
 
     def test_call_llm_omits_tool_choice_when_tools_none(self):
         """When tools=None, call_llm should not include tool_choice in kwargs."""
-        import litellm
-
         with patch("litellm.completion") as mock_comp:
             mock_comp.return_value = SimpleNamespace(
-                choices=[SimpleNamespace(
-                    message=SimpleNamespace(content="summary", tool_calls=None),
-                    finish_reason="stop",
-                )]
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content="summary", tool_calls=None),
+                        finish_reason="stop",
+                    )
+                ]
             )
             call_llm(
-                "http://localhost", "model", [{"role": "user", "content": "hi"}],
-                100, 0.1, 1.0, None, None, False,
+                "http://localhost",
+                "model",
+                [{"role": "user", "content": "hi"}],
+                100,
+                0.1,
+                1.0,
+                None,
+                None,
+                False,
             )
-            kwargs = mock_comp.call_args[1] if mock_comp.call_args[1] else {}
-            all_kwargs = {**dict(zip(
-                ["model", "messages", "max_tokens"], mock_comp.call_args[0][:3]
-            )), **mock_comp.call_args[1]} if mock_comp.call_args[0] else mock_comp.call_args[1]
             # litellm.completion was called with keyword args
             call_kw = mock_comp.call_args.kwargs
             assert "tool_choice" not in call_kw
@@ -690,19 +723,47 @@ class TestContextOverflowClassifier:
 class TestSummarizeTurns:
     def _make_mock_call_llm(self, content="Summary of dropped turns."):
         """Return a mock call_llm that returns a successful response."""
-        def mock_fn(*, base_url, model_id, messages, max_output_tokens,
-                    temperature, top_p, seed, tools, verbose, api_key, provider):
+
+        def mock_fn(
+            *,
+            base_url,
+            model_id,
+            messages,
+            max_output_tokens,
+            temperature,
+            top_p,
+            seed,
+            tools,
+            verbose,
+            api_key,
+            provider,
+        ):
             return (
                 SimpleNamespace(content=content),
                 "stop",
             )
+
         return mock_fn
 
     def _make_failing_call_llm(self, exc):
         """Return a mock call_llm that raises the given exception."""
-        def mock_fn(*, base_url, model_id, messages, max_output_tokens,
-                    temperature, top_p, seed, tools, verbose, api_key, provider):
+
+        def mock_fn(
+            *,
+            base_url,
+            model_id,
+            messages,
+            max_output_tokens,
+            temperature,
+            top_p,
+            seed,
+            tools,
+            verbose,
+            api_key,
+            provider,
+        ):
             raise exc
+
         return mock_fn
 
     def _sample_turns(self):
@@ -716,45 +777,70 @@ class TestSummarizeTurns:
     def test_successful_summary(self):
         turns = self._sample_turns()
         result = summarize_turns(
-            turns, self._make_mock_call_llm("The agent read foo.py and searched for TODOs."),
-            model_id="test", base_url="http://localhost",
-            api_key="key", top_p=1.0, seed=None, provider="lmstudio",
+            turns,
+            self._make_mock_call_llm("The agent read foo.py and searched for TODOs."),
+            model_id="test",
+            base_url="http://localhost",
+            api_key="key",
+            top_p=1.0,
+            seed=None,
+            provider="lmstudio",
         )
         assert result == "The agent read foo.py and searched for TODOs."
 
     def test_returns_none_on_context_overflow(self):
         turns = self._sample_turns()
         result = summarize_turns(
-            turns, self._make_failing_call_llm(ContextOverflowError("overflow")),
-            model_id="test", base_url="http://localhost",
-            api_key="key", top_p=1.0, seed=None, provider="lmstudio",
+            turns,
+            self._make_failing_call_llm(ContextOverflowError("overflow")),
+            model_id="test",
+            base_url="http://localhost",
+            api_key="key",
+            top_p=1.0,
+            seed=None,
+            provider="lmstudio",
         )
         assert result is None
 
     def test_returns_none_on_timeout(self):
         turns = self._sample_turns()
         result = summarize_turns(
-            turns, self._make_failing_call_llm(TimeoutError("timed out")),
-            model_id="test", base_url="http://localhost",
-            api_key="key", top_p=1.0, seed=None, provider="lmstudio",
+            turns,
+            self._make_failing_call_llm(TimeoutError("timed out")),
+            model_id="test",
+            base_url="http://localhost",
+            api_key="key",
+            top_p=1.0,
+            seed=None,
+            provider="lmstudio",
         )
         assert result is None
 
     def test_returns_none_on_connection_error(self):
         turns = self._sample_turns()
         result = summarize_turns(
-            turns, self._make_failing_call_llm(ConnectionError("refused")),
-            model_id="test", base_url="http://localhost",
-            api_key="key", top_p=1.0, seed=None, provider="lmstudio",
+            turns,
+            self._make_failing_call_llm(ConnectionError("refused")),
+            model_id="test",
+            base_url="http://localhost",
+            api_key="key",
+            top_p=1.0,
+            seed=None,
+            provider="lmstudio",
         )
         assert result is None
 
     def test_returns_none_on_empty_content(self):
         turns = self._sample_turns()
         result = summarize_turns(
-            turns, self._make_mock_call_llm(""),
-            model_id="test", base_url="http://localhost",
-            api_key="key", top_p=1.0, seed=None, provider="lmstudio",
+            turns,
+            self._make_mock_call_llm(""),
+            model_id="test",
+            base_url="http://localhost",
+            api_key="key",
+            top_p=1.0,
+            seed=None,
+            provider="lmstudio",
         )
         assert result is None
 
@@ -763,15 +849,32 @@ class TestSummarizeTurns:
         big_turn = [_assistant("x" * 10000)]
         captured = {}
 
-        def capturing_call_llm(*, base_url, model_id, messages, max_output_tokens,
-                                temperature, top_p, seed, tools, verbose, api_key, provider):
+        def capturing_call_llm(
+            *,
+            base_url,
+            model_id,
+            messages,
+            max_output_tokens,
+            temperature,
+            top_p,
+            seed,
+            tools,
+            verbose,
+            api_key,
+            provider,
+        ):
             captured["messages"] = messages
             return (SimpleNamespace(content="ok"), "stop")
 
         summarize_turns(
-            [big_turn], capturing_call_llm,
-            model_id="test", base_url="http://localhost",
-            api_key="key", top_p=1.0, seed=None, provider="lmstudio",
+            [big_turn],
+            capturing_call_llm,
+            model_id="test",
+            base_url="http://localhost",
+            api_key="key",
+            top_p=1.0,
+            seed=None,
+            provider="lmstudio",
         )
         user_content = captured["messages"][1]["content"]
         assert len(user_content) <= 8100  # 8000 + truncation marker
@@ -780,15 +883,32 @@ class TestSummarizeTurns:
         """summarize_turns should call LLM with tools=None."""
         captured = {}
 
-        def capturing_call_llm(*, base_url, model_id, messages, max_output_tokens,
-                                temperature, top_p, seed, tools, verbose, api_key, provider):
+        def capturing_call_llm(
+            *,
+            base_url,
+            model_id,
+            messages,
+            max_output_tokens,
+            temperature,
+            top_p,
+            seed,
+            tools,
+            verbose,
+            api_key,
+            provider,
+        ):
             captured["tools"] = tools
             return (SimpleNamespace(content="ok"), "stop")
 
         summarize_turns(
-            self._sample_turns(), capturing_call_llm,
-            model_id="test", base_url="http://localhost",
-            api_key="key", top_p=1.0, seed=None, provider="lmstudio",
+            self._sample_turns(),
+            capturing_call_llm,
+            model_id="test",
+            base_url="http://localhost",
+            api_key="key",
+            top_p=1.0,
+            seed=None,
+            provider="lmstudio",
         )
         assert captured["tools"] is None
 
@@ -797,15 +917,41 @@ class TestDropMiddleTurnsWithSummary:
     """Tests for AI-powered summarization in drop_middle_turns."""
 
     def _make_mock_call_llm(self, content="Summary recap."):
-        def mock_fn(*, base_url, model_id, messages, max_output_tokens,
-                    temperature, top_p, seed, tools, verbose, api_key, provider):
+        def mock_fn(
+            *,
+            base_url,
+            model_id,
+            messages,
+            max_output_tokens,
+            temperature,
+            top_p,
+            seed,
+            tools,
+            verbose,
+            api_key,
+            provider,
+        ):
             return (SimpleNamespace(content=content), "stop")
+
         return mock_fn
 
     def _make_failing_call_llm(self):
-        def mock_fn(*, base_url, model_id, messages, max_output_tokens,
-                    temperature, top_p, seed, tools, verbose, api_key, provider):
+        def mock_fn(
+            *,
+            base_url,
+            model_id,
+            messages,
+            max_output_tokens,
+            temperature,
+            top_p,
+            seed,
+            tools,
+            verbose,
+            api_key,
+            provider,
+        ):
             raise RuntimeError("LLM unavailable")
+
         return mock_fn
 
     def _build_msgs(self):
@@ -825,13 +971,19 @@ class TestDropMiddleTurnsWithSummary:
         result = drop_middle_turns(
             msgs,
             call_llm_fn=self._make_mock_call_llm("Recap of work done."),
-            model_id="m", base_url="http://x", api_key="k",
-            top_p=1.0, seed=None, provider="lmstudio",
+            model_id="m",
+            base_url="http://x",
+            api_key="k",
+            top_p=1.0,
+            seed=None,
+            provider="lmstudio",
         )
         # Find the recap message
         recaps = [
-            m for m in result
-            if isinstance(m, dict) and m.get("role") == "assistant"
+            m
+            for m in result
+            if isinstance(m, dict)
+            and m.get("role") == "assistant"
             and isinstance(m.get("content"), str)
             and _RECAP_PREFIX in m["content"]
         ]
@@ -845,12 +997,17 @@ class TestDropMiddleTurnsWithSummary:
         result = drop_middle_turns(
             msgs,
             call_llm_fn=self._make_failing_call_llm(),
-            model_id="m", base_url="http://x", api_key="k",
-            top_p=1.0, seed=None, provider="lmstudio",
+            model_id="m",
+            base_url="http://x",
+            api_key="k",
+            top_p=1.0,
+            seed=None,
+            provider="lmstudio",
         )
         # Should have the static splice marker (role=user)
         markers = [
-            m for m in result
+            m
+            for m in result
             if isinstance(m, dict) and "[context compacted" in m.get("content", "")
         ]
         assert len(markers) == 1
@@ -861,7 +1018,8 @@ class TestDropMiddleTurnsWithSummary:
         msgs = self._build_msgs()
         result = drop_middle_turns(msgs)
         markers = [
-            m for m in result
+            m
+            for m in result
             if isinstance(m, dict) and "[context compacted" in m.get("content", "")
         ]
         assert len(markers) == 1
@@ -873,8 +1031,12 @@ class TestDropMiddleTurnsWithSummary:
         result = drop_middle_turns(
             msgs,
             call_llm_fn=self._make_mock_call_llm("Recap text."),
-            model_id="m", base_url="http://x", api_key="k",
-            top_p=1.0, seed=None, provider="lmstudio",
+            model_id="m",
+            base_url="http://x",
+            api_key="k",
+            top_p=1.0,
+            seed=None,
+            provider="lmstudio",
         )
         for m in result:
             if not isinstance(m, dict):
@@ -891,21 +1053,51 @@ class TestDropMiddleTurnsWithSummary:
 
 class TestCompactionState:
     def _make_mock_call_llm(self, content="Checkpoint summary."):
-        def mock_fn(*, base_url, model_id, messages, max_output_tokens,
-                    temperature, top_p, seed, tools, verbose, api_key, provider):
+        def mock_fn(
+            *,
+            base_url,
+            model_id,
+            messages,
+            max_output_tokens,
+            temperature,
+            top_p,
+            seed,
+            tools,
+            verbose,
+            api_key,
+            provider,
+        ):
             return (SimpleNamespace(content=content), "stop")
+
         return mock_fn
 
     def _make_failing_call_llm(self):
-        def mock_fn(*, base_url, model_id, messages, max_output_tokens,
-                    temperature, top_p, seed, tools, verbose, api_key, provider):
+        def mock_fn(
+            *,
+            base_url,
+            model_id,
+            messages,
+            max_output_tokens,
+            temperature,
+            top_p,
+            seed,
+            tools,
+            verbose,
+            api_key,
+            provider,
+        ):
             raise RuntimeError("LLM unavailable")
+
         return mock_fn
 
     def _llm_kwargs(self):
         return dict(
-            model_id="test", base_url="http://localhost",
-            api_key="key", top_p=1.0, seed=None, provider="lmstudio",
+            model_id="test",
+            base_url="http://localhost",
+            api_key="key",
+            top_p=1.0,
+            seed=None,
+            provider="lmstudio",
         )
 
     def _build_messages(self, n_turns):
@@ -940,8 +1132,20 @@ class TestCompactionState:
         msgs = self._build_messages(5)
         call_count = 0
 
-        def counting_fail(*, base_url, model_id, messages, max_output_tokens,
-                          temperature, top_p, seed, tools, verbose, api_key, provider):
+        def counting_fail(
+            *,
+            base_url,
+            model_id,
+            messages,
+            max_output_tokens,
+            temperature,
+            top_p,
+            seed,
+            tools,
+            verbose,
+            api_key,
+            provider,
+        ):
             nonlocal call_count
             call_count += 1
             raise RuntimeError("fail")
@@ -986,8 +1190,20 @@ class TestCompactionState:
         msgs = self._build_messages(5)
         call_counter = {"n": 0}
 
-        def sometimes_fail(*, base_url, model_id, messages, max_output_tokens,
-                           temperature, top_p, seed, tools, verbose, api_key, provider):
+        def sometimes_fail(
+            *,
+            base_url,
+            model_id,
+            messages,
+            max_output_tokens,
+            temperature,
+            top_p,
+            seed,
+            tools,
+            verbose,
+            api_key,
+            provider,
+        ):
             call_counter["n"] += 1
             # First MAX_CHECKPOINTS+1 calls succeed (building up summaries)
             # Then consolidation call fails
@@ -1016,20 +1232,37 @@ class TestCompactionState:
         tr4 = _tool("tc4", "r4")
         msgs = [_sys("sys"), _user("q"), tc1, tr1, tc2, tr2, tc3, tr3, tc4, tr4]
 
-        def failing_llm(*, base_url, model_id, messages, max_output_tokens,
-                        temperature, top_p, seed, tools, verbose, api_key, provider):
+        def failing_llm(
+            *,
+            base_url,
+            model_id,
+            messages,
+            max_output_tokens,
+            temperature,
+            top_p,
+            seed,
+            tools,
+            verbose,
+            api_key,
+            provider,
+        ):
             raise RuntimeError("LLM down")
 
         result = drop_middle_turns(
             msgs,
             call_llm_fn=failing_llm,
-            model_id="m", base_url="http://x", api_key="k",
-            top_p=1.0, seed=None, provider="lmstudio",
+            model_id="m",
+            base_url="http://x",
+            api_key="k",
+            top_p=1.0,
+            seed=None,
+            provider="lmstudio",
             compaction_state=state,
         )
         # Should have used checkpoint summary, not static marker
         recaps = [
-            m for m in result
+            m
+            for m in result
             if isinstance(m, dict)
             and m.get("role") == "assistant"
             and "checkpoints" in m.get("content", "")
@@ -1073,19 +1306,37 @@ class TestAggressiveDropTurns:
     def test_with_llm_summary(self):
         msgs = self._build_msgs(5)
 
-        def mock_llm(*, base_url, model_id, messages, max_output_tokens,
-                     temperature, top_p, seed, tools, verbose, api_key, provider):
+        def mock_llm(
+            *,
+            base_url,
+            model_id,
+            messages,
+            max_output_tokens,
+            temperature,
+            top_p,
+            seed,
+            tools,
+            verbose,
+            api_key,
+            provider,
+        ):
             return (SimpleNamespace(content="Aggressive recap."), "stop")
 
         result = aggressive_drop_turns(
             msgs,
             call_llm_fn=mock_llm,
-            model_id="m", base_url="http://x", api_key="k",
-            top_p=1.0, seed=None, provider="lmstudio",
+            model_id="m",
+            base_url="http://x",
+            api_key="k",
+            top_p=1.0,
+            seed=None,
+            provider="lmstudio",
         )
         recaps = [
-            m for m in result
-            if isinstance(m, dict) and m.get("role") == "assistant"
+            m
+            for m in result
+            if isinstance(m, dict)
+            and m.get("role") == "assistant"
             and _RECAP_PREFIX in m.get("content", "")
         ]
         assert len(recaps) == 1
@@ -1095,7 +1346,8 @@ class TestAggressiveDropTurns:
         msgs = self._build_msgs(5)
         result = aggressive_drop_turns(msgs)
         markers = [
-            m for m in result
+            m
+            for m in result
             if isinstance(m, dict) and "[context compacted" in m.get("content", "")
         ]
         assert len(markers) == 1
@@ -1169,7 +1421,8 @@ class TestGraduatedCompaction:
         for compact_fn in [compact_messages, drop_middle_turns, aggressive_drop_turns]:
             result = compact_fn(list(msgs))
             first_role = (
-                result[0].get("role") if isinstance(result[0], dict)
+                result[0].get("role")
+                if isinstance(result[0], dict)
                 else getattr(result[0], "role", None)
             )
             assert first_role == "system"
