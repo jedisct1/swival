@@ -31,6 +31,12 @@ class McpManager:
     Runs an asyncio event loop in a background daemon thread.
     All public methods are synchronous — they submit coroutines via
     run_coroutine_threadsafe() and block on the future.
+
+    Each server gets a long-lived asyncio Task that owns its
+    AsyncExitStack from connect through shutdown.  This ensures the
+    cancel-scopes created by the MCP SDK's anyio transports are always
+    entered and exited inside the same Task, avoiding
+    "Attempted to exit cancel scope in a different task" errors.
     """
 
     def __init__(self, server_configs: dict[str, dict], verbose: bool = False):
@@ -55,7 +61,6 @@ class McpManager:
 
         # MCP state (populated by start())
         self._sessions: dict[str, Any] = {}  # server_name -> ClientSession
-        self._exit_stacks: dict[str, Any] = {}  # server_name -> AsyncExitStack
         self._tool_schemas: dict[
             str, list[dict]
         ] = {}  # server_name -> [openai schemas]
@@ -63,6 +68,10 @@ class McpManager:
             str, tuple[str, str]
         ] = {}  # namespaced_name -> (server, orig)
         self._degraded: set[str] = set()  # servers that crashed after startup
+
+        # Per-server lifecycle tasks and their shutdown signals
+        self._server_tasks: dict[str, asyncio.Task] = {}
+        self._shutdown_events: dict[str, asyncio.Event] = {}
 
         # Lifecycle flags
         self._closing = False
@@ -93,10 +102,10 @@ class McpManager:
 
         from . import fmt as _fmt
 
-        # Connect to each server
+        # Connect to each server via a long-lived lifecycle task
         for name, config in self._server_configs.items():
             try:
-                self._run_sync(self._connect_server(name, config), timeout=30)
+                self._start_server_task(name, config, timeout=30)
             except Exception as e:
                 _fmt.mcp_server_error(name, str(e))
 
@@ -197,8 +206,55 @@ class McpManager:
             future.cancel()
             raise
 
-    async def _connect_server(self, name: str, config: dict) -> None:
-        """Connect to a single MCP server."""
+    def _start_server_task(self, name: str, config: dict, timeout: float = 30) -> None:
+        """Launch a long-lived task for one server; block until connected.
+
+        The lifecycle task owns the AsyncExitStack so that connect and
+        cleanup always happen inside the same asyncio Task — required
+        by anyio's cancel-scope tracking.
+        """
+        ready = threading.Event()
+        startup_error: list[BaseException | None] = [None]
+        shutdown_event = asyncio.Event()
+        self._shutdown_events[name] = shutdown_event
+
+        async def _launch():
+            task = asyncio.current_task()
+            assert task is not None
+            lifecycle_task = asyncio.create_task(
+                self._server_lifecycle(
+                    name, config, ready, startup_error, shutdown_event
+                ),
+                name=f"mcp-{name}",
+            )
+            self._server_tasks[name] = lifecycle_task
+
+        self._run_sync(_launch(), timeout=5)
+
+        if not ready.wait(timeout=timeout):
+            task = self._server_tasks.pop(name, None)
+            if task:
+                self._loop.call_soon_threadsafe(task.cancel)
+            self._shutdown_events.pop(name, None)
+            raise TimeoutError(f"MCP server {name!r} startup timed out")
+
+        if startup_error[0] is not None:
+            self._server_tasks.pop(name, None)
+            self._shutdown_events.pop(name, None)
+            raise startup_error[0]
+
+    async def _server_lifecycle(
+        self,
+        name: str,
+        config: dict,
+        ready: threading.Event,
+        startup_error: list[BaseException | None],
+        shutdown_event: asyncio.Event,
+    ) -> None:
+        """Long-lived task owning one server's connection and exit-stack.
+
+        Connect → wait for shutdown signal → clean up, all within one Task.
+        """
         from contextlib import AsyncExitStack
         import mcp
 
@@ -238,7 +294,6 @@ class McpManager:
             tools_result = await session.list_tools()
 
             self._sessions[name] = session
-            self._exit_stacks[name] = stack
 
             # Convert schemas
             self._tool_schemas[name] = [
@@ -249,22 +304,16 @@ class McpManager:
 
             fmt.mcp_server_start(name, len(tools_result.tools))
 
-        except Exception:
-            await stack.aclose()
-            raise
+            ready.set()
 
-    async def _close_all_sessions(self) -> None:
-        """Close all MCP sessions and their exit stacks.
-
-        The MCP SDK's stdio transport handles SIGTERM→SIGKILL internally
-        during its own cleanup. We add a timeout so a hung cleanup doesn't
-        block shutdown indefinitely.
-        """
-        for name in list(self._exit_stacks):
+            # Keep running until signalled to shut down
+            await shutdown_event.wait()
+        except Exception as exc:
+            startup_error[0] = exc
+            ready.set()  # Unblock the caller even on error
+        finally:
             try:
-                stack = self._exit_stacks.pop(name, None)
-                if stack:
-                    await asyncio.wait_for(stack.aclose(), timeout=5)
+                await asyncio.wait_for(stack.aclose(), timeout=5)
             except TimeoutError:
                 logger.warning(
                     f"MCP server {name!r}: graceful close timed out "
@@ -273,6 +322,28 @@ class McpManager:
             except Exception as e:
                 logger.warning(f"Error closing MCP server {name!r}: {e}")
             self._sessions.pop(name, None)
+
+    async def _close_all_sessions(self) -> None:
+        """Signal all server lifecycle tasks to shut down and wait.
+
+        Each task cleans up its own AsyncExitStack in the same Task
+        that created it, avoiding cancel-scope cross-task errors.
+        """
+        for event in self._shutdown_events.values():
+            event.set()
+
+        tasks = list(self._server_tasks.values())
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for r in results:
+                if isinstance(r, Exception) and not isinstance(
+                    r, asyncio.CancelledError
+                ):
+                    logger.warning(f"MCP server task error during shutdown: {r}")
+
+        self._server_tasks.clear()
+        self._shutdown_events.clear()
+        self._sessions.clear()
 
     def _build_tool_map(self) -> None:
         """Build the routing table with collision detection.
