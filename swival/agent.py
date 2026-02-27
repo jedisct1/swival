@@ -1204,6 +1204,11 @@ def call_llm(
         kwargs = {"api_key": api_key}
         if base_url:
             kwargs["api_base"] = base_url
+    elif provider == "generic":
+        model_str = f"openai/{model_id}"
+        stripped = base_url.rstrip("/")
+        api_base = stripped if stripped.endswith("/v1") else f"{stripped}/v1"
+        kwargs = {"api_base": api_base, "api_key": api_key or "none"}
     else:
         raise AgentError(f"unknown provider {provider!r}")
 
@@ -1462,9 +1467,9 @@ def build_parser():
     )
     parser.add_argument(
         "--provider",
-        choices=["lmstudio", "huggingface", "openrouter"],
+        choices=["lmstudio", "huggingface", "openrouter", "generic"],
         default=_UNSET,
-        help="LLM provider: lmstudio (local), huggingface (HF API), openrouter (multi-provider API).",
+        help="LLM provider: lmstudio (local), huggingface (HF API), openrouter (multi-provider API), generic (any OpenAI-compatible server).",
     )
     parser.add_argument(
         "-q",
@@ -1832,6 +1837,16 @@ def resolve_provider(
             raise ConfigError(
                 "--api-key or OPENROUTER_API_KEY env var required for openrouter provider"
             )
+    elif provider == "generic":
+        if not model:
+            raise ConfigError("--model is required when --provider is generic")
+        if not base_url:
+            raise ConfigError("--base-url is required when --provider is generic")
+        api_base = base_url
+        model_id = model
+        context_length = max_context_tokens
+        resolved_key = api_key or os.environ.get("OPENAI_API_KEY")
+
     else:
         raise ConfigError(f"unknown provider: {provider!r}")
 

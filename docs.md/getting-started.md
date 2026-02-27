@@ -101,6 +101,21 @@ swival "Hello world" \
 
 For a deeper look at OpenRouter-specific options, see [Providers](providers.md).
 
+## Running with Any OpenAI-Compatible Server
+
+If you're running ollama, llama.cpp, mlx_lm.server, vLLM, or any other server that exposes an OpenAI-compatible API, use the generic provider.
+
+```sh
+swival "Hello world" \
+    --provider generic \
+    --base-url http://127.0.0.1:8080 \
+    --model my-model
+```
+
+Both `--model` and `--base-url` are required. No API key is needed for most local servers. If your server requires one, pass `--api-key` or set `OPENAI_API_KEY`.
+
+For a deeper look at generic provider options and server-specific examples, see [Providers](providers.md).
+
 ## Where To Go Next
 
 If you want the full command surface and mode behavior, continue with [Usage](usage.md). If you want a deeper look at built-in capabilities, read [Tools](tools.md). If you need to understand trust boundaries before enabling stronger actions, read [Safety and Sandboxing](safety-and-sandboxing.md).

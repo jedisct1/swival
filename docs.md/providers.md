@@ -1,6 +1,6 @@
 # Providers
 
-Swival supports LM Studio for local inference, HuggingFace Inference API for hosted inference, and OpenRouter for multi-provider access through a single API. All provider calls are normalized through [LiteLLM](https://docs.litellm.ai/), so the runtime loop stays consistent while credential and model routing change per provider.
+Swival supports LM Studio for local inference, HuggingFace Inference API for hosted inference, OpenRouter for multi-provider access through a single API, and a generic provider for any OpenAI-compatible server. All provider calls are normalized through [LiteLLM](https://docs.litellm.ai/), so the runtime loop stays consistent while credential and model routing change per provider.
 
 ## LM Studio
 
@@ -83,6 +83,50 @@ swival --provider openrouter --model z-ai/glm-5 \
 ```
 
 Internally, Swival normalizes OpenRouter models to LiteLLM's `openrouter/...` format. If the model identifier starts with the literal double prefix `openrouter/openrouter/`, Swival strips the redundant prefix so LiteLLM does not see a stutter. Any other `openrouter/` prefix (e.g. `openrouter/z-ai/glm-5`) is treated as part of the model path and gets prefixed normally, so you should pass bare identifiers like `z-ai/glm-5`.
+
+## Generic (OpenAI-compatible)
+
+The generic provider works with any server that exposes an OpenAI-compatible chat completions endpoint. This covers mlx_lm.server, ollama, llama.cpp, vLLM, LocalAI, text-generation-webui, and similar tools.
+
+Both `--model` and `--base-url` are required. Pass the server's root URL without `/v1` — Swival appends it automatically. If your URL already ends in `/v1`, that's fine too.
+
+```sh
+# mlx_lm.server
+swival --provider generic \
+    --base-url http://127.0.0.1:8080 \
+    --model mlx-community/Qwen3-Coder-480B-A35B-4bit \
+    "task"
+```
+
+```sh
+# ollama
+swival --provider generic \
+    --base-url http://127.0.0.1:11434 \
+    --model qwen3:32b \
+    "task"
+```
+
+```sh
+# llama.cpp server
+swival --provider generic \
+    --base-url http://127.0.0.1:8080 \
+    --model default \
+    "task"
+```
+
+No API key is required for most local servers. If your server needs one, pass `--api-key` or set `OPENAI_API_KEY`.
+
+```sh
+export OPENAI_API_KEY=sk-...
+swival --provider generic \
+    --base-url https://my-server.example.com \
+    --model my-model \
+    "task"
+```
+
+There is no model auto-discovery and no context window reload. Set `--max-context-tokens` manually if you need Swival to know the window size.
+
+Internally, generic calls are routed through LiteLLM as `openai/<model_id>` with `api_base` pointing at your server's `/v1` path.
 
 ## Adding More Providers Later
 

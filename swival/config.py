@@ -498,7 +498,7 @@ def generate_config(project: bool = False) -> str:
         "# CLI flags override these values. Only uncomment what you need.",
         "",
         "# --- Provider / model ---",
-        '# provider = "lmstudio"          # "lmstudio" | "huggingface" | "openrouter"',
+        '# provider = "lmstudio"          # "lmstudio" | "huggingface" | "openrouter" | "generic"',
         '# model = "qwen/qwen3-235b-a22b"',
         '# api_key = "sk-or-..."            # prefer env vars; this is a fallback',
         '# base_url = "https://..."',

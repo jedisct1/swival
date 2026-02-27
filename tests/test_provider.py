@@ -604,3 +604,340 @@ class TestProviderPathIsolation:
         monkeypatch.setattr(agent, "call_llm", fake_call_llm)
         agent.main()
         assert configure_called["value"]
+
+
+# ---------------------------------------------------------------------------
+# Generic provider
+# ---------------------------------------------------------------------------
+
+
+class TestGenericProviderRouting:
+    """Verify call_llm routing for the generic provider."""
+
+    def _mock_response(self):
+        choice = MagicMock()
+        choice.message = MagicMock(content="ok", tool_calls=None)
+        choice.finish_reason = "stop"
+        resp = MagicMock()
+        resp.choices = [choice]
+        return resp
+
+    def test_generic_routing_basic(self):
+        with patch("litellm.completion") as mock_comp:
+            mock_comp.return_value = self._mock_response()
+            call_llm(
+                "http://localhost:8080",
+                "my-model",
+                [],
+                100,
+                0.5,
+                1.0,
+                None,
+                None,
+                False,
+                provider="generic",
+                api_key="sk-test",
+            )
+            mock_comp.assert_called_once()
+            kwargs = mock_comp.call_args[1]
+            assert kwargs["model"] == "openai/my-model"
+            assert kwargs["api_base"] == "http://localhost:8080/v1"
+            assert kwargs["api_key"] == "sk-test"
+
+    def test_generic_appends_v1_when_missing(self):
+        with patch("litellm.completion") as mock_comp:
+            mock_comp.return_value = self._mock_response()
+            call_llm(
+                "http://host:9000",
+                "m",
+                [],
+                100,
+                None,
+                None,
+                None,
+                None,
+                False,
+                provider="generic",
+                api_key=None,
+            )
+            assert mock_comp.call_args[1]["api_base"] == "http://host:9000/v1"
+
+    def test_generic_no_double_v1(self):
+        with patch("litellm.completion") as mock_comp:
+            mock_comp.return_value = self._mock_response()
+            call_llm(
+                "http://host:9000/v1",
+                "m",
+                [],
+                100,
+                None,
+                None,
+                None,
+                None,
+                False,
+                provider="generic",
+                api_key=None,
+            )
+            assert mock_comp.call_args[1]["api_base"] == "http://host:9000/v1"
+
+    def test_generic_trailing_slash_stripped(self):
+        with patch("litellm.completion") as mock_comp:
+            mock_comp.return_value = self._mock_response()
+            call_llm(
+                "http://host:9000/",
+                "m",
+                [],
+                100,
+                None,
+                None,
+                None,
+                None,
+                False,
+                provider="generic",
+                api_key=None,
+            )
+            assert mock_comp.call_args[1]["api_base"] == "http://host:9000/v1"
+
+    def test_generic_trailing_slash_with_v1(self):
+        with patch("litellm.completion") as mock_comp:
+            mock_comp.return_value = self._mock_response()
+            call_llm(
+                "http://host:9000/v1/",
+                "m",
+                [],
+                100,
+                None,
+                None,
+                None,
+                None,
+                False,
+                provider="generic",
+                api_key=None,
+            )
+            assert mock_comp.call_args[1]["api_base"] == "http://host:9000/v1"
+
+    def test_generic_no_key_uses_none_placeholder(self):
+        with patch("litellm.completion") as mock_comp:
+            mock_comp.return_value = self._mock_response()
+            call_llm(
+                "http://host:9000",
+                "m",
+                [],
+                100,
+                None,
+                None,
+                None,
+                None,
+                False,
+                provider="generic",
+                api_key=None,
+            )
+            assert mock_comp.call_args[1]["api_key"] == "none"
+
+    def test_generic_key_passed_through(self):
+        with patch("litellm.completion") as mock_comp:
+            mock_comp.return_value = self._mock_response()
+            call_llm(
+                "http://host:9000",
+                "m",
+                [],
+                100,
+                None,
+                None,
+                None,
+                None,
+                False,
+                provider="generic",
+                api_key="sk-real",
+            )
+            assert mock_comp.call_args[1]["api_key"] == "sk-real"
+
+
+class TestGenericProviderValidation:
+    """CLI-level validation for the generic provider."""
+
+    def test_generic_requires_model(self, monkeypatch):
+        from swival import agent
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "agent",
+                "hello",
+                "--provider",
+                "generic",
+                "--base-url",
+                "http://localhost:8080",
+            ],
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            agent.main()
+        assert exc_info.value.code == 2
+
+    def test_generic_requires_base_url(self, monkeypatch):
+        from swival import agent
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "agent",
+                "hello",
+                "--provider",
+                "generic",
+                "--model",
+                "my-model",
+            ],
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            agent.main()
+        assert exc_info.value.code == 2
+
+    def test_generic_works_without_api_key(self, monkeypatch, tmp_path):
+        from swival import agent
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "agent",
+                "hello",
+                "--provider",
+                "generic",
+                "--model",
+                "my-model",
+                "--base-url",
+                "http://localhost:8080",
+                "--no-system-prompt",
+                "--base-dir",
+                str(tmp_path),
+            ],
+        )
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+        captured = {}
+
+        def fake_call_llm(*args, **kwargs):
+            captured["api_key"] = kwargs.get("api_key")
+            msg = types.SimpleNamespace(
+                content="done", tool_calls=None, role="assistant"
+            )
+            msg.get = lambda key, default=None: getattr(msg, key, default)
+            return msg, "stop"
+
+        monkeypatch.setattr(agent, "call_llm", fake_call_llm)
+        agent.main()
+        assert captured["api_key"] is None
+
+    def test_generic_picks_up_openai_api_key_env(self, monkeypatch, tmp_path):
+        from swival import agent
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "agent",
+                "hello",
+                "--provider",
+                "generic",
+                "--model",
+                "my-model",
+                "--base-url",
+                "http://localhost:8080",
+                "--no-system-prompt",
+                "--base-dir",
+                str(tmp_path),
+            ],
+        )
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-from-env")
+
+        captured = {}
+
+        def fake_call_llm(*args, **kwargs):
+            captured["api_key"] = kwargs.get("api_key")
+            msg = types.SimpleNamespace(
+                content="done", tool_calls=None, role="assistant"
+            )
+            msg.get = lambda key, default=None: getattr(msg, key, default)
+            return msg, "stop"
+
+        monkeypatch.setattr(agent, "call_llm", fake_call_llm)
+        agent.main()
+        assert captured["api_key"] == "sk-from-env"
+
+    def test_generic_cli_key_takes_precedence(self, monkeypatch, tmp_path):
+        from swival import agent
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "agent",
+                "hello",
+                "--provider",
+                "generic",
+                "--model",
+                "my-model",
+                "--base-url",
+                "http://localhost:8080",
+                "--api-key",
+                "sk-cli",
+                "--no-system-prompt",
+                "--base-dir",
+                str(tmp_path),
+            ],
+        )
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+
+        captured = {}
+
+        def fake_call_llm(*args, **kwargs):
+            captured["api_key"] = kwargs.get("api_key")
+            msg = types.SimpleNamespace(
+                content="done", tool_calls=None, role="assistant"
+            )
+            msg.get = lambda key, default=None: getattr(msg, key, default)
+            return msg, "stop"
+
+        monkeypatch.setattr(agent, "call_llm", fake_call_llm)
+        agent.main()
+        assert captured["api_key"] == "sk-cli"
+
+    def test_generic_never_calls_discover_or_configure(self, monkeypatch, tmp_path):
+        from swival import agent
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "agent",
+                "hello",
+                "--provider",
+                "generic",
+                "--model",
+                "my-model",
+                "--base-url",
+                "http://localhost:8080",
+                "--no-system-prompt",
+                "--base-dir",
+                str(tmp_path),
+            ],
+        )
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+        def boom(*args, **kwargs):
+            raise AssertionError("Should not be called for generic provider")
+
+        monkeypatch.setattr(agent, "discover_model", boom)
+        monkeypatch.setattr(agent, "configure_context", boom)
+
+        def fake_call_llm(*args, **kwargs):
+            msg = types.SimpleNamespace(
+                content="done", tool_calls=None, role="assistant"
+            )
+            msg.get = lambda key, default=None: getattr(msg, key, default)
+            return msg, "stop"
+
+        monkeypatch.setattr(agent, "call_llm", fake_call_llm)
+        agent.main()  # Should not raise

@@ -60,7 +60,7 @@ NAV = [
                 "Customization",
                 "Config files, project instructions, system prompt overrides, tuning parameters",
             ),
-            ("providers", "Providers", "LM Studio, HuggingFace, and OpenRouter configuration"),
+            ("providers", "Providers", "LM Studio, HuggingFace, OpenRouter, and generic server configuration"),
             ("reports", "Reports", "JSON reports for benchmarking and evaluation"),
             ("reviews", "Reviews", "External reviewer scripts for automated QA gates"),
             ("agentfs", "AgentFS", "Copy-on-write filesystem sandboxing"),
