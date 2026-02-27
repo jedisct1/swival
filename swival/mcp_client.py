@@ -135,9 +135,7 @@ class McpManager:
             info.setdefault(server, []).append((namespaced, desc))
         return info
 
-    def call_tool(
-        self, namespaced_name: str, arguments: dict
-    ) -> tuple[str, bool]:
+    def call_tool(self, namespaced_name: str, arguments: dict) -> tuple[str, bool]:
         """Dispatch to the correct server and return (result_text, is_error).
 
         The boolean flag signals whether the result represents an error,

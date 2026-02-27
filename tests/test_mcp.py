@@ -624,9 +624,7 @@ class TestMcpOutputGuard:
         manager = MagicMock()
         manager.call_tool.return_value = ("error: something broke", True)
 
-        result = dispatch(
-            "mcp__s__t", {}, str(tmp_path), mcp_manager=manager
-        )
+        result = dispatch("mcp__s__t", {}, str(tmp_path), mcp_manager=manager)
         assert result == "error: something broke"
 
     def test_error_large_truncated_inline(self, tmp_path):
@@ -637,9 +635,7 @@ class TestMcpOutputGuard:
         manager = MagicMock()
         manager.call_tool.return_value = (giant_error, True)
 
-        result = dispatch(
-            "mcp__s__t", {}, str(tmp_path), mcp_manager=manager
-        )
+        result = dispatch("mcp__s__t", {}, str(tmp_path), mcp_manager=manager)
         assert result.endswith("[error output truncated]")
         result_bytes = result.encode("utf-8")
         # The truncated content (before suffix) should be at most MCP_INLINE_LIMIT
@@ -752,9 +748,7 @@ class TestMcpManagerLifecycle:
         mgr._loop = asyncio.new_event_loop()
         loop_ready = threading.Event()
         mgr._loop.call_soon(lambda: loop_ready.set())
-        mgr._thread = threading.Thread(
-            target=mgr._loop.run_forever, daemon=True
-        )
+        mgr._thread = threading.Thread(target=mgr._loop.run_forever, daemon=True)
         mgr._thread.start()
         loop_ready.wait(timeout=5)
 

@@ -403,10 +403,7 @@ def compact_tool_result(name: str, args: dict | None, content: str) -> str:
 
     if name.startswith("mcp__"):
         head = content[:300]
-        return (
-            f"[{name}: {len(content)} chars — compacted]\n"
-            f"First 300 chars:\n{head}"
-        )
+        return f"[{name}: {len(content)} chars — compacted]\nFirst 300 chars:\n{head}"
 
     # Unknown tool — generic structured fallback
     return f"[{name}: compacted — originally {len(content)} chars]"
