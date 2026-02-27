@@ -78,4 +78,4 @@ When skills are discovered, Swival exposes `use_skill` so the model can load ful
 
 ## MCP Tools
 
-Swival can connect to external tool servers via the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP). MCP tools are discovered at startup and exposed alongside built-in tools. See [MCP](mcp.md) for configuration and details.
+Swival can connect to external tool servers via the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP). MCP tools are discovered at startup and exposed alongside built-in tools. MCP tool output is size-guarded: results up to 20 KB are returned inline, larger results are saved to `.swival/` for paginated reads via `read_file`, and output is hard-capped at 10 MB. See [MCP](mcp.md) for configuration and details.

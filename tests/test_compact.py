@@ -292,6 +292,25 @@ class TestCompactToolResult:
         assert result != content
         assert "compacted" in result
 
+    def test_mcp_tool_compacted_with_head(self):
+        content = "abcdefgh" * 250  # 2000 chars
+        result = compact_tool_result("mcp__server__tool", {}, content)
+        assert result.startswith("[mcp__server__tool: 2000 chars")
+        assert "compacted" in result
+        assert "First 300 chars" in result
+        assert content[:300] in result
+
+    def test_mcp_tool_exactly_1000_unchanged(self):
+        content = "x" * 1000
+        assert compact_tool_result("mcp__server__tool", {}, content) == content
+
+    def test_mcp_tool_1001_compacted(self):
+        content = "y" * 1001
+        result = compact_tool_result("mcp__server__tool", {}, content)
+        assert result != content
+        assert "mcp__server__tool" in result
+        assert "compacted" in result
+
     def test_compact_messages_uses_structured_summaries(self):
         """compact_messages should produce per-tool summaries, not generic ones."""
         tc = _assistant_tc([("tc1", "grep", '{"pattern": "error", "path": "logs/"}')])

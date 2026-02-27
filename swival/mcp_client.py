@@ -7,6 +7,7 @@ in OpenAI function-calling format alongside swival's built-in tools.
 import asyncio
 import atexit
 import copy
+import json
 import logging
 import re
 import threading
@@ -134,22 +135,31 @@ class McpManager:
             info.setdefault(server, []).append((namespaced, desc))
         return info
 
-    def call_tool(self, namespaced_name: str, arguments: dict) -> str:
-        """Dispatch to the correct server and return normalized string result."""
+    def call_tool(
+        self, namespaced_name: str, arguments: dict
+    ) -> tuple[str, bool]:
+        """Dispatch to the correct server and return (result_text, is_error).
+
+        The boolean flag signals whether the result represents an error,
+        avoiding fragile ``result.startswith("error:")`` checks by callers.
+        """
         if self._closing or self._closed:
             raise McpShutdownError("manager is shutting down")
 
         if namespaced_name not in self._tool_map:
-            return f"error: unknown MCP tool: {namespaced_name}"
+            return (f"error: unknown MCP tool: {namespaced_name}", True)
 
         server_name, original_name = self._tool_map[namespaced_name]
 
         if server_name in self._degraded:
-            return f"error: MCP server {server_name!r} is unavailable (crashed or disconnected)"
+            return (
+                f"error: MCP server {server_name!r} is unavailable (crashed or disconnected)",
+                True,
+            )
 
         session = self._sessions.get(server_name)
         if session is None:
-            return f"error: MCP server {server_name!r} has no active session"
+            return (f"error: MCP server {server_name!r} has no active session", True)
 
         try:
             result = self._run_sync(
@@ -162,7 +172,7 @@ class McpManager:
         except Exception as e:
             # Mark server as degraded
             self._degraded.add(server_name)
-            return f"error: MCP server {server_name!r} failed: {e}"
+            return (f"error: MCP server {server_name!r} failed: {e}", True)
 
     def close(self) -> None:
         """Idempotent shutdown."""
@@ -447,10 +457,44 @@ def _convert_schema(input_schema: dict) -> dict:
     return schema
 
 
-def _normalize_result(result) -> str:
-    """Convert MCP CallToolResult to a plain string following swival conventions."""
-    parts = []
+def _normalize_result(result) -> tuple[str, bool]:
+    """Convert MCP CallToolResult to ``(text, is_error)``.
 
+    The boolean flag surfaces ``result.isError`` and envelope ``ok: false``
+    structurally so callers don't need to parse the ``"error:"`` prefix.
+    """
+    # Fast-path for envelope-style tool responses, while preserving existing
+    # handling for non-JSON and non-text blocks.
+    for block in result.content:
+        if getattr(block, "type", None) != "text":
+            continue
+
+        raw_text = block.text
+        if not isinstance(raw_text, str):
+            continue
+
+        try:
+            payload = json.loads(raw_text)
+        except (TypeError, json.JSONDecodeError):
+            continue
+
+        if not isinstance(payload, dict) or "ok" not in payload:
+            continue
+
+        if payload.get("ok") is False:
+            error_msg = payload.get("error") or payload.get("message")
+            if not error_msg:
+                stack = payload.get("stack")
+                if isinstance(stack, str):
+                    error_msg = stack.splitlines()[0] if stack else ""
+            if not error_msg:
+                error_msg = "MCP tool returned an error"
+            return (f"error: {error_msg}", True)
+
+        if payload.get("ok") is True and "result" in payload:
+            return (json.dumps(payload["result"], ensure_ascii=False), False)
+
+    parts = []
     for block in result.content:
         block_type = getattr(block, "type", None)
         if block_type == "text":
@@ -477,5 +521,6 @@ def _normalize_result(result) -> str:
     text = "\n".join(parts)
 
     if result.isError:
-        return f"error: {text}" if text else "error: MCP tool returned an error"
-    return text if text else "(empty result)"
+        err = f"error: {text}" if text else "error: MCP tool returned an error"
+        return (err, True)
+    return (text if text else "(empty result)", False)

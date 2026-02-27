@@ -1259,6 +1259,8 @@ def _delete_file(
 
 MAX_INLINE_OUTPUT = 10 * 1024  # 10KB — max output returned inline
 MAX_FILE_OUTPUT = 1 * 1024 * 1024  # 1MB — max output saved to file
+MCP_INLINE_LIMIT = 20 * 1024  # 20KB — MCP tool inline threshold
+MCP_FILE_LIMIT = 10 * 1024 * 1024  # 10MB — MCP tool max saved to file
 SWIVAL_DIR = ".swival"
 OUTPUT_FILE_TTL = 600  # seconds before temp file cleanup
 MAX_TIMEOUT = 120
@@ -1323,8 +1325,14 @@ def _kill_process_tree(proc: subprocess.Popen) -> None:
         pass  # give up — process is unkillable
 
 
-def _save_large_output(output: str, base_dir: str, was_truncated: bool = False) -> str:
-    """Save large command output to a temp file and return a summary message.
+def _save_large_output(
+    output: str,
+    base_dir: str,
+    *,
+    tool_name: str | None = None,
+    was_truncated: bool = False,
+) -> str:
+    """Save large output to a temp file and return a summary message.
 
     Creates .swival/ inside base_dir, writes output there, and schedules
     cleanup after OUTPUT_FILE_TTL seconds.  Falls back to inline-truncated
@@ -1365,6 +1373,7 @@ def _save_large_output(output: str, base_dir: str, was_truncated: bool = False) 
     timer.daemon = True
     timer.start()
 
+    source_label = f"Tool output from {tool_name}" if tool_name else "Command output"
     saved_label = (
         "Output (possibly truncated) saved to"
         if was_truncated
@@ -1372,9 +1381,32 @@ def _save_large_output(output: str, base_dir: str, was_truncated: bool = False) 
     )
 
     return (
-        f"Command output too large for context ({size_kb:.1f}KB).\n"
+        f"{source_label} too large for context ({size_kb:.1f}KB).\n"
         f"{saved_label}: {rel_path}\n"
         f"Use read_file to examine the output (supports offset and limit for pagination)."
+    )
+
+
+def _guard_mcp_output(result: str, base_dir: str, tool_name: str) -> str:
+    """Truncate and/or save MCP tool output that exceeds the inline limit.
+
+    Two-tier approach:
+    - Hard cap at ``MCP_FILE_LIMIT`` (10 MB) before writing to disk.
+    - Save to file when over ``MCP_INLINE_LIMIT`` (20 KB).
+    """
+    size = len(result.encode("utf-8"))
+    if size <= MCP_INLINE_LIMIT:
+        return result
+
+    was_truncated = False
+    if size > MCP_FILE_LIMIT:
+        result = result.encode("utf-8")[:MCP_FILE_LIMIT].decode(
+            "utf-8", errors="replace"
+        )
+        was_truncated = True
+
+    return _save_large_output(
+        result, base_dir, tool_name=tool_name, was_truncated=was_truncated
     )
 
 
@@ -1642,7 +1674,19 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
         mcp_manager = kwargs.get("mcp_manager")
         if mcp_manager is None:
             return f"error: MCP tool {name!r} called but no MCP manager is active"
-        return mcp_manager.call_tool(name, args)
+        result, is_error = mcp_manager.call_tool(name, args)
+        if is_error:
+            # Cap error output to prevent giant error payloads from
+            # stuffing context. Errors are diagnostic, not data to
+            # page through, so no file save.
+            result_bytes = result.encode("utf-8")
+            if len(result_bytes) > MCP_INLINE_LIMIT:
+                result = result_bytes[:MCP_INLINE_LIMIT].decode(
+                    "utf-8", errors="replace"
+                )
+                result += "\n[error output truncated]"
+            return result
+        return _guard_mcp_output(result, base_dir, name)
 
     if name == "think":
         thinking_state = kwargs.get("thinking_state")

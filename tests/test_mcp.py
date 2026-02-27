@@ -150,7 +150,7 @@ class _MockResult:
 class TestNormalizeResult:
     def test_single_text(self):
         result = _MockResult([_MockBlock(type="text", text="hello world")])
-        assert _normalize_result(result) == "hello world"
+        assert _normalize_result(result) == ("hello world", False)
 
     def test_multiple_text_blocks(self):
         result = _MockResult(
@@ -159,7 +159,7 @@ class TestNormalizeResult:
                 _MockBlock(type="text", text="line 2"),
             ]
         )
-        assert _normalize_result(result) == "line 1\nline 2"
+        assert _normalize_result(result) == ("line 1\nline 2", False)
 
     def test_image_block(self):
         result = _MockResult(
@@ -167,7 +167,7 @@ class TestNormalizeResult:
                 _MockBlock(type="image", mimeType="image/png", data="abc123"),
             ]
         )
-        assert _normalize_result(result) == "[image: image/png, 6 bytes]"
+        assert _normalize_result(result) == ("[image: image/png, 6 bytes]", False)
 
     def test_audio_block(self):
         result = _MockResult(
@@ -175,36 +175,36 @@ class TestNormalizeResult:
                 _MockBlock(type="audio", mimeType="audio/mp3", data="xyz"),
             ]
         )
-        assert _normalize_result(result) == "[audio: audio/mp3, 3 bytes]"
+        assert _normalize_result(result) == ("[audio: audio/mp3, 3 bytes]", False)
 
     def test_resource_with_text(self):
         resource = _MockBlock(text="resource content", uri="file:///tmp/f.txt")
         result = _MockResult([_MockBlock(type="resource", resource=resource)])
-        assert _normalize_result(result) == "resource content"
+        assert _normalize_result(result) == ("resource content", False)
 
     def test_resource_without_text(self):
         resource = _MockBlock(uri="file:///tmp/f.txt")
         result = _MockResult([_MockBlock(type="resource", resource=resource)])
-        assert _normalize_result(result) == "[resource: file:///tmp/f.txt]"
+        assert _normalize_result(result) == ("[resource: file:///tmp/f.txt]", False)
 
     def test_is_error(self):
         result = _MockResult(
             [_MockBlock(type="text", text="something went wrong")],
             isError=True,
         )
-        assert _normalize_result(result) == "error: something went wrong"
+        assert _normalize_result(result) == ("error: something went wrong", True)
 
     def test_is_error_empty(self):
         result = _MockResult([], isError=True)
-        assert _normalize_result(result) == "error: MCP tool returned an error"
+        assert _normalize_result(result) == ("error: MCP tool returned an error", True)
 
     def test_empty_result(self):
         result = _MockResult([])
-        assert _normalize_result(result) == "(empty result)"
+        assert _normalize_result(result) == ("(empty result)", False)
 
     def test_unknown_block_type(self):
         result = _MockResult([_MockBlock(type="video")])
-        assert _normalize_result(result) == "[video: unsupported content type]"
+        assert _normalize_result(result) == ("[video: unsupported content type]", False)
 
     def test_mixed_content(self):
         result = _MockResult(
@@ -213,7 +213,8 @@ class TestNormalizeResult:
                 _MockBlock(type="image", mimeType="image/jpeg", data="data" * 100),
             ]
         )
-        text = _normalize_result(result)
+        text, is_err = _normalize_result(result)
+        assert not is_err
         assert text.startswith("Result:\n")
         assert "[image: image/jpeg," in text
 
@@ -515,7 +516,7 @@ class TestDispatch:
         from swival.tools import dispatch
 
         manager = MagicMock()
-        manager.call_tool.return_value = "tool result"
+        manager.call_tool.return_value = ("tool result", False)
 
         result = dispatch(
             "mcp__server__tool",
@@ -558,6 +559,137 @@ class TestDispatch:
 
 
 # ---------------------------------------------------------------------------
+# MCP output guard tests
+# ---------------------------------------------------------------------------
+
+
+class TestMcpOutputGuard:
+    """Tests for _guard_mcp_output and the dispatch-level size guard."""
+
+    def test_small_result_passthrough(self, tmp_path):
+        from swival.tools import _guard_mcp_output
+
+        result = _guard_mcp_output("small output", str(tmp_path), "mcp__s__t")
+        assert result == "small output"
+
+    def test_at_limit_stays_inline(self, tmp_path):
+        from swival.tools import _guard_mcp_output, MCP_INLINE_LIMIT
+
+        # Exactly MCP_INLINE_LIMIT bytes should stay inline
+        payload = "x" * MCP_INLINE_LIMIT
+        assert len(payload.encode("utf-8")) == MCP_INLINE_LIMIT
+        result = _guard_mcp_output(payload, str(tmp_path), "mcp__s__t")
+        assert result == payload
+
+    def test_over_limit_saves_to_file(self, tmp_path):
+        from swival.tools import _guard_mcp_output, MCP_INLINE_LIMIT
+
+        payload = "x" * (MCP_INLINE_LIMIT + 1)
+        result = _guard_mcp_output(payload, str(tmp_path), "mcp__s__t")
+        assert "read_file" in result
+        assert "Tool output from mcp__s__t" in result
+        # File should exist in .swival/
+        swival_dir = tmp_path / ".swival"
+        assert swival_dir.exists()
+        files = list(swival_dir.glob("cmd_output_*.txt"))
+        assert len(files) == 1
+        assert files[0].read_text() == payload
+
+    def test_pointer_message_wording(self, tmp_path):
+        from swival.tools import _guard_mcp_output, MCP_INLINE_LIMIT
+
+        payload = "y" * (MCP_INLINE_LIMIT * 5)
+        result = _guard_mcp_output(payload, str(tmp_path), "mcp__server__tool")
+        assert "Tool output from mcp__server__tool" in result
+        assert "Command output" not in result
+        assert "Full output saved to" in result
+
+    def test_over_max_file_truncates(self, tmp_path):
+        from swival.tools import _guard_mcp_output, MCP_FILE_LIMIT
+
+        payload = "z" * (MCP_FILE_LIMIT + 1000)
+        result = _guard_mcp_output(payload, str(tmp_path), "mcp__s__t")
+        assert "possibly truncated" in result.lower()
+        # File should be capped at MCP_FILE_LIMIT bytes
+        swival_dir = tmp_path / ".swival"
+        files = list(swival_dir.glob("cmd_output_*.txt"))
+        assert len(files) == 1
+        written_bytes = len(files[0].read_bytes())
+        assert written_bytes <= MCP_FILE_LIMIT
+
+    def test_error_small_passthrough(self, tmp_path):
+        """Small error results pass through unchanged."""
+        from swival.tools import dispatch
+
+        manager = MagicMock()
+        manager.call_tool.return_value = ("error: something broke", True)
+
+        result = dispatch(
+            "mcp__s__t", {}, str(tmp_path), mcp_manager=manager
+        )
+        assert result == "error: something broke"
+
+    def test_error_large_truncated_inline(self, tmp_path):
+        """Giant error payloads are truncated inline, not saved to file."""
+        from swival.tools import dispatch, MCP_INLINE_LIMIT
+
+        giant_error = "error: " + "x" * (MCP_INLINE_LIMIT * 2)
+        manager = MagicMock()
+        manager.call_tool.return_value = (giant_error, True)
+
+        result = dispatch(
+            "mcp__s__t", {}, str(tmp_path), mcp_manager=manager
+        )
+        assert result.endswith("[error output truncated]")
+        result_bytes = result.encode("utf-8")
+        # The truncated content (before suffix) should be at most MCP_INLINE_LIMIT
+        assert len(result_bytes) <= MCP_INLINE_LIMIT + len(
+            "\n[error output truncated]".encode("utf-8")
+        )
+        # No file should be created
+        swival_dir = tmp_path / ".swival"
+        if swival_dir.exists():
+            assert list(swival_dir.glob("cmd_output_*.txt")) == []
+
+    def test_disk_failure_fallback(self, tmp_path, monkeypatch):
+        """When .swival/ can't be created, falls back to inline truncation."""
+        from swival.tools import _guard_mcp_output, MCP_INLINE_LIMIT
+        from pathlib import Path
+
+        payload = "a" * (MCP_INLINE_LIMIT + 5000)
+        # Make mkdir raise
+        original_mkdir = Path.mkdir
+
+        def _fail_mkdir(self, *args, **kwargs):
+            if ".swival" in str(self):
+                raise OSError("disk full")
+            return original_mkdir(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "mkdir", _fail_mkdir)
+        result = _guard_mcp_output(payload, str(tmp_path), "mcp__s__t")
+        assert "failed to create .swival/" in result
+        # Result should be truncated to roughly MCP_INLINE_LIMIT
+        assert len(result.encode("utf-8")) < MCP_INLINE_LIMIT + 200
+
+    def test_non_ascii_boundary(self, tmp_path):
+        """Byte-based threshold handles multibyte UTF-8 correctly."""
+        from swival.tools import _guard_mcp_output, MCP_INLINE_LIMIT
+
+        # Each char is 3 bytes in UTF-8
+        char = "\u00e9"  # é — 2 bytes in UTF-8
+        assert len(char.encode("utf-8")) == 2
+
+        # Create a payload that's under the limit in chars but over in bytes
+        num_chars = MCP_INLINE_LIMIT  # each is 2 bytes, so 2x the byte limit
+        payload = char * num_chars
+        assert len(payload.encode("utf-8")) > MCP_INLINE_LIMIT
+
+        result = _guard_mcp_output(payload, str(tmp_path), "mcp__s__t")
+        # Should be saved to file since byte count exceeds limit
+        assert "read_file" in result
+
+
+# ---------------------------------------------------------------------------
 # McpManager lifecycle tests (mocked)
 # ---------------------------------------------------------------------------
 
@@ -583,15 +715,55 @@ class TestMcpManagerLifecycle:
     def test_call_tool_unknown_name(self):
         mgr = McpManager({}, verbose=False)
         mgr._tool_map = {}
-        result = mgr.call_tool("mcp__unknown__tool", {})
-        assert result.startswith("error:")
+        result, is_err = mgr.call_tool("mcp__unknown__tool", {})
+        assert is_err
+        assert "unknown" in result
 
     def test_call_tool_degraded_server(self):
         mgr = McpManager({}, verbose=False)
         mgr._tool_map = {"mcp__s__t": ("s", "t")}
         mgr._degraded = {"s"}
-        result = mgr.call_tool("mcp__s__t", {})
+        result, is_err = mgr.call_tool("mcp__s__t", {})
+        assert is_err
         assert "unavailable" in result
+
+    def test_call_tool_success_returns_tuple(self):
+        """Successful call_tool() returns (text, False) through _normalize_result."""
+        import asyncio
+        import threading
+
+        mgr = McpManager({}, verbose=False)
+        mgr._tool_map = {"mcp__s__t": ("s", "t")}
+
+        # Mock a session whose call_tool returns a coroutine
+        mock_result = _MockResult(
+            [_MockBlock(type="text", text="success output")],
+            isError=False,
+        )
+
+        async def _fake_call_tool(name, args):
+            return mock_result
+
+        mock_session = MagicMock()
+        mock_session.call_tool = _fake_call_tool
+        mgr._sessions = {"s": mock_session}
+
+        # Need a running loop for _run_sync
+        mgr._loop = asyncio.new_event_loop()
+        loop_ready = threading.Event()
+        mgr._loop.call_soon(lambda: loop_ready.set())
+        mgr._thread = threading.Thread(
+            target=mgr._loop.run_forever, daemon=True
+        )
+        mgr._thread.start()
+        loop_ready.wait(timeout=5)
+
+        try:
+            result, is_err = mgr.call_tool("mcp__s__t", {"key": "val"})
+            assert not is_err
+            assert result == "success output"
+        finally:
+            mgr.close()
 
     def test_start_after_close_raises(self):
         mgr = McpManager({}, verbose=False)
