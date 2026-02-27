@@ -50,14 +50,21 @@ Diagnostic logs such as turn headers, tool traces, and timing information are wr
 
 ## Running with HuggingFace
 
-If you prefer hosted inference, set a HuggingFace token and provide a model in `org/model` format.
+If you prefer hosted inference over running models locally, you can use the HuggingFace Inference API. Create a token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) if you don't have one already, then export it so Swival can authenticate.
 
 ```sh
 export HF_TOKEN=hf_your_token_here
+```
+
+Pick a model that supports tool calling and pass it in `org/model` format.
+
+```sh
 swival "Hello world" --provider huggingface --model zai-org/GLM-5
 ```
 
-If you are using a dedicated HuggingFace endpoint, pass both `--base-url` and `--api-key`.
+This uses HuggingFace's serverless inference, which is the fastest way to try hosted models without provisioning anything. Serverless endpoints often have smaller context windows than local deployments, so long multi-turn sessions can hit context pressure sooner.
+
+If you need more headroom, you can provision a dedicated HuggingFace endpoint and pass its URL directly. Dedicated endpoints let you use the full deployed context window.
 
 ```sh
 swival "Hello world" \
@@ -66,6 +73,33 @@ swival "Hello world" \
     --base-url https://xyz.endpoints.huggingface.cloud \
     --api-key hf_your_key
 ```
+
+For a deeper look at HuggingFace-specific options, see [Providers](providers.md).
+
+## Running with OpenRouter
+
+OpenRouter gives you access to models from many providers through a single API key. Sign up at [openrouter.ai](https://openrouter.ai/) and grab your API key from the dashboard.
+
+```sh
+export OPENROUTER_API_KEY=sk_or_your_token_here
+```
+
+Then pass the model you want to use. OpenRouter has both free and paid tiers.
+
+```sh
+swival "Hello world" --provider openrouter --model openrouter/free
+```
+
+OpenRouter models vary widely in context limits, so you should set `--max-context-tokens` to match the model you chose. Without it, Swival falls back to a conservative default that may not use the full window your model supports.
+
+```sh
+swival "Hello world" \
+    --provider openrouter \
+    --model openrouter/free \
+    --max-context-tokens 131072
+```
+
+For a deeper look at OpenRouter-specific options, see [Providers](providers.md).
 
 ## Where To Go Next
 
