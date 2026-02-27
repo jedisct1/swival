@@ -4,7 +4,13 @@
 
 A coding agent for any model. [Documentation](https://swival.dev/)
 
-Swival connects to [LM Studio](https://lmstudio.ai/),
+Swival is a CLI coding agent built to be practical, reliable, and easy to use.
+It works with frontier models, but its main goal is to be as reliable as
+possible with smaller models, including local ones. It is designed from the
+ground up to handle tight context windows and limited resources without falling
+apart.
+
+It connects to [LM Studio](https://lmstudio.ai/),
 [HuggingFace Inference API](https://huggingface.co/inference-api), or
 [OpenRouter](https://openrouter.ai/), sends your task, and runs an autonomous
 tool loop until it produces an answer. With LM Studio it auto-discovers your
@@ -73,29 +79,37 @@ uv tool uninstall swival  # remove
 
 ## What makes it different
 
-**Your models, your way.** Swival works with LM Studio and HuggingFace
-Inference API. With LM Studio, it auto-discovers whatever model you have
-loaded. With HuggingFace, point it at any supported model or your own dedicated
-endpoint. You pick the model and the infrastructure.
+**Reliable with small models.** Context management is one of Swival's strengths.
+It keeps things clean and focused, which is especially important when you are
+working with models that have tight context windows. Graduated compaction,
+persistent thinking notes, and a todo checklist all survive context resets, so
+the agent doesn't lose track of multi-step plans even under pressure.
 
-**Small enough to read and hack.** The whole agent is a few thousand lines of
-Python across a handful of files, with no framework underneath. You can read the
-entire thing in an afternoon. If something doesn't work the way you want, you
-can change it.
+**Your models, your way.** Works with LM Studio, HuggingFace Inference API,
+and OpenRouter. With LM Studio, it auto-discovers whatever model you have
+loaded. With HuggingFace or OpenRouter, point it at any supported model. You
+pick the model and the infrastructure.
 
-**Structured thinking for any model.** The built-in think tool gives any model
-(including local ones) multi-step reasoning with revisions, branches, and
-persistent notes that survive context compaction. A companion todo tool lets the
-agent track work items as a persistent checklist, so it doesn't lose track of
-multi-step plans even when context gets compacted.
+**Review loop and LLM-as-a-judge.** Swival has a configurable review loop that
+can run external reviewer scripts or use a built-in LLM-as-judge to
+automatically evaluate and retry agent output. Good for quality assurance on
+tasks that matter.
 
 **Built for benchmarking.** Pass `--report report.json` and Swival writes a
 machine-readable evaluation report with per-call LLM timing, tool
 success/failure counts, context compaction events, and guardrail interventions.
-Good for comparing models systematically on real coding tasks.
+Useful for comparing models, settings, skills, and MCP servers systematically
+on real coding tasks.
+
+**Skills and MCP.** Extend the agent with SKILL.md-based skills for reusable
+workflows, and connect to external tools via the Model Context Protocol.
+
+**Small enough to read and hack.** A few thousand lines of Python across a
+handful of files, with no framework underneath. Read the whole agent in an
+afternoon. If something doesn't work the way you want, change it.
 
 **CLI-native.** stdout is exclusively the final answer. All diagnostics go to
-stderr. You can pipe Swival's output straight into another command or a file.
+stderr. Pipe Swival's output straight into another command or a file.
 
 ## Documentation
 

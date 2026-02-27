@@ -4,19 +4,19 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Swival — A coding agent for any model</title>
-    <meta name="description" content="Swival connects to LM Studio, HuggingFace Inference API, or OpenRouter, sends your task, and runs an autonomous tool loop until it produces an answer. A few thousand lines of Python, no framework.">
+    <meta name="description" content="Swival is a CLI coding agent built to be reliable with smaller models, including local ones. Designed from the ground up for tight context windows and limited resources. Works with LM Studio, HuggingFace, and OpenRouter.">
 
     <!-- Open Graph -->
     <meta property="og:type" content="website">
     <meta property="og:title" content="Swival — A coding agent for any model">
-    <meta property="og:description" content="Swival connects to LM Studio, HuggingFace Inference API, or OpenRouter and runs an autonomous tool loop until it produces an answer.">
+    <meta property="og:description" content="A CLI coding agent built to be reliable with smaller models, including local ones. Designed for tight context windows and limited resources.">
     <meta property="og:image" content="https://swival.dev/img/logo.png">
     <meta property="og:url" content="https://swival.dev/">
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="Swival — A coding agent for any model">
-    <meta name="twitter:description" content="Swival connects to LM Studio, HuggingFace Inference API, or OpenRouter and runs an autonomous tool loop until it produces an answer.">
+    <meta name="twitter:description" content="A CLI coding agent built to be reliable with smaller models, including local ones. Designed for tight context windows and limited resources.">
     <meta name="twitter:image" content="https://swival.dev/img/logo.png">
 
     <link rel="icon" href="favicon.ico">
@@ -39,10 +39,11 @@
         <section class="hero">
             <h1>A coding agent for any model</h1>
             <p class="tagline">
-                Give it a task and it runs an autonomous tool loop to
-                completion. Works with models of any size, from local
-                to frontier. Easy to set up, a few thousand lines of
-                Python, no framework.
+                Swival works with frontier models, but its main goal is
+                to be as reliable as possible with smaller models,
+                including local ones. Designed from the ground up for
+                tight context windows and limited resources. Easy to
+                set up, a few thousand lines of Python, no framework.
             </p>
             <div class="terminal">
                 <div class="terminal-titlebar">
@@ -62,28 +63,33 @@
                 <h2>Why Swival</h2>
                 <div class="features-grid">
                     <div class="feature-card">
+                        <h3>Reliable with small models</h3>
+                        <p>Context management is one of its strengths. Keeps
+                        things clean and focused, avoids unnecessary context
+                        bloat. Graduated compaction and persistent state mean
+                        the agent doesn't lose track of work, even under tight
+                        limits.</p>
+                    </div>
+                    <div class="feature-card">
                         <h3>Your models, your way</h3>
                         <p>Auto-discovers your LM Studio model, or point it at
-                        any HuggingFace model or dedicated endpoint. You pick
+                        any HuggingFace or OpenRouter model. You pick
                         the model and the infrastructure.</p>
                     </div>
                     <div class="feature-card">
-                        <h3>Small and hackable</h3>
-                        <p>A few thousand lines of Python, no framework.
-                        Read the whole agent in an afternoon. Modify it to
-                        fit your workflow.</p>
+                        <h3>Review loop and benchmarking</h3>
+                        <p>A configurable review loop with LLM-as-a-judge
+                        support. JSON reports capture timing, tool usage,
+                        and context events. Useful for comparing models,
+                        settings, skills, and MCP servers on real coding
+                        tasks.</p>
                     </div>
                     <div class="feature-card">
-                        <h3>Batteries included</h3>
-                        <p>Works out of the box with no configuration. Point it
-                        at a model and start working. File editing, search,
-                        web fetch, and structured thinking are all built in.</p>
-                    </div>
-                    <div class="feature-card">
-                        <h3>Built for benchmarking</h3>
-                        <p>JSON evaluation reports capture timing, tool usage,
-                        and context events. Compare models systematically on
-                        real coding tasks.</p>
+                        <h3>Skills, MCP, and more</h3>
+                        <p>Extend the agent with SKILL.md-based skills
+                        and MCP servers. Small and hackable: a few thousand
+                        lines of Python, no framework. Read the whole thing
+                        in an afternoon.</p>
                     </div>
                 </div>
             </div>
