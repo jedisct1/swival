@@ -1,166 +1,167 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Swival — A coding agent for any model</title>
-    <meta name="description" content="Swival is a CLI coding agent built to be reliable with smaller models, including local ones. Designed from the ground up for tight context windows and limited resources. Works with LM Studio, HuggingFace, and OpenRouter.">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Swival — A coding agent for any model</title>
+		<meta name="description" content="Swival is a CLI coding agent built to be reliable with smaller models, including local ones. Designed from the ground up for tight context windows and limited resources. Works with LM Studio, HuggingFace, and OpenRouter.">
 
-    <!-- Open Graph -->
-    <meta property="og:type" content="website">
-    <meta property="og:title" content="Swival — A coding agent for any model">
-    <meta property="og:description" content="A CLI coding agent built to be reliable with smaller models, including local ones. Designed for tight context windows and limited resources.">
-    <meta property="og:image" content="https://swival.dev/img/logo.png">
-    <meta property="og:url" content="https://swival.dev/">
+		<!-- Open Graph -->
+		<meta property="og:type" content="website">
+		<meta property="og:title" content="Swival — A coding agent for any model">
+		<meta property="og:description" content="A CLI coding agent built to be reliable with smaller models, including local ones. Designed for tight context windows and limited resources.">
+		<meta property="og:image" content="https://swival.dev/img/logo.png">
+		<meta property="og:url" content="https://swival.dev/">
 
-    <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="Swival — A coding agent for any model">
-    <meta name="twitter:description" content="A CLI coding agent built to be reliable with smaller models, including local ones. Designed for tight context windows and limited resources.">
-    <meta name="twitter:image" content="https://swival.dev/img/logo.png">
+		<!-- Twitter Card -->
+		<meta name="twitter:card" content="summary">
+		<meta name="twitter:title" content="Swival — A coding agent for any model">
+		<meta name="twitter:description" content="A CLI coding agent built to be reliable with smaller models, including local ones. Designed for tight context windows and limited resources.">
+		<meta name="twitter:image" content="https://swival.dev/img/logo.png">
 
-    <link rel="icon" href="favicon.ico">
-    <link rel="stylesheet" href="css/style.css">
-</head>
-<body>
-    <header class="site-header">
-        <div class="header-inner">
-            <a href="./" class="header-logo">
-                <img src="img/logo.png" alt="Swival">
-            </a>
-            <nav class="header-nav">
-                <a href="pages/">Docs</a>
-                <a href="https://github.com/swival/swival">GitHub</a>
-            </nav>
-        </div>
-    </header>
+		<link rel="icon" href="favicon.ico">
+		<link rel="stylesheet" href="css/style.css">
+	</head>
+	<body>
+		<header class="site-header">
+			<div class="header-inner">
+				<a href="./" class="header-logo">
+					<img src="img/logo.png" alt="Swival">
+				</a>
+				<nav class="header-nav">
+					<a href="pages/">Docs</a>
+					<a href="https://github.com/swival/swival">GitHub</a>
+				</nav>
+			</div>
+		</header>
 
-    <main>
-        <section class="hero">
-            <h1>A coding agent for any model</h1>
-            <p class="tagline">
-                Swival works with frontier models, but also strives
-                to be as reliable as possible with smaller models,
-                including local ones. Designed from the ground up for
-                tight context windows and limited resources. Easy to
-                set up, a few thousand lines of Python, no framework.
-            </p>
-            <div class="terminal">
-                <div class="terminal-titlebar">
-                    <span class="terminal-dot red"></span>
-                    <span class="terminal-dot yellow"></span>
-                    <span class="terminal-dot green"></span>
-                </div>
-                <div class="terminal-body">
-                    <div><span class="prompt">$ </span><span class="cmd">uv tool install swival</span></div>
-                    <div><span class="prompt">$ </span><span class="cmd">swival "Refactor the error handling in src/api.py"</span></div>
-                </div>
-            </div>
-        </section>
+		<main>
+			<section class="hero">
+				<h1>A coding agent for any model</h1>
+				<p class="tagline">
+					Swival works with frontier models, but also strives
+					to be as reliable as possible with smaller models,
+					including local ones. Designed from the ground up for
+					tight context windows and limited resources. Free, opensource,
+					easy to set up, just a few thousand lines of Python code.
+				</p>
+				<div class="terminal">
+					<div class="terminal-titlebar">
+						<span class="terminal-dot red"></span>
+						<span class="terminal-dot yellow"></span>
+						<span class="terminal-dot green"></span>
+					</div>
+					<div class="terminal-body">
+						<div><span class="prompt">$</span><span class="cmd">uv tool install swival</span></div>
+						<div><span class="prompt">$</span><span class="cmd">swival "Refactor the error handling in src/api.py"</span></div>
+					</div>
+				</div>
+			</section>
 
-        <section class="features">
-            <div class="features-inner">
-                <h2>Why Swival</h2>
-                <div class="features-grid">
-                    <div class="feature-card">
-                        <h3>Reliable with small models</h3>
-                        <p>Context management is one of its strengths. Keeps
-                        things clean and focused, avoids unnecessary context
-                        bloat. Graduated compaction and persistent state mean
-                        the agent doesn't lose track of work, even under tight
-                        limits.</p>
-                    </div>
-                    <div class="feature-card">
-                        <h3>Your models, your way</h3>
-                        <p>Auto-discovers your LM Studio model, or point it at
-                        any HuggingFace or OpenRouter model. You pick
-                        the model and the infrastructure.</p>
-                    </div>
-                    <div class="feature-card">
-                        <h3>Review loop and benchmarking</h3>
-                        <p>A configurable review loop with LLM-as-a-judge
-                        support. JSON reports capture timing, tool usage,
-                        and context events. Useful for comparing models,
-                        settings, skills, and MCP servers on real coding
-                        tasks.</p>
-                    </div>
-                    <div class="feature-card">
-                        <h3>Skills, MCP, and more</h3>
-                        <p>Extend the agent with SKILL.md-based skills
-                        and MCP servers. Small and hackable: a few thousand
-                        lines of Python, no framework. Read the whole thing
-                        in an afternoon.</p>
-                    </div>
-                </div>
-            </div>
-        </section>
+			<section class="features">
+				<div class="features-inner">
+					<h2>Why Swival</h2>
+					<div class="features-grid">
+						<div class="feature-card">
+							<h3>Reliable with small models</h3>
+							<p>Context management is one of its strengths. Keeps
+								things clean and focused, avoids unnecessary context
+								bloat. Graduated compaction and persistent state mean
+								the agent doesn't lose track of work, even under tight
+								limits.</p>
+						</div>
+						<div class="feature-card">
+							<h3>Your models, your way</h3>
+							<p>Auto-discovers your LM Studio model, or point it at
+								any HuggingFace or OpenRouter model. You pick
+								the model and the infrastructure.</p>
+						</div>
+						<div class="feature-card">
+							<h3>Review loop and benchmarking</h3>
+							<p>A configurable review loop with LLM-as-a-judge
+								support. JSON reports capture timing, tool usage,
+								and context events. Useful for comparing models,
+								settings, skills, and MCP servers on real coding
+								tasks.</p>
+						</div>
+						<div class="feature-card">
+							<h3>Skills, MCP, and more</h3>
+							<p>Extend the agent with SKILL.md-based skills
+								and MCP servers. Small and hackable: a few thousand
+								lines of Python, no framework. Read the whole thing
+								in an afternoon.</p>
+						</div>
+					</div>
+				</div>
+			</section>
 
-        <section class="quickstart">
-            <h2>Quickstart</h2>
-            <h3>LM Studio</h3>
-            <ol>
-                <li>
-                    Install <a href="https://lmstudio.ai/">LM Studio</a> and load
-                    a model with tool-calling support.
-                    Recommended first model:
-                    <a href="https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF">qwen3-coder-next</a>
-                    (great quality/speed tradeoff on local hardware).
-                    Start the server.
-                </li>
-                <li>
-                    Install Swival:
-                    <pre><code>uv tool install swival</code></pre>
-                </li>
-                <li>
-                    Run:
-                    <pre><code>swival "Refactor the error handling in src/api.py"</code></pre>
-                </li>
-            </ol>
-            <h3>HuggingFace</h3>
-            <ol>
-                <li>
-                    Create a token at
-                    <a href="https://huggingface.co/settings/tokens">huggingface.co/settings/tokens</a>
-                    and export it:
-                    <pre><code>export HF_TOKEN=hf_...</code></pre>
-                </li>
-                <li>
-                    Install Swival:
-                    <pre><code>uv tool install swival</code></pre>
-                </li>
-                <li>
-                    Run with a tool-calling model (e.g.
-                    <a href="https://huggingface.co/zai-org/GLM-5">GLM-5</a>):
-                    <pre><code>swival "Refactor the error handling in src/api.py" \
+			<section class="quickstart">
+				<h2>Quickstart</h2>
+				<h3>LM Studio</h3>
+				<ol>
+					<li>
+						Install <a href="https://lmstudio.ai/">LM Studio</a>
+						and load
+						a model with tool-calling support.
+						Recommended first model:
+						<a href="https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF">qwen3-coder-next</a>
+						(great quality/speed tradeoff on local hardware).
+						Start the server.
+					</li>
+					<li>
+						Install Swival:
+						<pre><code>uv tool install swival</code></pre>
+					</li>
+					<li>
+						Run:
+						<pre><code>swival "Refactor the error handling in src/api.py"</code></pre>
+					</li>
+				</ol>
+				<h3>HuggingFace</h3>
+				<ol>
+					<li>
+						Create a token at
+						<a href="https://huggingface.co/settings/tokens">huggingface.co/settings/tokens</a>
+						and export it:
+						<pre><code>export HF_TOKEN=hf_...</code></pre>
+					</li>
+					<li>
+						Install Swival:
+						<pre><code>uv tool install swival</code></pre>
+					</li>
+					<li>
+						Run with a tool-calling model (e.g.
+						<a href="https://huggingface.co/zai-org/GLM-5">GLM-5</a>):
+						<pre><code>swival "Refactor the error handling in src/api.py" \
     --provider huggingface --model zai-org/GLM-5</code></pre>
-                </li>
-            </ol>
-            <h3>OpenRouter</h3>
-            <ol>
-                <li>
-                    Sign up at <a href="https://openrouter.ai/">openrouter.ai</a>
-                    and export your API key:
-                    <pre><code>export OPENROUTER_API_KEY=sk_or_...</code></pre>
-                </li>
-                <li>
-                    Install Swival:
-                    <pre><code>uv tool install swival</code></pre>
-                </li>
-                <li>
-                    Run with any model on the platform (e.g.
-                    <a href="https://openrouter.ai/z-ai/glm-5">GLM-5</a>):
-                    <pre><code>swival "Refactor the error handling in src/api.py" \
+					</li>
+				</ol>
+				<h3>OpenRouter</h3>
+				<ol>
+					<li>
+						Sign up at <a href="https://openrouter.ai/">openrouter.ai</a>
+						and export your API key:
+						<pre><code>export OPENROUTER_API_KEY=sk_or_...</code></pre>
+					</li>
+					<li>
+						Install Swival:
+						<pre><code>uv tool install swival</code></pre>
+					</li>
+					<li>
+						Run with any model on the platform (e.g.
+						<a href="https://openrouter.ai/z-ai/glm-5">GLM-5</a>):
+						<pre><code>swival "Refactor the error handling in src/api.py" \
     --provider openrouter --model z-ai/glm-5</code></pre>
-                </li>
-            </ol>
-            <h2>Interactive mode</h2>
-            <p>For interactive sessions, use <code>swival --repl</code>.</p>
-        </section>
-    </main>
+					</li>
+				</ol>
+				<h2>Interactive mode</h2>
+				<p>For interactive sessions, use <code>swival --repl</code>.</p>
+			</section>
+		</main>
 
-    <footer class="site-footer">
-        MIT License &middot;
-        <a href="https://github.com/swival/swival">GitHub</a>
-    </footer>
-</body>
+		<footer class="site-footer">
+			MIT License &middot;
+			<a href="https://github.com/swival/swival">GitHub</a>
+		</footer>
+	</body>
 </html>
