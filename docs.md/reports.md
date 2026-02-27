@@ -61,11 +61,15 @@ The JSON below is from a verified local run using `--model dummy-model --max-tur
 
 ### Top-Level Fields
 
-`version` is the schema version and is currently `1`. `timestamp` is the run completion time in UTC ISO 8601 format. `task` is the original question string passed on the command line. `model` is the resolved model identifier that was actually used. `provider` is one of `lmstudio`, `huggingface`, or `openrouter`. `settings` captures run configuration. `result` captures outcome and exit semantics. `stats` captures aggregate counters. `timeline` captures ordered event records.
+`version` is the schema version and is currently `1`. `timestamp` is the run completion time in UTC ISO 8601 format. `task` is the original question string passed on the command line. `model` is the resolved model identifier that was actually used. `provider` is one of `lmstudio`, `huggingface`, or `openrouter`.
+
+`settings` captures run configuration. `result` captures outcome and exit semantics. `stats` captures aggregate counters. `timeline` captures ordered event records.
 
 ### `settings`
 
-`temperature` stores the sampling temperature or `null` when omitted. `top_p` stores nucleus sampling. `seed` stores the random seed or `null`. `max_turns` and `max_output_tokens` store turn and output-token limits. `context_length` stores effective context length after provider resolution. `yolo` indicates unrestricted mode. `allowed_commands` records the configured command whitelist as sorted basenames. `max_review_rounds` records the reviewer retry limit. `skills_discovered` records skill names discovered at startup. `instructions_loaded` records loaded instruction files as absolute paths (e.g. the user-level `AGENTS.md` from `~/.config/swival/` and the project-level files).
+`temperature` stores the sampling temperature or `null` when omitted. `top_p` stores nucleus sampling. `seed` stores the random seed or `null`. `max_turns` and `max_output_tokens` store turn and output-token limits. `context_length` stores effective context length after provider resolution. `yolo` indicates unrestricted mode.
+
+`allowed_commands` records the configured command whitelist as sorted basenames. `max_review_rounds` records the reviewer retry limit. `skills_discovered` records skill names discovered at startup. `instructions_loaded` records loaded instruction files as absolute paths (e.g. the user-level `AGENTS.md` from `~/.config/swival/` and the project-level files).
 
 ### `result`
 

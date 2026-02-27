@@ -12,7 +12,9 @@ This pattern works well for automated gates such as tests, linting, format check
 
 Swival invokes the reviewer by shell-splitting the command string and appending `<base_dir>` as the final argument. The full assistant answer is written to reviewer standard input.
 
-If the reviewer exits with code `0`, Swival accepts the answer immediately and ends normally. If the reviewer exits with code `1`, Swival treats reviewer standard output as feedback, appends that feedback as a new user message, resets turn budget for a new pass, and continues the loop. If the reviewer exits with code `2`, Swival treats that as reviewer failure, warns on standard error when diagnostics are enabled, and accepts the current answer unchanged. Any other nonzero exit code is handled the same way as `2`. Reviewer standard output and standard error are both captured. Standard error is forwarded to the outer process when verbose, and recorded in the report timeline when `--report` is active.
+If the reviewer exits with code `0`, Swival accepts the answer immediately and ends normally. If the reviewer exits with code `1`, Swival treats reviewer standard output as feedback, appends that feedback as a new user message, resets turn budget for a new pass, and continues the loop. If the reviewer exits with code `2`, Swival treats that as reviewer failure, warns on standard error when diagnostics are enabled, and accepts the current answer unchanged. Any other nonzero exit code is handled the same way as `2`.
+
+Reviewer standard output and standard error are both captured. Standard error is forwarded to the outer process when verbose, and recorded in the report timeline when `--report` is active.
 
 Reviewer execution has a 60-minute timeout. Timeout or spawn failures are treated as reviewer errors and do not discard the agent's answer.
 

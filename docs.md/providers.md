@@ -53,6 +53,7 @@ swival --provider huggingface \
 ```
 
 Internally, Swival normalizes the model to `huggingface/<model_id>` for LiteLLM and strips an existing `huggingface/` prefix if you already included it. If `--base-url` is set, it is forwarded as `api_base`.
+
 Dedicated endpoints usually let you use the full deployed model context window rather than tighter serverless limits.
 
 ## OpenRouter
@@ -86,4 +87,5 @@ Internally, Swival normalizes OpenRouter models to LiteLLM's `openrouter/...` fo
 ## Adding More Providers Later
 
 Because API calls are already abstracted behind LiteLLM, adding a provider is mostly a matter of argument validation, model normalization, and credential wiring. The provider-specific branch in `call_llm()` is intentionally compact so new providers can be added without changing the rest of the agent loop.
+
 In practice, each provider branch is only about ten lines of routing logic.

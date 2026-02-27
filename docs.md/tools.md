@@ -4,7 +4,9 @@ Swival gives the model a fixed set of tools at runtime. Most tools are always av
 
 ## `read_file`
 
-`read_file` can read text files and directory listings inside allowed roots. File output is line-numbered, which makes later edits precise. The default window starts at `offset=1` with `limit=2000` lines. If output is truncated, Swival appends a continuation hint with the next offset. You can also request `tail=N` to start from the end of the file, which is useful for logs.
+`read_file` can read text files and directory listings inside allowed roots. File output is line-numbered, which makes later edits precise. The default window starts at `offset=1` with `limit=2000` lines.
+
+If output is truncated, Swival appends a continuation hint with the next offset. You can also request `tail=N` to start from the end of the file, which is useful for logs.
 
 Large responses are capped at 50 KB per call, and individual long lines are truncated at 2,000 characters. Directory reads return sorted entries and mark subdirectories with a trailing `/`.
 
@@ -32,7 +34,9 @@ Trash retention is enforced automatically. Entries older than seven days are rem
 
 ## `grep`
 
-`grep` searches file contents with Python regular expressions. Matches are grouped by file, include line numbers, and are sorted by file recency so the newest files are surfaced first. You can narrow by directory with `path` and by filename glob with `include` (supports `**/*.ext` patterns). Set `case_insensitive` to `true` for case-insensitive matching. Results are capped at 100 matches and long lines are truncated to 2,000 characters.
+`grep` searches file contents with Python regular expressions. Matches are grouped by file, include line numbers, and are sorted by file recency so the newest files are surfaced first. You can narrow by directory with `path` and by filename glob with `include` (supports `**/*.ext` patterns).
+
+Set `case_insensitive` to `true` for case-insensitive matching. Results are capped at 100 matches and long lines are truncated to 2,000 characters.
 
 ## `think`
 
@@ -54,7 +58,9 @@ Every final answer is appended to `.swival/HISTORY.md` with a timestamp and the 
 
 ## `fetch_url`
 
-`fetch_url` downloads HTTP or HTTPS content and returns it as markdown, plain text, or raw HTML. It is designed for documentation lookup and API reference pulls. Binary content types are rejected. Raw response bodies are capped at 5 MB, and inline output is capped at 50 KB. Larger converted outputs are saved under `.swival/` so the agent can page through them with `read_file`.
+`fetch_url` downloads HTTP or HTTPS content and returns it as markdown, plain text, or raw HTML. It is designed for documentation lookup and API reference pulls. Binary content types are rejected.
+
+Raw response bodies are capped at 5 MB, and inline output is capped at 50 KB. Larger converted outputs are saved under `.swival/` so the agent can page through them with `read_file`.
 
 SSRF protections are built in. Swival resolves every URL in the redirect chain and blocks private, loopback, link-local, and reserved addresses.
 

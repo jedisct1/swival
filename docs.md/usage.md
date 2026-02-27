@@ -91,7 +91,9 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 
 `--seed` passes a random seed for providers that support reproducible sampling.
 
-`--proactive-summaries` enables periodic checkpoint summarization of the conversation. Every ten turns, recent turns are summarized and stored internally. These summaries survive context compaction and give the model a condensed record of earlier work that would otherwise be lost. Useful for long-running sessions.
+`--proactive-summaries` enables periodic checkpoint summarization of the conversation. Every ten turns, recent turns are summarized and stored internally. These summaries survive context compaction and give the model a condensed record of earlier work that would otherwise be lost.
+
+Useful for long-running sessions.
 
 ### Sandboxing Flags
 

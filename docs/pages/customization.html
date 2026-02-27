@@ -81,7 +81,8 @@ max_review_rounds = 10
 objective = &quot;objective.md&quot;
 verify = &quot;verification/working.md&quot;
 </code></pre>
-<p>Relative paths in <code>allowed_dirs</code>, <code>allowed_dirs_ro</code>, <code>skills_dir</code>, <code>objective</code>, and <code>verify</code> resolve against the config file's parent directory, not the working directory. Tilde paths like <code>~/projects</code> expand to the home directory. The <code>reviewer</code> value is shell-split; only path-like first tokens (<code>./</code>, <code>../</code>, <code>~</code>) are resolved against the config directory, while bare command names like <code>swival</code> are left for PATH lookup at runtime.</p>
+<p>Relative paths in <code>allowed_dirs</code>, <code>allowed_dirs_ro</code>, <code>skills_dir</code>, <code>objective</code>, and <code>verify</code> resolve against the config file's parent directory, not the working directory. Tilde paths like <code>~/projects</code> expand to the home directory.</p>
+<p>The <code>reviewer</code> value is shell-split; only path-like first tokens (<code>./</code>, <code>../</code>, <code>~</code>) are resolved against the config directory, while bare command names like <code>swival</code> are left for PATH lookup at runtime.</p>
 <p>If a project config contains <code>api_key</code> inside a git repository, Swival prints a warning because the key could be committed accidentally. Prefer environment variables for credentials.</p>
 <p>The <code>--system-prompt</code> and <code>no_system_prompt</code> settings are mutually exclusive in config files, just as they are on the command line.</p>
 <p>The library API (<code>Session</code> class) does not auto-load config files. If you want config file support in library code, call <code>load_config()</code> and <code>config_to_session_kwargs()</code> explicitly.</p>
@@ -95,7 +96,8 @@ verify = &quot;verification/working.md&quot;
 <li><strong>User-level</strong>: <code>~/.config/swival/AGENTS.md</code> (or <code>$XDG_CONFIG_HOME/swival/AGENTS.md</code>)</li>
 <li><strong>Project-level</strong>: <code>&lt;base-dir&gt;/AGENTS.md</code></li>
 </ol>
-<p>Both are optional. When both exist, user-level content is prepended to project-level content inside a single <code>&lt;agent-instructions&gt;</code> block. The two levels share a combined 10,000 character budget. User-level content is read first and gets priority — a large user-level file will truncate or entirely displace the project-level file. Size your user-level file accordingly if you rely on project-level instructions.</p>
+<p>Both are optional. When both exist, user-level content is prepended to project-level content inside a single <code>&lt;agent-instructions&gt;</code> block. The two levels share a combined 10,000 character budget.</p>
+<p>User-level content is read first and gets priority — a large user-level file will truncate or entirely displace the project-level file. Size your user-level file accordingly if you rely on project-level instructions.</p>
 <p>The user-level file is a good place for personal conventions that apply across all projects (preferred language style, test habits, tool preferences). The project-level file is for project-specific rules.</p>
 <pre><code class="language-markdown">This is a Go project using Chi for routing. Tests use testify.
 Always run `go test ./...` after making changes.

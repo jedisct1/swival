@@ -57,7 +57,8 @@
             <h1 id="tools">Tools</h1>
 <p>Swival gives the model a fixed set of tools at runtime. Most tools are always available. <code>run_command</code> appears only when you enable command execution with <code>--allowed-commands</code> or <code>--yolo</code>, <code>use_skill</code> appears only when skills are discovered, and MCP tools appear when external MCP servers are configured.</p>
 <h2 id="read_file"><code>read_file</code></h2>
-<p><code>read_file</code> can read text files and directory listings inside allowed roots. File output is line-numbered, which makes later edits precise. The default window starts at <code>offset=1</code> with <code>limit=2000</code> lines. If output is truncated, Swival appends a continuation hint with the next offset. You can also request <code>tail=N</code> to start from the end of the file, which is useful for logs.</p>
+<p><code>read_file</code> can read text files and directory listings inside allowed roots. File output is line-numbered, which makes later edits precise. The default window starts at <code>offset=1</code> with <code>limit=2000</code> lines.</p>
+<p>If output is truncated, Swival appends a continuation hint with the next offset. You can also request <code>tail=N</code> to start from the end of the file, which is useful for logs.</p>
 <p>Large responses are capped at 50 KB per call, and individual long lines are truncated at 2,000 characters. Directory reads return sorted entries and mark subdirectories with a trailing <code>/</code>.</p>
 <h2 id="write_file"><code>write_file</code></h2>
 <p><code>write_file</code> creates or overwrites files and automatically creates missing parent directories. It supports two mutually exclusive modes. In normal write mode, you provide <code>content</code>. In move mode, you provide <code>move_from</code> and Swival performs an atomic rename when possible.</p>
@@ -71,7 +72,8 @@
 <h2 id="list_files"><code>list_files</code></h2>
 <p><code>list_files</code> recursively evaluates glob patterns such as <code>**/*.py</code> and returns matches sorted by file modification time, newest first. Results are capped at 100 files and output is still bounded by the same 50 KB response cap.</p>
 <h2 id="grep"><code>grep</code></h2>
-<p><code>grep</code> searches file contents with Python regular expressions. Matches are grouped by file, include line numbers, and are sorted by file recency so the newest files are surfaced first. You can narrow by directory with <code>path</code> and by filename glob with <code>include</code> (supports <code>**/*.ext</code> patterns). Set <code>case_insensitive</code> to <code>true</code> for case-insensitive matching. Results are capped at 100 matches and long lines are truncated to 2,000 characters.</p>
+<p><code>grep</code> searches file contents with Python regular expressions. Matches are grouped by file, include line numbers, and are sorted by file recency so the newest files are surfaced first. You can narrow by directory with <code>path</code> and by filename glob with <code>include</code> (supports <code>**/*.ext</code> patterns).</p>
+<p>Set <code>case_insensitive</code> to <code>true</code> for case-insensitive matching. Results are capped at 100 matches and long lines are truncated to 2,000 characters.</p>
 <h2 id="think"><code>think</code></h2>
 <p><code>think</code> is structured scratchpad reasoning. It lets the model capture numbered thoughts, revise earlier thoughts, and branch from a prior thought to compare alternative approaches. This is especially helpful for debugging and multi-step refactors.</p>
 <p>The only required parameter is <code>thought</code>. Everything else is optional. A <code>mode</code> parameter (<code>"new"</code>, <code>"revision"</code>, <code>"branch"</code>) selects the type of thought. Revision mode requires <code>revises_thought</code> to reference an earlier thought number. Branch mode requires <code>branch_from_thought</code> plus a <code>branch_id</code> label.</p>
@@ -82,7 +84,8 @@
 <h2 id="history-logging">History Logging</h2>
 <p>Every final answer is appended to <code>.swival/HISTORY.md</code> with a timestamp and the originating question. This file is capped at 500 KB. Once full, new entries are skipped instead of rotating older content. Use <code>--no-history</code> if you do not want history writes.</p>
 <h2 id="fetch_url"><code>fetch_url</code></h2>
-<p><code>fetch_url</code> downloads HTTP or HTTPS content and returns it as markdown, plain text, or raw HTML. It is designed for documentation lookup and API reference pulls. Binary content types are rejected. Raw response bodies are capped at 5 MB, and inline output is capped at 50 KB. Larger converted outputs are saved under <code>.swival/</code> so the agent can page through them with <code>read_file</code>.</p>
+<p><code>fetch_url</code> downloads HTTP or HTTPS content and returns it as markdown, plain text, or raw HTML. It is designed for documentation lookup and API reference pulls. Binary content types are rejected.</p>
+<p>Raw response bodies are capped at 5 MB, and inline output is capped at 50 KB. Larger converted outputs are saved under <code>.swival/</code> so the agent can page through them with <code>read_file</code>.</p>
 <p>SSRF protections are built in. Swival resolves every URL in the redirect chain and blocks private, loopback, link-local, and reserved addresses.</p>
 <h2 id="run_command"><code>run_command</code></h2>
 <p><code>run_command</code> is disabled by default. You can enable it with a whitelist.</p>

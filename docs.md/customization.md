@@ -37,7 +37,9 @@ objective = "objective.md"
 verify = "verification/working.md"
 ```
 
-Relative paths in `allowed_dirs`, `allowed_dirs_ro`, `skills_dir`, `objective`, and `verify` resolve against the config file's parent directory, not the working directory. Tilde paths like `~/projects` expand to the home directory. The `reviewer` value is shell-split; only path-like first tokens (`./`, `../`, `~`) are resolved against the config directory, while bare command names like `swival` are left for PATH lookup at runtime.
+Relative paths in `allowed_dirs`, `allowed_dirs_ro`, `skills_dir`, `objective`, and `verify` resolve against the config file's parent directory, not the working directory. Tilde paths like `~/projects` expand to the home directory.
+
+The `reviewer` value is shell-split; only path-like first tokens (`./`, `../`, `~`) are resolved against the config directory, while bare command names like `swival` are left for PATH lookup at runtime.
 
 If a project config contains `api_key` inside a git repository, Swival prints a warning because the key could be committed accidentally. Prefer environment variables for credentials.
 
@@ -60,7 +62,9 @@ Loaded from two locations, in this order:
 1. **User-level**: `~/.config/swival/AGENTS.md` (or `$XDG_CONFIG_HOME/swival/AGENTS.md`)
 2. **Project-level**: `<base-dir>/AGENTS.md`
 
-Both are optional. When both exist, user-level content is prepended to project-level content inside a single `<agent-instructions>` block. The two levels share a combined 10,000 character budget. User-level content is read first and gets priority — a large user-level file will truncate or entirely displace the project-level file. Size your user-level file accordingly if you rely on project-level instructions.
+Both are optional. When both exist, user-level content is prepended to project-level content inside a single `<agent-instructions>` block. The two levels share a combined 10,000 character budget.
+
+User-level content is read first and gets priority — a large user-level file will truncate or entirely displace the project-level file. Size your user-level file accordingly if you rely on project-level instructions.
 
 The user-level file is a good place for personal conventions that apply across all projects (preferred language style, test habits, tool preferences). The project-level file is for project-specific rules.
 

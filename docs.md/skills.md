@@ -29,7 +29,9 @@ The deploy script expects `DEPLOY_ENV` to be set. Use `production` for prod
 and `staging` for staging.
 ```
 
-The `name` field must be lowercase alphanumeric with hyphens, must match the directory name, cannot contain leading or trailing hyphens, cannot contain consecutive hyphens, and cannot exceed 64 characters. The `description` field is what the model sees in the catalog and cannot exceed 1,024 characters. The instruction body after frontmatter can be up to 20,000 characters, and longer bodies are truncated.
+The `name` field must be lowercase alphanumeric with hyphens, must match the directory name, cannot contain leading or trailing hyphens, cannot contain consecutive hyphens, and cannot exceed 64 characters. The `description` field is what the model sees in the catalog and cannot exceed 1,024 characters.
+
+The instruction body after frontmatter can be up to 20,000 characters, and longer bodies are truncated.
 
 ## Skill Discovery Locations
 
