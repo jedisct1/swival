@@ -23,6 +23,7 @@ from .report import AgentError, ConfigError, ReportCollector
 from .thinking import ThinkingState
 from .todo import TodoState
 from .tracker import FileAccessTracker
+from .mcp_client import McpShutdownError
 from .tools import (
     TOOLS,
     RUN_COMMAND_TOOL,
@@ -221,6 +222,103 @@ def estimate_tokens(messages: list, tools: list | None = None) -> int:
     # Per-message overhead (role, separators) — ~4 tokens each
     total += 4 * len(messages)
     return total
+
+
+def _estimate_tool_tokens(tools: list) -> int:
+    """Estimate token cost of the tool schemas alone."""
+    if not tools:
+        return 0
+    return len(_encoder.encode(json.dumps(tools)))
+
+
+def enforce_mcp_token_budget(
+    tools: list,
+    mcp_manager,
+    context_length: int | None,
+    verbose: bool = False,
+) -> list:
+    """Check MCP tool token usage against context budget.
+
+    Iteratively drops the most expensive MCP server until under 50% of context.
+    Returns the (possibly trimmed) tools list.
+    """
+    if context_length is None or mcp_manager is None:
+        return tools
+
+    tool_tokens = _estimate_tool_tokens(tools)
+    threshold_warn = int(context_length * 0.3)
+    threshold_drop = int(context_length * 0.5)
+
+    if tool_tokens <= threshold_warn:
+        return tools
+
+    # Compute per-server token costs
+    tool_info = mcp_manager.get_tool_info()
+    if not tool_info:
+        return tools
+
+    if tool_tokens > threshold_warn:
+        # Always warn (not gated on verbose) — this is operationally important
+        lines = []
+        for server_name in tool_info:
+            server_schemas = [
+                t
+                for t in tools
+                if t.get("function", {})
+                .get("name", "")
+                .startswith(f"mcp__{server_name}__")
+            ]
+            st = _estimate_tool_tokens(server_schemas)
+            lines.append(f"  {server_name}: ~{st} tokens ({len(server_schemas)} tools)")
+        fmt.warning(
+            f"MCP tool schemas use ~{tool_tokens} tokens "
+            f"({tool_tokens * 100 // context_length}% of context):\n" + "\n".join(lines)
+        )
+
+    # Iterative drop loop
+    while tool_tokens > threshold_drop and tool_info:
+        # Find server with most token cost
+        worst_server = None
+        worst_tokens = 0
+        for server_name in tool_info:
+            server_schemas = [
+                t
+                for t in tools
+                if t.get("function", {})
+                .get("name", "")
+                .startswith(f"mcp__{server_name}__")
+            ]
+            st = _estimate_tool_tokens(server_schemas)
+            if st > worst_tokens:
+                worst_tokens = st
+                worst_server = server_name
+
+        if worst_server is None:
+            break
+
+        # Drop this server's tools from the tools list and manager state
+        prefix = f"mcp__{worst_server}__"
+        tools = [
+            t
+            for t in tools
+            if not t.get("function", {}).get("name", "").startswith(prefix)
+        ]
+        del tool_info[worst_server]
+
+        # Update manager internals so get_tool_info() reflects the drop
+        mcp_manager._tool_schemas.pop(worst_server, None)
+        for key in list(mcp_manager._tool_map):
+            if key.startswith(prefix):
+                del mcp_manager._tool_map[key]
+
+        tool_tokens = _estimate_tool_tokens(tools)
+        fmt.error(
+            f"Dropped MCP server {worst_server!r} tools (~{worst_tokens} tokens) "
+            f"to stay under 50% context budget. "
+            f"Remaining: ~{tool_tokens} tokens."
+        )
+
+    return tools
 
 
 def group_into_turns(messages: list) -> list[list]:
@@ -924,6 +1022,7 @@ def handle_tool_call(
     yolo=False,
     file_tracker=None,
     todo_state=None,
+    mcp_manager=None,
 ):
     """Execute a single tool call and return (tool_msg, metadata).
 
@@ -972,7 +1071,10 @@ def handle_tool_call(
             yolo=yolo,
             file_tracker=file_tracker,
             tool_call_id=tool_call.id,
+            mcp_manager=mcp_manager,
         )
+    except McpShutdownError:
+        result = "error: MCP server is shutting down"
     except Exception as e:
         result = f"error: {e}"
     elapsed = time.monotonic() - t0
@@ -1449,6 +1551,19 @@ def build_parser():
         help="Periodically summarize conversation to preserve context across compaction events.",
     )
     parser.add_argument(
+        "--no-mcp",
+        action="store_true",
+        default=_UNSET,
+        help="Disable MCP server connections entirely.",
+    )
+    parser.add_argument(
+        "--mcp-config",
+        type=str,
+        default=None,
+        metavar="FILE",
+        help="Path to an MCP JSON config file (replaces .mcp.json default lookup).",
+    )
+    parser.add_argument(
         "--init-config",
         action="store_true",
         default=False,
@@ -1543,6 +1658,10 @@ def main():
         file_config = load_config(base_dir)
     except _ConfigError as e:
         parser.error(str(e))
+
+    # Stash MCP servers from TOML config before apply_config_to_args strips them
+    args._mcp_servers_toml = file_config.pop("mcp_servers", None)
+
     apply_config_to_args(args, file_config)
 
     # Derived values (after all sentinels are resolved)
@@ -1819,6 +1938,7 @@ def build_system_prompt(
     resolved_commands: dict[str, str],
     verbose: bool,
     config_dir: "Path | None" = None,
+    mcp_tool_info: dict | None = None,
 ) -> tuple[str | None, list[str]]:
     """Assemble full system prompt with instructions, date, skills.
 
@@ -1869,7 +1989,22 @@ def build_system_prompt(
             f"Allowed commands: {cmd_list}."
         )
 
+    if mcp_tool_info and not system_prompt:
+        system_content += "\n\n" + _format_mcp_tool_info(mcp_tool_info)
+
     return system_content, instructions_loaded
+
+
+def _format_mcp_tool_info(tool_info: dict[str, list[tuple[str, str]]]) -> str:
+    """Format MCP tool info for the system prompt."""
+    lines = ["## MCP Tools", "", "Tools provided by external MCP servers:", ""]
+    for server_name, tools in sorted(tool_info.items()):
+        lines.append(f"**{server_name}**:")
+        for namespaced_name, description in tools:
+            desc = f": {description}" if description else ""
+            lines.append(f"- `{namespaced_name}`{desc}")
+        lines.append("")
+    return "\n".join(lines)
 
 
 def _run_main(args, report, _write_report, parser):
@@ -1925,6 +2060,47 @@ def _run_main(args, report, _write_report, parser):
 
     tools = build_tools(resolved_commands, skills_catalog, yolo)
 
+    # Initialize MCP servers
+    mcp_manager = None
+    mcp_tool_info = {}
+    if not getattr(args, "no_mcp", False):
+        from .config import load_mcp_json, merge_mcp_configs
+        from .mcp_client import McpManager
+
+        toml_servers = getattr(args, "_mcp_servers_toml", None)
+        json_servers = None
+
+        mcp_config_path = getattr(args, "mcp_config", None)
+        if mcp_config_path:
+            p = Path(mcp_config_path)
+            if not p.is_file():
+                raise ConfigError(f"--mcp-config file not found: {mcp_config_path}")
+            json_servers = load_mcp_json(p)
+        else:
+            # Default: look for .mcp.json in project root
+            default_mcp = Path(base_dir).resolve() / ".mcp.json"
+            if default_mcp.is_file():
+                json_servers = load_mcp_json(default_mcp)
+
+        mcp_servers = merge_mcp_configs(toml_servers, json_servers)
+        if mcp_servers:
+            mcp_manager = McpManager(mcp_servers, verbose=args.verbose)
+            # start() connects to servers; individual connection failures
+            # are logged and skipped (non-fatal), but ConfigError from
+            # validation (bad names, collisions) propagates as fatal.
+            mcp_manager.start()
+            mcp_tools = mcp_manager.list_tools()
+            if mcp_tools:
+                tools.extend(mcp_tools)
+
+            # Enforce token budget (may remove tools/servers)
+            tools = enforce_mcp_token_budget(
+                tools, mcp_manager, context_length, verbose=args.verbose
+            )
+
+            # Capture tool info AFTER pruning so prompt matches reality
+            mcp_tool_info = mcp_manager.get_tool_info()
+
     system_content, instructions_loaded = build_system_prompt(
         base_dir=base_dir,
         system_prompt=args.system_prompt,
@@ -1935,6 +2111,7 @@ def _run_main(args, report, _write_report, parser):
         resolved_commands=resolved_commands,
         verbose=args.verbose,
         config_dir=getattr(args, "config_dir", None),
+        mcp_tool_info=mcp_tool_info,
     )
     messages = []
     if system_content is not None:
@@ -1977,6 +2154,7 @@ def _run_main(args, report, _write_report, parser):
         verbose=args.verbose,
         llm_kwargs=llm_kwargs,
         file_tracker=file_tracker,
+        mcp_manager=mcp_manager,
     )
 
     if getattr(args, "proactive_summaries", False):
@@ -2142,6 +2320,7 @@ def run_agent_loop(
     report: ReportCollector | None = None,
     turn_offset: int = 0,
     compaction_state: "CompactionState | None" = None,
+    mcp_manager=None,
 ) -> tuple[str | None, bool]:
     """Run the tool-calling loop until a final answer or max turns.
 
@@ -2391,6 +2570,7 @@ def run_agent_loop(
                 yolo=yolo,
                 file_tracker=file_tracker,
                 todo_state=todo_state,
+                mcp_manager=mcp_manager,
             )
             messages.append(tool_msg)
 
@@ -2667,6 +2847,7 @@ def repl_loop(
     file_tracker: FileAccessTracker | None = None,
     no_history: bool = False,
     compaction_state: "CompactionState | None" = None,
+    mcp_manager=None,
 ) -> None:
     """Interactive read-eval-print loop."""
     from prompt_toolkit import PromptSession
@@ -2768,6 +2949,7 @@ def repl_loop(
                         llm_kwargs=llm_kwargs,
                         file_tracker=file_tracker,
                         compaction_state=compaction_state,
+                        mcp_manager=mcp_manager,
                     )
                 except KeyboardInterrupt:
                     fmt.warning("interrupted, /init aborted.")
@@ -2810,6 +2992,7 @@ def repl_loop(
                     llm_kwargs=llm_kwargs,
                     file_tracker=file_tracker,
                     compaction_state=compaction_state,
+                    mcp_manager=mcp_manager,
                 )
             except KeyboardInterrupt:
                 fmt.warning("interrupted, continuation aborted.")
@@ -2849,6 +3032,7 @@ def repl_loop(
                 llm_kwargs=llm_kwargs,
                 file_tracker=file_tracker,
                 compaction_state=compaction_state,
+                mcp_manager=mcp_manager,
             )
         except KeyboardInterrupt:
             fmt.warning("interrupted, question aborted.")

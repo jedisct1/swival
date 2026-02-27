@@ -123,6 +123,14 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 
 `--no-skills` disables skill discovery and removes the `use_skill` tool path.
 
+### MCP Flags
+
+`--no-mcp` disables MCP server connections entirely, even if servers are configured in `swival.toml` or `.mcp.json`.
+
+`--mcp-config FILE` provides an explicit path to an MCP JSON config file. When set, this replaces the default `.mcp.json` lookup in the project root.
+
+See [MCP](mcp.md) for full configuration details.
+
 ### Output And Reporting Flags
 
 `--quiet` and `-q` suppress diagnostics and keep terminal output focused on final answers.

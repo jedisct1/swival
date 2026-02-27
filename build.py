@@ -54,6 +54,7 @@ NAV = [
                 "Path resolution, symlink protection, command whitelisting",
             ),
             ("skills", "Skills", "Creating and using SKILL.md-based agent skills"),
+            ("mcp", "MCP", "Connecting external tool servers via Model Context Protocol"),
             (
                 "customization",
                 "Customization",

@@ -1637,6 +1637,13 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
     extra_write_roots = kwargs.get("extra_write_roots", ())
     file_tracker = kwargs.get("file_tracker")
 
+    # MCP tool dispatch
+    if name.startswith("mcp__"):
+        mcp_manager = kwargs.get("mcp_manager")
+        if mcp_manager is None:
+            return f"error: MCP tool {name!r} called but no MCP manager is active"
+        return mcp_manager.call_tool(name, args)
+
     if name == "think":
         thinking_state = kwargs.get("thinking_state")
         if thinking_state is None:

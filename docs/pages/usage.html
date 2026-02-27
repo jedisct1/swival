@@ -44,6 +44,7 @@
 <ul>
 <li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
 <li><a href="skills.html">Skills</a></li>
+<li><a href="mcp.html">MCP</a></li>
 <li><a href="customization.html">Customization</a></li>
 <li><a href="providers.html">Providers</a></li>
 <li><a href="reports.html">Reports</a></li>
@@ -116,6 +117,10 @@
 <h3 id="skills-flags">Skills Flags</h3>
 <p><code>--skills-dir</code> adds external skill directories and can be passed more than once.</p>
 <p><code>--no-skills</code> disables skill discovery and removes the <code>use_skill</code> tool path.</p>
+<h3 id="mcp-flags">MCP Flags</h3>
+<p><code>--no-mcp</code> disables MCP server connections entirely, even if servers are configured in <code>swival.toml</code> or <code>.mcp.json</code>.</p>
+<p><code>--mcp-config FILE</code> provides an explicit path to an MCP JSON config file. When set, this replaces the default <code>.mcp.json</code> lookup in the project root.</p>
+<p>See <a href="mcp.html">MCP</a> for full configuration details.</p>
 <h3 id="output-and-reporting-flags">Output And Reporting Flags</h3>
 <p><code>--quiet</code> and <code>-q</code> suppress diagnostics and keep terminal output focused on final answers.</p>
 <p><code>--report FILE</code> writes a JSON run report to <code>FILE</code>. This flag is incompatible with <code>--repl</code>.</p>

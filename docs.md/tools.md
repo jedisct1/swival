@@ -1,6 +1,6 @@
 # Tools
 
-Swival gives the model a fixed set of tools at runtime. Most tools are always available. `run_command` appears only when you enable command execution with `--allowed-commands` or `--yolo`, and `use_skill` appears only when skills are discovered.
+Swival gives the model a fixed set of tools at runtime. Most tools are always available. `run_command` appears only when you enable command execution with `--allowed-commands` or `--yolo`, `use_skill` appears only when skills are discovered, and MCP tools appear when external MCP servers are configured.
 
 ## `read_file`
 
@@ -75,3 +75,7 @@ In YOLO mode, command execution is unrestricted and Swival also accepts shell co
 ## `use_skill`
 
 When skills are discovered, Swival exposes `use_skill` so the model can load full instructions on demand. The system prompt only includes a compact skill catalog at startup, and full skill instructions are injected only when the tool is called. This keeps the default prompt smaller while still allowing rich task-specific guidance.
+
+## MCP Tools
+
+Swival can connect to external tool servers via the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP). MCP tools are discovered at startup and exposed alongside built-in tools. See [MCP](mcp.md) for configuration and details.

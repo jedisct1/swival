@@ -55,6 +55,7 @@ class Session:
         history: bool = True,
         config_dir: "Path | None" = None,
         proactive_summaries: bool = False,
+        mcp_servers: dict | None = None,
     ):
         self.base_dir = base_dir
         self.config_dir = config_dir
@@ -81,6 +82,7 @@ class Session:
         self.allowed_dirs_ro = allowed_dirs_ro or []
         self.read_guard = read_guard
         self.history = history
+        self.mcp_servers = mcp_servers
 
         # Setup state (cached after first _setup())
         self._setup_done = False
@@ -96,6 +98,9 @@ class Session:
         self._instructions_loaded: list[str] = []
         self._allowed_dir_paths: list[Path] = []
         self._allowed_dir_ro_paths: list[Path] = []
+
+        # MCP manager (created in _setup if mcp_servers is non-empty)
+        self._mcp_manager = None
 
         # Per-conversation state (for ask() mode)
         self._conv_state: dict | None = None
@@ -167,7 +172,27 @@ class Session:
             self._resolved_commands, self._skills_catalog, self.yolo
         )
 
+        # Initialize MCP servers
+        if self.mcp_servers:
+            from .mcp_client import McpManager
+
+            self._mcp_manager = McpManager(self.mcp_servers, verbose=self.verbose)
+            self._mcp_manager.start()
+            mcp_tools = self._mcp_manager.list_tools()
+            if mcp_tools:
+                self._tools.extend(mcp_tools)
+
+            from .agent import enforce_mcp_token_budget
+
+            self._tools = enforce_mcp_token_budget(
+                self._tools,
+                self._mcp_manager,
+                self._context_length,
+                verbose=self.verbose,
+            )
+
         # Build system prompt
+        mcp_tool_info = self._mcp_manager.get_tool_info() if self._mcp_manager else None
         self._system_content, self._instructions_loaded = build_system_prompt(
             base_dir=self.base_dir,
             system_prompt=self.system_prompt,
@@ -178,6 +203,7 @@ class Session:
             resolved_commands=self._resolved_commands,
             verbose=self.verbose,
             config_dir=self.config_dir,
+            mcp_tool_info=mcp_tool_info,
         )
 
         # Clean up stale cmd_output files
@@ -236,6 +262,8 @@ class Session:
         )
         if state.get("compaction_state") is not None:
             kwargs["compaction_state"] = state["compaction_state"]
+        if self._mcp_manager is not None:
+            kwargs["mcp_manager"] = self._mcp_manager
         return kwargs
 
     def run(self, question: str, *, report: bool = False) -> Result:
@@ -311,6 +339,13 @@ class Session:
             messages=copy.deepcopy(messages),
             report=None,
         )
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        if self._mcp_manager is not None:
+            self._mcp_manager.close()
 
     def reset(self) -> None:
         """Clear conversation state without invalidating setup. Next ask() starts fresh."""

@@ -202,3 +202,20 @@ def error(msg: str) -> None:
 
 def repl_banner() -> None:
     _console.print(Text("Interactive mode. Type /exit or Ctrl-D to quit.", style="dim"))
+
+
+# -- MCP servers -------------------------------------------------------------
+
+
+def mcp_server_start(name: str, tool_count: int) -> None:
+    line = Text()
+    line.append(f"  MCP {name}", style="cyan")
+    line.append(f"  {tool_count} tool(s)", style="dim")
+    _console.print(line)
+
+
+def mcp_server_error(name: str, error: str) -> None:
+    line = Text()
+    line.append(f"  MCP {name}", style="bold red")
+    line.append(f"  {error}", style="red")
+    _console.print(line)

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MCP — Swival</title>
+    <meta name="description" content="MCP — Swival documentation">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="MCP — Swival">
+    <meta property="og:description" content="MCP — Swival documentation">
+    <meta property="og:image" content="https://swival.dev/img/logo.png">
+    <meta property="og:url" content="https://swival.dev/pages/mcp.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="MCP — Swival">
+    <meta name="twitter:description" content="MCP — Swival documentation">
+    <meta name="twitter:image" content="https://swival.dev/img/logo.png">
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="../" class="header-logo">
+                <img src="../img/logo.png" alt="Swival">
+            </a>
+            <nav class="header-nav">
+                <a href="./">Docs</a>
+                <a href="https://github.com/swival/swival">GitHub</a>
+            </nav>
+        </div>
+    </header>
+    <div class="docs-layout">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+<h4>Basics</h4>
+<ul>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="usage.html">Usage</a></li>
+<li><a href="tools.html">Tools</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Configuration & Deployment</h4>
+<ul>
+<li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
+<li><a href="skills.html">Skills</a></li>
+<li><a href="mcp.html" class="active">MCP</a></li>
+<li><a href="customization.html">Customization</a></li>
+<li><a href="providers.html">Providers</a></li>
+<li><a href="reports.html">Reports</a></li>
+<li><a href="reviews.html">Reviews</a></li>
+<li><a href="agentfs.html">AgentFS</a></li>
+</ul>
+</div>
+        </aside>
+        <article class="docs-content">
+            <h1 id="mcp">MCP</h1>
+<p>Swival can connect to external tool servers via the <a href="https://modelcontextprotocol.io/">Model Context Protocol</a> (MCP). When MCP servers are configured, their tools are discovered at startup, converted to the same function-calling format as built-in tools, and exposed alongside them in the agent loop.</p>
+<p>Each MCP tool is namespaced as <code>mcp__&lt;server_name&gt;__&lt;tool_name&gt;</code> to avoid collisions with built-in tools and across servers. The model calls them like any other tool. Swival routes the call to the correct server and returns the result as a string following the same conventions as built-in tools.</p>
+<p>MCP servers can use stdio transport (local subprocess) or SSE transport (remote HTTP). Both are configured through <code>swival.toml</code> or <code>.mcp.json</code>.</p>
+<p>If an MCP server fails to connect at startup, Swival logs a warning and continues without that server's tools. If a server crashes mid-session, its tools are marked as degraded and return an error message instead of blocking the agent loop. Tool name collisions within a server cause that server's tools to be skipped entirely, with a warning.</p>
+<p>When MCP tool schemas consume more than 30% of the context window, Swival warns. At 50%, it iteratively drops the most expensive server's tools until usage is under budget.</p>
+<h2 id="toml-configuration">TOML Configuration</h2>
+<p>Add <code>[mcp_servers.&lt;name&gt;]</code> tables to <code>swival.toml</code>. Each server needs either <code>command</code> (for stdio transport) or <code>url</code> (for SSE transport), but not both.</p>
+<pre><code class="language-toml">[mcp_servers.filesystem]
+command = &quot;npx&quot;
+args = [&quot;-y&quot;, &quot;@modelcontextprotocol/server-filesystem&quot;, &quot;/tmp&quot;]
+
+[mcp_servers.remote-api]
+url = &quot;https://api.example.com/mcp&quot;
+headers = { Authorization = &quot;Bearer token123&quot; }
+</code></pre>
+<p>Server names must match <code>[a-zA-Z0-9_-]+</code> and cannot contain double underscores (since <code>__</code> is used as the namespacing separator in tool names).</p>
+<p>For stdio servers, <code>command</code> is the executable name and <code>args</code> is an optional list of arguments. You can also set <code>env</code> to pass environment variables to the subprocess.</p>
+<pre><code class="language-toml">[mcp_servers.my-server]
+command = &quot;node&quot;
+args = [&quot;server.js&quot;]
+env = { API_KEY = &quot;secret&quot; }
+</code></pre>
+<p>For SSE servers, <code>url</code> is the endpoint and <code>headers</code> is an optional dictionary of HTTP headers.</p>
+<h2 id="json-configuration">JSON Configuration</h2>
+<p>Swival also reads <code>.mcp.json</code> from the project root directory. This uses the same format as other MCP-compatible tools:</p>
+<pre><code class="language-json">{
+  &quot;mcpServers&quot;: {
+    &quot;filesystem&quot;: {
+      &quot;command&quot;: &quot;npx&quot;,
+      &quot;args&quot;: [&quot;-y&quot;, &quot;@modelcontextprotocol/server-filesystem&quot;, &quot;/tmp&quot;]
+    }
+  }
+}
+</code></pre>
+<p>The JSON format supports the same fields as TOML: <code>command</code>, <code>args</code>, <code>env</code> for stdio, and <code>url</code>, <code>headers</code> for SSE.</p>
+<h2 id="config-precedence">Config Precedence</h2>
+<p>When both <code>swival.toml</code> and <code>.mcp.json</code> define servers, the TOML config takes precedence by server name. Servers defined only in <code>.mcp.json</code> are merged in.</p>
+<p>The full precedence order is:</p>
+<p><code>--no-mcp</code> (disables all) &gt; <code>--mcp-config FILE</code> (explicit JSON path) &gt; <code>swival.toml [mcp_servers.*]</code> &gt; <code>.mcp.json</code></p>
+<p>When the project and global config both define MCP servers, project-level servers win by name, and global-only servers are merged in.</p>
+<h2 id="cli-flags">CLI Flags</h2>
+<p><code>--no-mcp</code> disables MCP server connections entirely, even if servers are configured in <code>swival.toml</code> or <code>.mcp.json</code>.</p>
+<p><code>--mcp-config FILE</code> provides an explicit path to an MCP JSON config file. When set, this replaces the default <code>.mcp.json</code> lookup in the project root.</p>
+<h2 id="library-api">Library API</h2>
+<p>The <code>Session</code> class accepts <code>mcp_servers</code> as a constructor argument. Pass a dictionary mapping server names to config dicts:</p>
+<pre><code class="language-python">from swival import Session
+
+session = Session(
+    mcp_servers={
+        &quot;filesystem&quot;: {
+            &quot;command&quot;: &quot;npx&quot;,
+            &quot;args&quot;: [&quot;-y&quot;, &quot;@modelcontextprotocol/server-filesystem&quot;, &quot;/tmp&quot;],
+        }
+    }
+)
+result = session.run(&quot;List files in /tmp&quot;)
+</code></pre>
+<p>Use <code>Session</code> as a context manager to ensure MCP connections are cleaned up:</p>
+<pre><code class="language-python">with Session(mcp_servers={&quot;fs&quot;: {&quot;command&quot;: &quot;...&quot;}}) as session:
+    result = session.run(&quot;task&quot;)
+</code></pre>
+        </article>
+    </div>
+    <footer class="site-footer">
+        MIT License &middot;
+        <a href="https://github.com/swival/swival">GitHub</a>
+    </footer>
+</body>
+</html>

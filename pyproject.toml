@@ -27,6 +27,7 @@ dependencies = [
     "html-to-markdown",
     "rich",
     "prompt-toolkit>=3.0.52",
+    "mcp>=1.26,<2",
 ]
 
 [project.urls]

@@ -5,6 +5,7 @@ Reads TOML config from ~/.config/swival/config.toml (global) and
 """
 
 import argparse
+import json
 import os
 import re
 import shlex
@@ -51,6 +52,7 @@ CONFIG_KEYS: dict[str, type | tuple[type, ...]] = {
     "verify": str,
     "max_review_rounds": int,
     "proactive_summaries": bool,
+    "no_mcp": bool,
 }
 
 _LIST_OF_STR_KEYS = {
@@ -98,6 +100,8 @@ _ARGPARSE_DEFAULTS: dict[str, Any] = {
     "verify": None,
     "max_review_rounds": 5,
     "proactive_summaries": False,
+    "no_mcp": False,
+    "mcp_config": None,
 }
 
 
@@ -236,10 +240,126 @@ def _load_single(path: Path, label: str) -> dict:
     except tomllib.TOMLDecodeError as e:
         raise ConfigError(f"{label}: invalid TOML: {e}") from e
 
+    # Extract mcp_servers before validation (it's a nested table, not a flat key)
+    mcp_servers = config.pop("mcp_servers", None)
+
     # Strip unknown keys after warning (keep only known ones for downstream)
     _validate_config(config, label)
     known = {k: v for k, v in config.items() if k in CONFIG_KEYS}
+
+    # Re-attach mcp_servers if present
+    if mcp_servers is not None:
+        if not isinstance(mcp_servers, dict):
+            raise ConfigError(f"{label}: 'mcp_servers' must be a table")
+        _validate_mcp_server_configs(mcp_servers, label)
+        known["mcp_servers"] = mcp_servers
+
     return known
+
+
+# --- MCP config helpers ---
+
+
+_MCP_SERVER_FIELD_TYPES: dict[str, type | tuple[type, ...]] = {
+    "command": str,
+    "url": str,
+    "args": list,
+    "env": dict,
+    "headers": dict,
+}
+
+
+def _validate_mcp_server_configs(servers: dict, source: str) -> None:
+    """Validate structure and field types of MCP server configurations."""
+    from .mcp_client import validate_server_name
+
+    for name, cfg in servers.items():
+        validate_server_name(name)
+        if not isinstance(cfg, dict):
+            raise ConfigError(f"{source}: mcp_servers.{name} must be a table")
+        has_command = "command" in cfg
+        has_url = "url" in cfg
+        if not has_command and not has_url:
+            raise ConfigError(
+                f"{source}: mcp_servers.{name} must have 'command' or 'url'"
+            )
+        if has_command and has_url:
+            raise ConfigError(
+                f"{source}: mcp_servers.{name} cannot have both 'command' and 'url'"
+            )
+
+        # Validate field types
+        prefix = f"{source}: mcp_servers.{name}"
+        for field, expected in _MCP_SERVER_FIELD_TYPES.items():
+            if field in cfg:
+                if not isinstance(cfg[field], expected):
+                    exp_name = (
+                        expected.__name__
+                        if isinstance(expected, type)
+                        else " or ".join(t.__name__ for t in expected)
+                    )
+                    raise ConfigError(
+                        f"{prefix}.{field}: expected {exp_name}, "
+                        f"got {type(cfg[field]).__name__}"
+                    )
+
+        # Validate list element types
+        if "args" in cfg:
+            for i, elem in enumerate(cfg["args"]):
+                if not isinstance(elem, str):
+                    raise ConfigError(
+                        f"{prefix}.args[{i}]: expected string, "
+                        f"got {type(elem).__name__}"
+                    )
+
+        # Validate dict value types
+        for dict_field in ("env", "headers"):
+            if dict_field in cfg:
+                for k, v in cfg[dict_field].items():
+                    if not isinstance(v, str):
+                        raise ConfigError(
+                            f"{prefix}.{dict_field}.{k}: expected string, "
+                            f"got {type(v).__name__}"
+                        )
+
+
+def load_mcp_json(path: Path) -> dict[str, dict]:
+    """Load MCP server configs from a .mcp.json file.
+
+    Returns a dict of server_name -> server_config.
+    Raises ConfigError on invalid JSON or structure.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as e:
+        raise ConfigError(f"{path}: cannot read file: {e}")
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ConfigError(f"{path}: invalid JSON: {e}")
+
+    if not isinstance(data, dict):
+        raise ConfigError(f"{path}: expected a JSON object at top level")
+
+    servers_raw = data.get("mcpServers", {})
+    if not isinstance(servers_raw, dict):
+        raise ConfigError(f"{path}: 'mcpServers' must be a JSON object")
+
+    _validate_mcp_server_configs(servers_raw, str(path))
+    return servers_raw
+
+
+def merge_mcp_configs(
+    toml_servers: dict[str, dict] | None,
+    json_servers: dict[str, dict] | None,
+) -> dict[str, dict]:
+    """Merge MCP server configs. TOML wins on name collision."""
+    merged: dict[str, dict] = {}
+    if json_servers:
+        merged.update(json_servers)
+    if toml_servers:
+        merged.update(toml_servers)  # toml wins
+    return merged
 
 
 # --- Public API ---
@@ -271,7 +391,14 @@ def load_config(base_dir: Path) -> dict:
         _resolve_paths(project_config, project_path.parent, str(project_path))
 
     # Merge: project overrides global (shallow)
+    # Handle mcp_servers separately (merge by server name, not overwrite)
+    global_mcp = global_config.pop("mcp_servers", None)
+    project_mcp = project_config.pop("mcp_servers", None)
     merged = {**global_config, **project_config}
+
+    mcp_servers = merge_mcp_configs(project_mcp, global_mcp)
+    if mcp_servers:
+        merged["mcp_servers"] = mcp_servers
 
     # Re-validate mutual exclusion on merged result (could conflict across files)
     if merged.get("system_prompt") and merged.get("no_system_prompt"):
@@ -341,6 +468,8 @@ def config_to_session_kwargs(config: dict) -> dict:
         "objective",
         "verify",
         "max_review_rounds",
+        "no_mcp",
+        "mcp_config",
     }
     _INVERT_KEYS = {
         "no_read_guard": "read_guard",
@@ -398,6 +527,18 @@ def generate_config(project: bool = False) -> str:
         "# no_skills = false",
         '# skills_dir = ["../my-skills"]',
         "# no_history = false",
+        "",
+        "# --- MCP servers ---",
+        "# no_mcp = false",
+        "",
+        "# [mcp_servers.filesystem]",
+        '# command = "npx"',
+        '# args = ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]',
+        '# env = { API_KEY = "sk-...", DEBUG = "true" }',
+        "",
+        "# [mcp_servers.remote-api]",
+        '# url = "https://api.example.com/mcp"',
+        '# headers = { Authorization = "Bearer token123" }',
         "",
         "# --- UI ---",
         "# color = true       # true = force color, false = force no-color, absent = auto",
