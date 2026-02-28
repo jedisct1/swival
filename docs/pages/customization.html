@@ -73,6 +73,7 @@ allowed_dirs = [&quot;/tmp&quot;]
 allowed_dirs_ro = [&quot;/opt/zig/lib/std&quot;]
 proactive_summaries = true
 quiet = false
+extra_body = { chat_template_kwargs = { enable_thinking = false } }
 
 # Reviewer settings
 reviewer = &quot;swival --reviewer-mode&quot;
@@ -127,6 +128,18 @@ Don't add dependencies without asking.
 <pre><code class="language-sh">swival --seed 42 &quot;task&quot;
 </code></pre>
 <p>Seeded runs are usually more stable, but identical output is still not guaranteed across all providers, model versions, and hardware environments.</p>
+<h2 id="extra-llm-parameters">Extra LLM Parameters</h2>
+<p>Some models accept parameters beyond the standard OpenAI chat completions API. The <code>extra_body</code> setting passes an arbitrary dictionary through to the underlying API call, so you can use provider-specific or model-specific options without Swival needing dedicated flags for each one.</p>
+<p>On the command line, pass a JSON object:</p>
+<pre><code class="language-sh">swival --extra-body '{&quot;chat_template_kwargs&quot;: {&quot;enable_thinking&quot;: false}}' &quot;task&quot;
+</code></pre>
+<p>In a config file, use TOML inline table syntax:</p>
+<pre><code class="language-toml">extra_body = { chat_template_kwargs = { enable_thinking = false } }
+</code></pre>
+<p>In the library API:</p>
+<pre><code class="language-python">session = Session(extra_body={&quot;chat_template_kwargs&quot;: {&quot;enable_thinking&quot;: False}})
+</code></pre>
+<p>The dictionary is forwarded as <code>extra_body</code> to the LiteLLM completion call, which passes it through to the provider's API. Refer to your model's documentation for supported parameters.</p>
 <h2 id="turn-and-token-limits">Turn And Token Limits</h2>
 <p><code>--max-turns</code> limits how many agent-loop iterations are allowed.</p>
 <pre><code class="language-sh">swival --max-turns 10 &quot;quick task&quot;

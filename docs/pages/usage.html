@@ -101,6 +101,9 @@
 <p><code>--temperature</code> controls sampling temperature and defaults to the provider default when omitted.</p>
 <p><code>--top-p</code> controls nucleus sampling and defaults to <code>1.0</code>.</p>
 <p><code>--seed</code> passes a random seed for providers that support reproducible sampling.</p>
+<p><code>--extra-body JSON</code> passes extra parameters to the LLM API call. The value must be a JSON object. This is useful for provider-specific or model-specific options that Swival does not expose as dedicated flags.</p>
+<pre><code class="language-sh">swival --extra-body '{&quot;chat_template_kwargs&quot;: {&quot;enable_thinking&quot;: false}}' &quot;task&quot;
+</code></pre>
 <p><code>--proactive-summaries</code> enables periodic checkpoint summarization of the conversation. Every ten turns, recent turns are summarized and stored internally. These summaries survive context compaction and give the model a condensed record of earlier work that would otherwise be lost.</p>
 <p>Useful for long-running sessions.</p>
 <h3 id="sandboxing-flags">Sandboxing Flags</h3>

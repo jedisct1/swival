@@ -28,6 +28,7 @@ allowed_dirs = ["/tmp"]
 allowed_dirs_ro = ["/opt/zig/lib/std"]
 proactive_summaries = true
 quiet = false
+extra_body = { chat_template_kwargs = { enable_thinking = false } }
 
 # Reviewer settings
 reviewer = "swival --reviewer-mode"
@@ -121,6 +122,30 @@ swival --seed 42 "task"
 ```
 
 Seeded runs are usually more stable, but identical output is still not guaranteed across all providers, model versions, and hardware environments.
+
+## Extra LLM Parameters
+
+Some models accept parameters beyond the standard OpenAI chat completions API. The `extra_body` setting passes an arbitrary dictionary through to the underlying API call, so you can use provider-specific or model-specific options without Swival needing dedicated flags for each one.
+
+On the command line, pass a JSON object:
+
+```sh
+swival --extra-body '{"chat_template_kwargs": {"enable_thinking": false}}' "task"
+```
+
+In a config file, use TOML inline table syntax:
+
+```toml
+extra_body = { chat_template_kwargs = { enable_thinking = false } }
+```
+
+In the library API:
+
+```python
+session = Session(extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+```
+
+The dictionary is forwarded as `extra_body` to the LiteLLM completion call, which passes it through to the provider's API. Refer to your model's documentation for supported parameters.
 
 ## Turn And Token Limits
 

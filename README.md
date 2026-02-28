@@ -144,6 +144,8 @@ Full documentation is available at [swival.dev](https://swival.dev/).
   system prompt overrides, tuning parameters
 - [Providers](docs.md/providers.md) -- LM Studio, HuggingFace, OpenRouter, and
   generic OpenAI-compatible server configuration
+- [MCP](docs.md/mcp.md) -- connecting external tool servers via the Model Context
+  Protocol
 - [Reports](docs.md/reports.md) -- JSON reports for benchmarking and evaluation
 - [Reviews](docs.md/reviews.md) -- external reviewer scripts for automated QA
   and LLM-as-judge evaluation

@@ -128,6 +128,31 @@ There is no model auto-discovery and no context window reload. Set `--max-contex
 
 Internally, generic calls are routed through LiteLLM as `openai/<model_id>` with `api_base` pointing at your server's `/v1` path.
 
+## Extra Provider Parameters
+
+Some models and servers accept parameters that go beyond the standard OpenAI API. Use `--extra-body` to pass them through. The value is a JSON object that gets forwarded directly to the API call.
+
+For example, Qwen models served through vLLM can disable internal thinking mode:
+
+```sh
+swival --provider generic \
+    --base-url http://127.0.0.1:8000 \
+    --model Qwen/Qwen3.5-35B-A3B \
+    --extra-body '{"chat_template_kwargs": {"enable_thinking": false}}' \
+    "task"
+```
+
+You can also set this in config so you don't repeat it every time:
+
+```toml
+provider = "generic"
+base_url = "http://127.0.0.1:8000"
+model = "Qwen/Qwen3.5-35B-A3B"
+extra_body = { chat_template_kwargs = { enable_thinking = false } }
+```
+
+The dictionary is forwarded as `extra_body` to LiteLLM, which passes it through to the server. Refer to your model or server documentation for supported parameters.
+
 ## Adding More Providers Later
 
 Because API calls are already abstracted behind LiteLLM, adding a provider is mostly a matter of argument validation, model normalization, and credential wiring. The provider-specific branch in `call_llm()` is intentionally compact so new providers can be added without changing the rest of the agent loop.

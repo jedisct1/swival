@@ -91,6 +91,12 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 
 `--seed` passes a random seed for providers that support reproducible sampling.
 
+`--extra-body JSON` passes extra parameters to the LLM API call. The value must be a JSON object. This is useful for provider-specific or model-specific options that Swival does not expose as dedicated flags.
+
+```sh
+swival --extra-body '{"chat_template_kwargs": {"enable_thinking": false}}' "task"
+```
+
 `--proactive-summaries` enables periodic checkpoint summarization of the conversation. Every ten turns, recent turns are summarized and stored internally. These summaries survive context compaction and give the model a condensed record of earlier work that would otherwise be lost.
 
 Useful for long-running sessions.
