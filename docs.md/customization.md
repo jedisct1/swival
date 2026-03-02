@@ -38,7 +38,7 @@ objective = "objective.md"
 verify = "verification/working.md"
 ```
 
-For the ChatGPT provider, no API key is needed since authentication is handled through OAuth:
+For the `chatgpt` provider (ChatGPT Plus/Pro subscriptions), no API key is needed since authentication is handled through OAuth:
 
 ```toml
 provider = "chatgpt"

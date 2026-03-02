@@ -75,7 +75,7 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 
 ### Model And Provider Flags
 
-`--provider` chooses the backend provider and defaults to `lmstudio`. Valid values are `lmstudio`, `huggingface`, `openrouter`, `chatgpt`, and `generic`.
+`--provider` chooses the backend provider and defaults to `lmstudio`. Valid values are `lmstudio`, `huggingface`, `openrouter`, `chatgpt` (for ChatGPT Plus/Pro subscriptions), and `generic`.
 
 `--model` overrides auto-discovery with a fixed model identifier.
 

@@ -1523,7 +1523,7 @@ def build_parser():
         "--provider",
         choices=["lmstudio", "huggingface", "openrouter", "generic", "chatgpt"],
         default=_UNSET,
-        help="LLM provider: lmstudio (local), huggingface (HF API), openrouter (multi-provider API), generic (any OpenAI-compatible server), chatgpt (ChatGPT subscription via OAuth).",
+        help="LLM provider: lmstudio (local), huggingface (HF API), openrouter (multi-provider API), generic (any OpenAI-compatible server), chatgpt (ChatGPT Plus/Pro subscription via OAuth).",
     )
     parser.add_argument(
         "-q",

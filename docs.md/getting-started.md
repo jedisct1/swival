@@ -116,9 +116,9 @@ Both `--model` and `--base-url` are required. No API key is needed for most loca
 
 For a deeper look at generic provider options and server-specific examples, see [Providers](providers.md).
 
-## Running with ChatGPT
+## Running with ChatGPT Plus/Pro
 
-If you have a ChatGPT account and want to use OpenAI's models without dealing with API keys, the ChatGPT provider authenticates through an OAuth device-code flow.
+If you have a ChatGPT Plus or ChatGPT Pro subscription and want to use OpenAI's models without a separate API key, the `chatgpt` provider authenticates through an OAuth device-code flow using your existing subscription.
 
 ```sh
 swival "Hello world" --provider chatgpt --model gpt-5.2-codex
@@ -128,7 +128,7 @@ On the first run, Swival will print a URL and a code. Open the URL in your brows
 
 `--model` is required -- there is no default. Currently available models are `gpt-5.2-codex` and `gpt-5.2`.
 
-For a deeper look at ChatGPT-specific options, see [Providers](providers.md).
+For a deeper look at ChatGPT Plus/Pro-specific options, see [Providers](providers.md).
 
 ## Where To Go Next
 
