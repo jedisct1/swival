@@ -525,7 +525,7 @@ def generate_config(project: bool = False) -> str:
         "",
         "# --- Provider / model ---",
         '# provider = "lmstudio"          # "lmstudio" | "huggingface" | "openrouter" | "generic"',
-        '# model = "qwen/qwen3-235b-a22b"',
+        '# model = "qwen/qwen3-coder-next"',
         '# api_key = "sk-or-..."            # prefer env vars; this is a fallback',
         '# base_url = "https://..."',
         "",

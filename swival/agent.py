@@ -2658,7 +2658,11 @@ def run_agent_loop(
                 fmt.warning("LLM returned empty response, requesting continuation...")
             # Give the message minimal content so it's valid in history
             msg.content = ""
-            messages.append(msg)
+            messages.append(
+                msg.model_dump(exclude_none=True)
+                if hasattr(msg, "model_dump")
+                else vars(msg)
+            )
             messages.append(
                 {
                     "role": "user",
@@ -2670,7 +2674,11 @@ def run_agent_loop(
             )
             continue
 
-        messages.append(msg)
+        messages.append(
+            msg.model_dump(exclude_none=True)
+            if hasattr(msg, "model_dump")
+            else vars(msg)
+        )
 
         # Log intermediate assistant text (reasoning before tool calls, or truncated responses)
         if msg.content and (msg.tool_calls or finish_reason == "length") and verbose:

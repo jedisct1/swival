@@ -21,7 +21,7 @@ Settings use the same names as CLI flags. Lists use TOML arrays instead of comma
 
 ```toml
 provider = "openrouter"
-model = "qwen/qwen3-235b-a22b"
+model = "qwen/qwen3-coder-next"
 max_turns = 250
 allowed_commands = ["ls", "git", "python3"]
 allowed_dirs = ["/tmp"]
