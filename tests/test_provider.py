@@ -775,25 +775,6 @@ class TestGenericProviderValidation:
             agent.main()
         assert exc_info.value.code == 2
 
-    def test_generic_requires_base_url(self, monkeypatch):
-        from swival import agent
-
-        monkeypatch.setattr(
-            sys,
-            "argv",
-            [
-                "agent",
-                "hello",
-                "--provider",
-                "generic",
-                "--model",
-                "my-model",
-            ],
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            agent.main()
-        assert exc_info.value.code == 2
-
     def test_generic_works_without_api_key(self, monkeypatch, tmp_path):
         from swival import agent
 

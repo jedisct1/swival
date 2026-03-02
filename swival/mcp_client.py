@@ -9,6 +9,7 @@ import atexit
 import copy
 import json
 import logging
+import os
 import re
 import threading
 from typing import Any
@@ -284,10 +285,12 @@ class McpManager:
                 )
             else:
                 # Stdio transport
+                env = os.environ.copy()
+                env.update(config.get("env") or {})
                 params = mcp.StdioServerParameters(
                     command=config["command"],
                     args=config.get("args", []),
-                    env=config.get("env"),
+                    env=env,
                 )
                 read_stream, write_stream = await stack.enter_async_context(
                     mcp.stdio_client(params)
