@@ -1184,6 +1184,9 @@ def call_llm(
 
     litellm.suppress_debug_info = True
 
+    _skip_params: set[str] = set()
+    _skip_tool_choice = False
+
     if provider == "lmstudio":
         model_str = f"openai/{model_id}"
         kwargs = {"api_base": f"{base_url}/v1", "api_key": "lm-studio"}
@@ -1212,11 +1215,11 @@ def call_llm(
         api_base = stripped if stripped.endswith("/v1") else f"{stripped}/v1"
         kwargs = {"api_base": api_base, "api_key": api_key or "none"}
     elif provider == "chatgpt":
-        bare_id = model_id
-        while bare_id.startswith("chatgpt/"):
-            bare_id = bare_id[len("chatgpt/") :]
+        bare_id = model_id.removeprefix("chatgpt/").removeprefix("chatgpt/")
         model_str = f"chatgpt/{bare_id}"
         kwargs = {}
+        _skip_params = {"top_p", "seed"}
+        _skip_tool_choice = True
         if api_key:
             kwargs["api_key"] = api_key
         if base_url:
@@ -1245,11 +1248,10 @@ def call_llm(
     )
     if tools is not None:
         completion_kwargs["tools"] = tools
-        if provider != "chatgpt":
+        if not _skip_tool_choice:
             completion_kwargs["tool_choice"] = "auto"
-    _unsupported = {"top_p", "seed"} if provider == "chatgpt" else set()
     for key, val in [("temperature", temperature), ("top_p", top_p), ("seed", seed)]:
-        if val is not None and key not in _unsupported:
+        if val is not None and key not in _skip_params:
             completion_kwargs[key] = val
     if extra_body is not None:
         completion_kwargs["extra_body"] = extra_body
@@ -1969,9 +1971,7 @@ def resolve_provider(
             try:
                 import litellm
 
-                _bare = model_id
-                while _bare.startswith("chatgpt/"):
-                    _bare = _bare[len("chatgpt/") :]
+                _bare = model_id.removeprefix("chatgpt/").removeprefix("chatgpt/")
                 _model_str = f"chatgpt/{_bare}"
                 info = litellm.get_model_info(_model_str)
                 context_length = info.get("max_input_tokens")

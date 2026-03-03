@@ -313,6 +313,23 @@ TOOLS = [
     },
 ]
 
+_TOOL_ALIASES = {
+    "run_shell_command": "run_command",
+    "execute_command": "run_command",
+    "execute_shell_command": "run_command",
+    "shell_command": "run_command",
+    "shell": "run_command",
+    "bash": "run_command",
+    "terminal": "run_command",
+    "search": "grep",
+    "search_files": "grep",
+    "find_files": "list_files",
+    "create_file": "write_file",
+    "file_read": "read_file",
+    "file_write": "write_file",
+    "file_edit": "edit_file",
+}
+
 DELETE_FILE_TOOL = {
     "type": "function",
     "function": {
@@ -464,6 +481,11 @@ RUN_COMMAND_TOOL = {
         },
     },
 }
+
+_TOOL_NAMES = [t["function"]["name"] for t in TOOLS] + [
+    USE_SKILL_TOOL["function"]["name"],
+    RUN_COMMAND_TOOL["function"]["name"],
+]
 
 MAX_OUTPUT_BYTES = 50 * 1024  # 50 KB
 MAX_LINE_LENGTH = 2000
@@ -1861,39 +1883,9 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
             unrestricted=yolo,
         )
     else:
-        _TOOL_ALIASES = {
-            "run_shell_command": "run_command",
-            "execute_command": "run_command",
-            "execute_shell_command": "run_command",
-            "shell_command": "run_command",
-            "shell": "run_command",
-            "bash": "run_command",
-            "terminal": "run_command",
-            "search": "grep",
-            "search_files": "grep",
-            "find_files": "list_files",
-            "create_file": "write_file",
-            "file_read": "read_file",
-            "file_write": "write_file",
-            "file_edit": "edit_file",
-        }
         suggestion = _TOOL_ALIASES.get(name)
-        available = [
-            "think",
-            "read_file",
-            "write_file",
-            "edit_file",
-            "delete_file",
-            "list_files",
-            "grep",
-            "todo",
-            "snapshot",
-            "fetch_url",
-            "use_skill",
-            "run_command",
-        ]
         if suggestion:
             raise KeyError(f"Unknown tool: {name!r}. Did you mean '{suggestion}'?")
         raise KeyError(
-            f"Unknown tool: {name!r}. Available tools: {', '.join(available)}"
+            f"Unknown tool: {name!r}. Available tools: {', '.join(_TOOL_NAMES)}"
         )
