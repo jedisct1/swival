@@ -228,8 +228,9 @@ class TestCLIValidation:
         assert exc_info.value.code == 2
 
     def test_openrouter_requires_model(self, monkeypatch):
-        from swival import agent
+        from swival import agent, config
 
+        monkeypatch.setattr(config, "load_config", lambda _: {})
         monkeypatch.setattr(
             sys,
             "argv",
@@ -532,8 +533,9 @@ class TestProviderPathIsolation:
         agent.main()  # Should not raise
 
     def test_lmstudio_calls_discover_when_no_model(self, monkeypatch, tmp_path):
-        from swival import agent
+        from swival import agent, config
 
+        monkeypatch.setattr(config, "load_config", lambda _: {})
         monkeypatch.setattr(
             sys,
             "argv",
@@ -566,8 +568,9 @@ class TestProviderPathIsolation:
         assert discover_called["value"]
 
     def test_lmstudio_calls_configure_with_max_context(self, monkeypatch, tmp_path):
-        from swival import agent
+        from swival import agent, config
 
+        monkeypatch.setattr(config, "load_config", lambda _: {})
         monkeypatch.setattr(
             sys,
             "argv",
@@ -757,8 +760,9 @@ class TestGenericProviderValidation:
     """CLI-level validation for the generic provider."""
 
     def test_generic_requires_model(self, monkeypatch):
-        from swival import agent
+        from swival import agent, config
 
+        monkeypatch.setattr(config, "load_config", lambda _: {})
         monkeypatch.setattr(
             sys,
             "argv",
@@ -1107,8 +1111,9 @@ class TestChatGPTModelNormalization:
 
 class TestChatGPTCLIValidation:
     def test_chatgpt_requires_model(self, monkeypatch):
-        from swival import agent
+        from swival import agent, config
 
+        monkeypatch.setattr(config, "load_config", lambda _: {})
         monkeypatch.setattr(
             sys,
             "argv",
