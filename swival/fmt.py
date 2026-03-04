@@ -114,15 +114,16 @@ def tool_diff(file_path: str, old: str, new: str) -> None:
             style = "green"
         else:
             style = "dim"
-        line_bytes = len(line.encode("utf-8"))
+        encoded = line.encode("utf-8")
         budget = _DIFF_MAX_BYTES - total_bytes
-        if line_bytes > budget:
-            line = line.encode("utf-8")[:budget].decode("utf-8", errors="ignore")
+        if len(encoded) > budget:
+            encoded = encoded[:budget]
+            line = encoded.decode("utf-8", errors="ignore")
         display = f"    {line}"
         output.append(display, style=style)
         if not display.endswith("\n"):
             output.append("\n")
-        total_bytes += len(line.encode("utf-8"))
+        total_bytes += len(encoded)
         shown += 1
 
     _console.print(output, end="")
