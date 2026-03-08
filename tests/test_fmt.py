@@ -169,8 +169,28 @@ class TestThinkStep:
 class TestAssistantText:
     def test_basic(self):
         out = _capture(fmt.assistant_text, "Let me check that file.")
-        assert "[assistant]" in out
+        assert "│" in out
         assert "Let me check that file." in out
+
+    def test_markdown_heading(self):
+        out = _capture(fmt.assistant_text, "# Hello\nSome text.")
+        assert "│" in out
+        assert "Hello" in out
+        assert "Some text." in out
+
+    def test_markdown_code_block(self):
+        out = _capture(fmt.assistant_text, "Here:\n```python\nprint('hi')\n```")
+        assert "│" in out
+        assert "print" in out
+
+    def test_truncation(self):
+        long_text = "\n\n".join(f"Paragraph {i}" for i in range(200))
+        out = _capture(fmt.assistant_text, long_text)
+        assert "truncated" in out
+
+    def test_empty_text(self):
+        out = _capture(fmt.assistant_text, "")
+        assert isinstance(out, str)
 
 
 class TestModelInfo:

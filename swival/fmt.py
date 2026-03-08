@@ -4,9 +4,12 @@ import contextlib
 import difflib
 
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.markup import escape
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.rule import Rule
+from rich.segment import Segment
+from rich.style import Style
 from rich.text import Text
 
 _console = Console(stderr=True)
@@ -225,12 +228,38 @@ def todo_list(
 
 # -- Assistant text ----------------------------------------------------------
 
+_ASSISTANT_MAX_LINES = 100
+
+
+class _LeftBar:
+    """Renders a child renderable with a blue left-border bar (│)."""
+
+    def __init__(self, renderable, max_lines: int = _ASSISTANT_MAX_LINES):
+        self.renderable = renderable
+        self.max_lines = max_lines
+
+    def __rich_console__(self, console, options):
+        inner_width = max(options.max_width - 4, 20)
+        inner_options = options.update_width(inner_width)
+        lines = console.render_lines(self.renderable, inner_options, pad=False)
+        bar = Segment("  │ ", Style(color="blue"))
+        newline = Segment("\n")
+        for i, line in enumerate(lines):
+            if i >= self.max_lines:
+                remaining = len(lines) - self.max_lines
+                yield Segment(
+                    f"  │ ... {remaining} more lines (truncated)\n",
+                    Style(color="blue", dim=True),
+                )
+                break
+            yield bar
+            yield from line
+            yield newline
+
 
 def assistant_text(text: str) -> None:
-    line = Text()
-    line.append("  [assistant] ", style="blue")
-    line.append(text)
-    _console.print(line)
+    md = Markdown(text)
+    _console.print(_LeftBar(md), end="")
 
 
 # -- Reviewer feedback -------------------------------------------------------

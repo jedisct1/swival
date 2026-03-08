@@ -117,7 +117,7 @@ class TestHappyPath:
         # Completion
         assert "Agent finished" in stderr
         # Intermediate assistant text
-        assert "[assistant]" in stderr
+        assert "│" in stderr
         assert "Let me read that file." in stderr
 
         # stdout should have the final answer only
@@ -187,7 +187,7 @@ class TestTruncatedResponse:
         stderr = captured.err
 
         # Intermediate text should be logged
-        assert "[assistant]" in stderr
+        assert "│" in stderr
         assert "I was thinking about..." in stderr
         # A second LLM call was made (continuation triggered)
         assert call_count == 2
