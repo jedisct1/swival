@@ -589,6 +589,10 @@ class TestSessionSandboxFailFast:
         from swival.session import Session
 
         _set_external_agentfs(monkeypatch)
+        monkeypatch.setattr(
+            "swival.agent.resolve_provider",
+            lambda **kw: (_ for _ in ()).throw(RuntimeError("no provider")),
+        )
         sess = Session(base_dir=str(tmp_path), sandbox="agentfs", history=False)
         # _setup will fail later (no provider), but the sandbox check should pass.
         with pytest.raises(Exception) as exc_info:
@@ -600,6 +604,10 @@ class TestSessionSandboxFailFast:
         from swival.session import Session
 
         _clear_sandboxed(monkeypatch)
+        monkeypatch.setattr(
+            "swival.agent.resolve_provider",
+            lambda **kw: (_ for _ in ()).throw(RuntimeError("no provider")),
+        )
         sess = Session(base_dir=str(tmp_path), sandbox="builtin", history=False)
         with pytest.raises(Exception) as exc_info:
             sess._setup()
