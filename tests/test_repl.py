@@ -13,6 +13,7 @@ from swival.agent import (
     INIT_PROMPT,
     INIT_ENRICH_PROMPT,
     INIT_WRITE_PROMPT,
+    LEARN_PROMPT,
     _repl_help,
     _repl_clear,
     _repl_add_dir,
@@ -985,6 +986,127 @@ class TestContinueCommand:
 
         # First call: max_turns=5, /continue after /extend 20: max_turns=20
         assert call_kwargs == [5, 20]
+
+
+# ---------------------------------------------------------------------------
+# /learn command
+# ---------------------------------------------------------------------------
+
+
+class TestLearnCommand:
+    def _mock_session(self, inputs):
+        mock_session = MagicMock()
+        side = []
+        for v in inputs:
+            if v is EOFError:
+                side.append(EOFError())
+            elif v is KeyboardInterrupt:
+                side.append(KeyboardInterrupt())
+            else:
+                side.append(v)
+        mock_session.prompt.side_effect = side
+        return mock_session
+
+    def test_help_includes_learn(self, capsys):
+        """/learn appears in the help output."""
+        _repl_help()
+        captured = capsys.readouterr()
+        assert "/learn" in captured.err
+
+    def test_learn_appends_user_message(self, tmp_path):
+        """/learn appends the LEARN_PROMPT as a user message."""
+        messages = [_sys("system")]
+        call_snapshots = []
+
+        def fake_run(msgs, tools, **kwargs):
+            call_snapshots.append(list(msgs))
+            return ("learned", False)
+
+        inputs = ["/learn", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run),
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        assert len(call_snapshots) == 1
+        last_user = [m for m in call_snapshots[0] if m["role"] == "user"]
+        assert len(last_user) == 1
+        assert last_user[0]["content"] == LEARN_PROMPT
+
+    def test_learn_invokes_loop(self, tmp_path):
+        """/learn triggers run_agent_loop."""
+        messages = [_sys("system")]
+        inputs = ["/learn", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch(
+                "swival.agent.run_agent_loop", return_value=("answer", False)
+            ) as mock_loop,
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        assert mock_loop.call_count == 1
+
+    def test_learn_prints_answer(self, tmp_path, capsys):
+        """/learn prints the answer from the loop."""
+        messages = [_sys("system")]
+        inputs = ["/learn", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", return_value=("learn result", False)),
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        captured = capsys.readouterr()
+        assert "learn result" in captured.out
+
+    def test_learn_keyboard_interrupt(self, tmp_path):
+        """KeyboardInterrupt during /learn doesn't crash the REPL."""
+        messages = [_sys("system")]
+        call_count = 0
+
+        def fake_run(msgs, tools, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise KeyboardInterrupt
+            return ("after", False)
+
+        inputs = ["/learn", "q1", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run),
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        assert call_count == 2
+
+    def test_learn_history_label(self, tmp_path):
+        """/learn records history with '/learn' label."""
+        messages = [_sys("system")]
+        inputs = ["/learn", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", return_value=("noted", False)),
+            patch("swival.agent.append_history") as mock_history,
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        mock_history.assert_called_once()
+        args = mock_history.call_args
+        assert args[0][1] == "/learn"
+        assert args[0][2] == "noted"
 
 
 # ---------------------------------------------------------------------------

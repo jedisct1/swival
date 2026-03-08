@@ -99,6 +99,15 @@ INIT_WRITE_PROMPT = (
     "The file is injected into every future agent context, so brevity is essential."
 )
 
+LEARN_PROMPT = (
+    "Review this session for concrete mistakes, confusions, or surprises you "
+    "encountered with tools, commands, APIs, or syntax. For each one, persist "
+    "a concise note to `.swival/memory/MEMORY.md` so you don't repeat it in "
+    "future sessions. Keep MEMORY.md short (bulleted notes). For detailed "
+    "topics, create separate files in `.swival/memory/` and reference them "
+    "from MEMORY.md. If there is nothing worth noting, say so."
+)
+
 _CONTEXT_OVERFLOW_RE = re.compile(
     r"context.{0,10}(length|window|limit)"
     r"|maximum.{0,10}(context|token)"
@@ -3162,6 +3171,7 @@ def _repl_help() -> None:
         "  /extend [N]        Double max turns, or set to N\n"
         "  /continue          Reset turn counter and continue the agent loop\n"
         "  /continue-status   Show if a continue file exists from a prior session\n"
+        "  /learn             Review session for mistakes and persist to memory\n"
         "  /init              Generate AGENTS.md for the current project\n"
         "  /exit, /quit       Exit the REPL"
     )
@@ -3560,6 +3570,35 @@ def repl_loop(
                     print(answer)
                 if exhausted and verbose:
                     fmt.warning(f"max turns reached during /init pass {_pass}.")
+            continue
+        elif cmd == "/learn":
+            messages.append({"role": "user", "content": LEARN_PROMPT})
+            try:
+                answer, exhausted = run_agent_loop(
+                    messages,
+                    tools,
+                    max_turns=turn_state["max_turns"],
+                    **_repl_loop_kwargs,
+                )
+            except KeyboardInterrupt:
+                fmt.warning("interrupted, /learn aborted.")
+                if continue_here:
+                    from .continue_here import write_continue_file
+
+                    write_continue_file(
+                        base_dir,
+                        messages,
+                        todo_state=todo_state,
+                        snapshot_state=snapshot_state,
+                        thinking_state=thinking_state,
+                    )
+                continue
+            if not no_history and answer:
+                append_history(base_dir, "/learn", answer, diagnostics=verbose)
+            if answer is not None:
+                print(answer)
+            if exhausted and verbose:
+                fmt.warning("max turns reached for /learn. Use /continue to resume.")
             continue
         elif cmd == "/continue":
             fmt.info("continuing agent loop...")
