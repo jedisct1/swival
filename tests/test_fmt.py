@@ -5,6 +5,7 @@ from io import StringIO
 from rich.console import Console
 
 from swival import fmt
+from swival.todo import TodoItem
 
 
 def _capture(func, *args, **kwargs):
@@ -12,6 +13,18 @@ def _capture(func, *args, **kwargs):
     buf = StringIO()
     old = fmt._console
     fmt._console = Console(file=buf, no_color=True, width=80)
+    try:
+        func(*args, **kwargs)
+    finally:
+        fmt._console = old
+    return buf.getvalue()
+
+
+def _capture_styled(func, *args, **kwargs):
+    """Call a fmt function with color enabled and return ANSI-escaped output."""
+    buf = StringIO()
+    old = fmt._console
+    fmt._console = Console(file=buf, force_terminal=True, width=80)
     try:
         func(*args, **kwargs)
     finally:
@@ -234,6 +247,57 @@ class TestToolDiff:
         out = _capture(fmt.tool_diff, "file.txt", old, new)
         assert "[bold]markup[/bold]" in out
         assert "[italic]changed[/italic]" in out
+
+
+class TestTodoList:
+    def test_renders_checklist(self):
+        items = [
+            TodoItem("Read the codebase", done=True),
+            TodoItem("Write unit tests"),
+            TodoItem("Fix the bug"),
+        ]
+        out = _capture(fmt.todo_list, items)
+        assert "[todo]" in out
+        assert "2 remaining" in out
+        assert "\u2611" in out  # done checkbox
+        assert "\u2610" in out  # pending checkbox
+        assert "Read the codebase" in out
+        assert "Write unit tests" in out
+        assert "Fix the bug" in out
+
+    def test_changed_task_highlighted(self):
+        items = [TodoItem("Task A"), TodoItem("Task B")]
+        out = _capture_styled(fmt.todo_list, items, changed_task="Task B")
+        assert "Task B" in out
+        # ANSI bold escape: ESC[1m appears before "Task B"
+        idx = out.index("Task B")
+        preceding = out[max(0, idx - 20) : idx]
+        assert "\x1b[1m" in preceding or "\x1b[1;" in preceding
+
+    def test_changed_done_task_highlighted(self):
+        items = [TodoItem("Task A", done=True), TodoItem("Task B")]
+        out = _capture_styled(fmt.todo_list, items, changed_task="Task A")
+        assert "Task A" in out
+        # The done item should still be bolded when it's the changed task
+        idx = out.index("Task A")
+        preceding = out[max(0, idx - 30) : idx]
+        assert "\x1b[1m" in preceding or "\x1b[1;" in preceding
+
+    def test_note_shown(self):
+        items = [TodoItem("Existing task")]
+        out = _capture(fmt.todo_list, items, note="Already listed: Existing task")
+        assert "Already listed: Existing task" in out
+        assert "1 remaining" in out
+
+    def test_empty_list(self):
+        out = _capture(fmt.todo_list, [])
+        assert "[todo]" in out
+        assert "0 remaining" in out
+
+    def test_clear_note(self):
+        out = _capture(fmt.todo_list, [], note="3 items removed")
+        assert "0 remaining" in out
+        assert "3 items removed" in out
 
 
 class TestInit:

@@ -66,7 +66,7 @@ class TodoState:
             self.items.clear()
             self._save()
             if self.verbose:
-                fmt.todo_update("cleared", f"{count} items removed")
+                fmt.todo_list(self.items, action="clear", note=f"{count} items removed")
             return self._response("clear")
 
         task = args.get("task", "").strip()
@@ -88,9 +88,8 @@ class TodoState:
         task_key = self._task_key(task)
         if any(self._task_key(i.text) == task_key for i in self.items):
             if self.verbose:
-                remaining = self.remaining_count
-                fmt.todo_update(
-                    "add", f"Already listed: {task[:80]} ({remaining} remaining)"
+                fmt.todo_list(
+                    self.items, action="add", note=f"Already listed: {task[:80]}"
                 )
             return self._response(
                 "add",
@@ -103,7 +102,7 @@ class TodoState:
         self._save()
         remaining = self.remaining_count
         if self.verbose:
-            fmt.todo_update("add", f"{task[:80]} ({remaining} remaining)")
+            fmt.todo_list(self.items, action="add", changed_task=task)
         return self._response("add")
 
     def _done(self, task: str) -> str:
@@ -117,7 +116,7 @@ class TodoState:
             self._save()
         remaining = self.remaining_count
         if self.verbose:
-            fmt.todo_update("done", f"{match.text[:80]} ({remaining} remaining)")
+            fmt.todo_list(self.items, action="done", changed_task=match.text)
         return self._response("done")
 
     def _remove(self, task: str) -> str:
@@ -128,9 +127,7 @@ class TodoState:
         self._save()
         remaining = self.remaining_count
         if self.verbose:
-            fmt.todo_update(
-                "remove", f"Removed: {match.text[:80]} ({remaining} remaining)"
-            )
+            fmt.todo_list(self.items, action="remove")
         return self._response("remove")
 
     def _match_item(self, task: str, include_done: bool = False) -> TodoItem | str:
