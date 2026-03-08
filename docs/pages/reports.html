@@ -171,7 +171,8 @@ diff &lt;(jq '{turns: .stats.turns, tools: .stats.tool_calls_total}' a.json) \
      &lt;(jq '{turns: .stats.turns, tools: .stats.tool_calls_total}' b.json)
 </code></pre>
 <h2 id="what-reports-do-not-prove">What Reports Do Not Prove</h2>
-<p>The report captures behavior, not semantic correctness. It tells you whether the run completed cleanly, how the model spent time, which tools it used, and how context recovery behaved. It does not prove that generated code compiles, passes tests, or satisfies business requirements. Those checks still belong in your evaluator, CI pipeline, or reviewer script.</p>
+<p>The report captures behavior, not semantic correctness. It tells you whether the run completed cleanly, how the model spent time, which tools it used, and how context recovery behaved.</p>
+<p>It does not prove that generated code compiles, passes tests, or satisfies business requirements. Those checks still belong in your evaluator, CI pipeline, or reviewer script.</p>
         </article>
     </div>
     <footer class="site-footer">

@@ -412,6 +412,7 @@ class TestUserLevelAgentsMd:
             system_prompt=None,
             no_system_prompt=False,
             no_instructions=True,
+            no_memory=True,
             skills_catalog={},
             yolo=False,
             resolved_commands={},

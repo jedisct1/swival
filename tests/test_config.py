@@ -417,10 +417,11 @@ class TestConfigToSessionKwargs:
 
     def test_inverted_keys(self):
         kwargs = config_to_session_kwargs(
-            {"no_read_guard": True, "no_history": False, "quiet": True}
+            {"no_read_guard": True, "no_history": False, "no_memory": True, "quiet": True}
         )
         assert kwargs["read_guard"] is False
         assert kwargs["history"] is True
+        assert kwargs["memory"] is False
         assert kwargs["verbose"] is False
 
     def test_dropped_keys(self):
@@ -957,3 +958,115 @@ class TestExtraBody:
         content = generate_config()
         assert "[extra_body]" not in content
         assert "extra_body" in content
+
+
+class TestReasoningEffort:
+    """Tests for reasoning_effort config, CLI, and pass-through."""
+
+    def test_config_loads_reasoning_effort(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+        project = tmp_path / "proj"
+        project.mkdir()
+        _write_toml(project / "swival.toml", 'reasoning_effort = "high"\n')
+        result = load_config(project)
+        assert result["reasoning_effort"] == "high"
+
+    def test_config_rejects_invalid_reasoning_effort(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+        project = tmp_path / "proj"
+        project.mkdir()
+        _write_toml(project / "swival.toml", 'reasoning_effort = "turbo"\n')
+        with pytest.raises(ConfigError, match="reasoning_effort.*must be one of"):
+            load_config(project)
+
+    def test_config_rejects_non_str_reasoning_effort(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+        project = tmp_path / "proj"
+        project.mkdir()
+        _write_toml(project / "swival.toml", "reasoning_effort = 42\n")
+        with pytest.raises(ConfigError, match="reasoning_effort.*expected str"):
+            load_config(project)
+
+    def test_apply_config_to_args_reasoning_effort(self):
+        args = _make_args(reasoning_effort=_UNSET)
+        config = {"reasoning_effort": "medium"}
+        apply_config_to_args(args, config)
+        assert args.reasoning_effort == "medium"
+
+    def test_apply_config_to_args_reasoning_effort_default_none(self):
+        args = _make_args(reasoning_effort=_UNSET)
+        apply_config_to_args(args, {})
+        assert args.reasoning_effort is None
+
+    def test_config_to_session_kwargs_passes_reasoning_effort(self):
+        kwargs = config_to_session_kwargs({"reasoning_effort": "high"})
+        assert kwargs["reasoning_effort"] == "high"
+
+    def test_cli_accepts_valid_reasoning_effort(self):
+        from swival.agent import build_parser
+
+        parser = build_parser()
+        ns = parser.parse_args(["--reasoning-effort", "low", "hello"])
+        assert ns.reasoning_effort == "low"
+
+    def test_cli_rejects_invalid_reasoning_effort(self):
+        from swival.agent import build_parser
+
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--reasoning-effort", "turbo", "hello"])
+
+    def test_call_llm_forwards_reasoning_effort(self):
+        from unittest.mock import patch, MagicMock
+
+        from swival.agent import call_llm
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message="hi", finish_reason="stop")]
+
+        with patch("litellm.completion", return_value=mock_response) as mock_comp:
+            call_llm(
+                "http://localhost:8000",
+                "test-model",
+                [{"role": "user", "content": "hi"}],
+                1024,
+                None,
+                None,
+                None,
+                None,
+                False,
+                provider="generic",
+                reasoning_effort="high",
+            )
+
+        _, kwargs = mock_comp.call_args
+        assert kwargs["reasoning_effort"] == "high"
+
+    def test_call_llm_omits_reasoning_effort_when_none(self):
+        from unittest.mock import patch, MagicMock
+
+        from swival.agent import call_llm
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message="hi", finish_reason="stop")]
+
+        with patch("litellm.completion", return_value=mock_response) as mock_comp:
+            call_llm(
+                "http://localhost:8000",
+                "test-model",
+                [{"role": "user", "content": "hi"}],
+                1024,
+                None,
+                None,
+                None,
+                None,
+                False,
+                provider="generic",
+            )
+
+        _, kwargs = mock_comp.call_args
+        assert "reasoning_effort" not in kwargs
+
+    def test_in_generate_config(self):
+        content = generate_config()
+        assert "reasoning_effort" in content

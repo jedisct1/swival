@@ -103,6 +103,12 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 swival --extra-body '{"chat_template_kwargs": {"enable_thinking": false}}' "task"
 ```
 
+`--reasoning-effort LEVEL` sets the reasoning effort for models that support tunable reasoning (e.g. gpt-5.4). Valid levels are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `default`.
+
+```sh
+swival --provider chatgpt --model gpt-5.4 --reasoning-effort high "task"
+```
+
 `--proactive-summaries` enables periodic checkpoint summarization of the conversation. Every ten turns, recent turns are summarized and stored internally. These summaries survive context compaction and give the model a condensed record of earlier work that would otherwise be lost.
 
 Useful for long-running sessions.
@@ -136,6 +142,8 @@ Useful for long-running sessions.
 `--no-system-prompt` omits the system message entirely.
 
 `--no-instructions` prevents loading `CLAUDE.md` and `AGENTS.md` from both the base directory and the user config directory.
+
+`--no-memory` prevents loading auto-memory from `.swival/memory/`.
 
 `--system-prompt` and `--no-system-prompt` are mutually exclusive.
 

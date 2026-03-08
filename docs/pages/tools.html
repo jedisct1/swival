@@ -66,7 +66,8 @@
 <p>When <code>move_from</code> is used and no <code>content</code> is provided, Swival moves the source path to the destination path without copying text content. This supports non-text files and symlinks as well. If the destination already exists, the read-before-write guard still applies to that destination, while the source path is exempt because rename does not modify source content.</p>
 <h2 id="edit_file"><code>edit_file</code></h2>
 <p><code>edit_file</code> is the main incremental editing tool. It replaces <code>old_string</code> with <code>new_string</code> in an existing file and supports <code>replace_all</code> when you intentionally want multiple replacements.</p>
-<p>Matching is done in three passes. Swival tries an exact string match first. If that fails, it retries with per-line trimmed matching so leading and trailing whitespace differences do not break the edit. If that still fails, it retries with Unicode normalization so smart quotes, em dashes, and ellipsis variants map to ASCII equivalents. If multiple matches are found and <code>replace_all</code> is false, the call fails to prevent accidental bulk edits.</p>
+<p>Matching is done in three passes. Swival tries an exact string match first. If that fails, it retries with per-line trimmed matching so leading and trailing whitespace differences do not break the edit. If that still fails, it retries with Unicode normalization so smart quotes, em dashes, and ellipsis variants map to ASCII equivalents.</p>
+<p>If multiple matches are found and <code>replace_all</code> is false, the call fails to prevent accidental bulk edits.</p>
 <h2 id="delete_file"><code>delete_file</code></h2>
 <p><code>delete_file</code> is a soft delete. Instead of removing files permanently, Swival moves them into <code>.swival/trash/&lt;trash_id&gt;/</code> and appends metadata to <code>.swival/trash/index.jsonl</code>. Directories are not allowed.</p>
 <p>Trash retention is enforced automatically. Entries older than seven days are removed, and total trash size is capped at 50 MB with oldest-first eviction when needed.</p>
@@ -98,7 +99,8 @@
 <h2 id="use_skill"><code>use_skill</code></h2>
 <p>When skills are discovered, Swival exposes <code>use_skill</code> so the model can load full instructions on demand. The system prompt only includes a compact skill catalog at startup, and full skill instructions are injected only when the tool is called. This keeps the default prompt smaller while still allowing rich task-specific guidance.</p>
 <h2 id="snapshot"><code>snapshot</code></h2>
-<p><code>snapshot</code> is a context management tool for collapsing exploration into compact summaries. When the model spends many turns reading files, grepping, and reasoning before arriving at a conclusion, <code>snapshot</code> lets it collapse all of that into a single short message so the context window stays clean for the actual work. For the full picture of how this fits into Swival's context management architecture, see <a href="context-management.html">Context Management</a>.</p>
+<p><code>snapshot</code> is a context management tool for collapsing exploration into compact summaries. When the model spends many turns reading files, grepping, and reasoning before arriving at a conclusion, <code>snapshot</code> lets it collapse all of that into a single short message so the context window stays clean for the actual work.</p>
+<p>For the full picture of how this fits into Swival's context management architecture, see <a href="context-management.html">Context Management</a>.</p>
 <p>The tool supports four actions: <code>save</code>, <code>restore</code>, <code>cancel</code>, and <code>status</code>.</p>
 <p><code>save</code> sets an explicit checkpoint to mark the start of a focused investigation. It takes a required <code>label</code> parameter (max 100 characters). Only one explicit checkpoint can exist at a time.</p>
 <p><code>restore</code> collapses all turns since the checkpoint into a single summary message. It takes a required <code>summary</code> parameter (max 4,000 characters) and an optional <code>force</code> parameter that defaults to false. If no explicit checkpoint exists, it collapses from the last implicit checkpoint instead.</p>
@@ -126,7 +128,8 @@
 <li>Agent proceeds to implement the fix with a clean context.</li>
 </ol>
 <h2 id="mcp-tools">MCP Tools</h2>
-<p>Swival can connect to external tool servers via the <a href="https://modelcontextprotocol.io/">Model Context Protocol</a> (MCP). MCP tools are discovered at startup and exposed alongside built-in tools. MCP tool output is size-guarded: results up to 20 KB are returned inline, larger results are saved to <code>.swival/</code> for paginated reads via <code>read_file</code>, and output is hard-capped at 10 MB. See <a href="mcp.html">MCP</a> for configuration and details.</p>
+<p>Swival can connect to external tool servers via the <a href="https://modelcontextprotocol.io/">Model Context Protocol</a> (MCP). MCP tools are discovered at startup and exposed alongside built-in tools. MCP tool output is size-guarded: results up to 20 KB are returned inline, larger results are saved to <code>.swival/</code> for paginated reads via <code>read_file</code>, and output is hard-capped at 10 MB.</p>
+<p>See <a href="mcp.html">MCP</a> for configuration and details.</p>
         </article>
     </div>
     <footer class="site-footer">
