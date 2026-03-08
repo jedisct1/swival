@@ -1086,6 +1086,53 @@ _MAX_READ_FILES = 20
 _READ_FILES_BUDGET = MAX_OUTPUT_BYTES  # total bytes across all files
 
 
+def _format_read_request(offset: int, limit: int, tail: int | None) -> str:
+    if tail is not None:
+        return f"tail={tail}"
+    return f"offset={offset} limit={limit}"
+
+
+def _split_read_result(result: str) -> tuple[str, bool, str | None]:
+    lines = result.splitlines()
+    next_offset = None
+    content_truncated = False
+    if lines and lines[-1].startswith("[") and lines[-1].endswith("]"):
+        trailer = lines[-1]
+        if "use offset=" in trailer:
+            content_truncated = True
+            match = re.search(r"offset=(\d+)", trailer)
+            if match:
+                next_offset = match.group(1)
+            lines = lines[:-1]
+    content = "\n".join(lines)
+    return content, content_truncated, next_offset
+
+
+def _build_read_multiple_files_section(
+    title: str,
+    status: str,
+    request: str,
+    body: str,
+    *,
+    content_truncated: bool | None = None,
+    next_offset: str | None = None,
+) -> str:
+    parts = [
+        f"=== FILE: {title} ===",
+        f"status: {status}",
+        f"request: {request}",
+    ]
+    if status == "ok":
+        parts.append(f"content_truncated: {'true' if content_truncated else 'false'}")
+        if body:
+            parts.append(body)
+        if next_offset is not None:
+            parts.append(f"[next_offset={next_offset}]")
+    else:
+        parts.append(body)
+    return "\n".join(parts)
+
+
 def _read_files(
     files: list[dict],
     base_dir: str,
@@ -1102,12 +1149,24 @@ def _read_files(
 
     sections = []
     total_bytes = 0
-    truncated_at = None
+    files_with_errors = 0
+    files_succeeded = 0
+    skipped_files = 0
 
     for i, spec in enumerate(files):
         file_path = spec.get("file_path")
+        title = file_path or f"file {i + 1}"
         if not file_path:
-            sections.append(f"--- file {i + 1} ---\nerror: missing file_path")
+            request = _format_read_request(1, 2000, None)
+            sections.append(
+                _build_read_multiple_files_section(
+                    title,
+                    "error",
+                    request,
+                    "error: missing file_path",
+                )
+            )
+            files_with_errors += 1
             continue
 
         offset = spec.get("offset", 1)
@@ -1117,22 +1176,48 @@ def _read_files(
         try:
             offset = int(offset)
         except (ValueError, TypeError):
-            sections.append(f"--- {file_path} ---\nerror: offset must be an integer")
+            sections.append(
+                _build_read_multiple_files_section(
+                    file_path,
+                    "error",
+                    _format_read_request(1, 2000, None),
+                    "error: offset must be an integer",
+                )
+            )
+            files_with_errors += 1
             continue
         try:
             limit = int(limit)
         except (ValueError, TypeError):
-            sections.append(f"--- {file_path} ---\nerror: limit must be an integer")
+            sections.append(
+                _build_read_multiple_files_section(
+                    file_path,
+                    "error",
+                    _format_read_request(offset, 2000, None),
+                    "error: limit must be an integer",
+                )
+            )
+            files_with_errors += 1
             continue
         if tail is not None:
             try:
                 tail = int(tail)
             except (ValueError, TypeError):
-                sections.append(f"--- {file_path} ---\nerror: tail must be an integer")
+                sections.append(
+                    _build_read_multiple_files_section(
+                        file_path,
+                        "error",
+                        _format_read_request(offset, limit, None),
+                        "error: tail must be an integer",
+                    )
+                )
+                files_with_errors += 1
                 continue
-            offset = 1  # tail takes precedence
+            offset = 1
 
-        # Reject directories — this tool is for files only
+        request = _format_read_request(offset, limit, tail)
+
+        # Reject directories — this tool is for files only.
         try:
             resolved = safe_resolve(
                 file_path,
@@ -1143,11 +1228,17 @@ def _read_files(
             )
             if resolved.exists() and resolved.is_dir():
                 sections.append(
-                    f"--- {file_path} ---\nerror: is a directory, use read_file to list directories"
+                    _build_read_multiple_files_section(
+                        file_path,
+                        "error",
+                        request,
+                        "error: is a directory, use read_file to list directories",
+                    )
                 )
+                files_with_errors += 1
                 continue
         except ValueError:
-            pass  # let _read_file handle the path error
+            pass  # Let _read_file return the path error in the normal format.
 
         result = _read_file(
             file_path=file_path,
@@ -1161,28 +1252,51 @@ def _read_files(
             tracker=tracker,
         )
 
-        header = f"--- {file_path} ---"
-        section = f"{header}\n{result}"
-        section_bytes = len(section.encode("utf-8")) + 1  # +1 for separator
+        if result.startswith("error: "):
+            section = _build_read_multiple_files_section(
+                file_path,
+                "error",
+                request,
+                result,
+            )
+            files_with_errors += 1
+        else:
+            content, content_truncated, next_offset = _split_read_result(result)
+            section = _build_read_multiple_files_section(
+                file_path,
+                "ok",
+                request,
+                content,
+                content_truncated=content_truncated,
+                next_offset=next_offset,
+            )
+            files_succeeded += 1
 
+        section_bytes = len(section.encode("utf-8")) + 2
         if total_bytes + section_bytes > _READ_FILES_BUDGET:
             if not sections:
-                # First file exceeds budget — include it anyway (partial
-                # content from _read_file's own line-level truncation) so the
-                # tool never returns zero content for a valid request.
                 sections.append(section)
                 total_bytes += section_bytes
-            truncated_at = i if sections[-1] != section else i + 1
+            skipped_files = len(files) - (i + 1)
             break
 
         sections.append(section)
         total_bytes += section_bytes
 
-    output = "\n\n".join(sections)
-    if truncated_at is not None:
-        remaining = len(files) - truncated_at
-        if remaining > 0:
-            output += f"\n\n[output truncated — {remaining} file(s) skipped due to size limit]"
+    header = "\n".join(
+        [
+            f"files_succeeded: {files_succeeded}",
+            f"files_with_errors: {files_with_errors}",
+            f"batch_truncated: {'true' if skipped_files > 0 else 'false'}",
+        ]
+    )
+    output = header
+    if sections:
+        output += "\n\n" + "\n\n".join(sections)
+    if skipped_files > 0:
+        output += (
+            f"\n\n[batch_truncated: {skipped_files} file(s) skipped due to size limit]"
+        )
     return output
 
 

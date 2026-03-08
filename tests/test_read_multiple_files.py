@@ -16,17 +16,24 @@ class TestReadMultipleFilesBasic:
             [{"file_path": "a.txt"}, {"file_path": "b.txt"}],
             str(tmp_path),
         )
-        assert "--- a.txt ---" in result
+        assert result.startswith("files_succeeded: 2")
+        assert "files_with_errors: 0" in result
+        assert "batch_truncated: false" in result
+        assert "=== FILE: a.txt ===" in result
+        assert "status: ok" in result
+        assert "request: offset=1 limit=2000" in result
+        assert "content_truncated: false" in result
         assert "1: alpha" in result
         assert "2: beta" in result
-        assert "--- b.txt ---" in result
+        assert "=== FILE: b.txt ===" in result
         assert "1: gamma" in result
         assert "2: delta" in result
 
     def test_single_file(self, tmp_path):
         (tmp_path / "one.txt").write_text("hello\n")
         result = _read_files([{"file_path": "one.txt"}], str(tmp_path))
-        assert "--- one.txt ---" in result
+        assert "files_succeeded: 1" in result
+        assert "=== FILE: one.txt ===" in result
         assert "1: hello" in result
 
     def test_sections_separated_by_blank_line(self, tmp_path):
@@ -36,7 +43,8 @@ class TestReadMultipleFilesBasic:
             [{"file_path": "a.txt"}, {"file_path": "b.txt"}],
             str(tmp_path),
         )
-        assert "\n\n" in result
+        assert "\n\n=== FILE: a.txt ===" in result
+        assert "\n\n=== FILE: b.txt ===" in result
 
 
 class TestReadMultipleFilesOffsetLimit:
@@ -53,6 +61,8 @@ class TestReadMultipleFilesOffsetLimit:
             ],
             str(tmp_path),
         )
+        assert "request: offset=3 limit=2" in result
+        assert "request: offset=8 limit=2" in result
         assert "3: line3" in result
         assert "4: line4" in result
         assert "8: line8" in result
@@ -66,9 +76,21 @@ class TestReadMultipleFilesOffsetLimit:
             [{"file_path": "data.txt", "tail": 3}],
             str(tmp_path),
         )
+        assert "request: tail=3" in result
         assert "8: line8" in result
         assert "10: line10" in result
         assert "1: line1" not in result
+
+    def test_next_offset_metadata_present_when_content_truncated(self, tmp_path):
+        f = tmp_path / "data.txt"
+        f.write_text("\n".join(f"line{i}" for i in range(1, 8)) + "\n")
+
+        result = _read_files(
+            [{"file_path": "data.txt", "offset": 2, "limit": 2}],
+            str(tmp_path),
+        )
+        assert "content_truncated: true" in result
+        assert "[next_offset=4]" in result
 
 
 class TestReadMultipleFilesErrors:
@@ -80,12 +102,13 @@ class TestReadMultipleFilesErrors:
             [{"file_path": "good.txt"}, {"file_path": "missing.txt"}],
             str(tmp_path),
         )
-        # Good file succeeds
-        assert "--- good.txt ---" in result
+        assert "files_succeeded: 1" in result
+        assert "files_with_errors: 1" in result
+        assert "=== FILE: good.txt ===" in result
         assert "1: ok" in result
-        # Missing file gets inline error
-        assert "--- missing.txt ---" in result
-        assert "error:" in result
+        assert "=== FILE: missing.txt ===" in result
+        assert "status: error" in result
+        assert "error: path does not exist: missing.txt" in result
 
     def test_empty_files_list(self, tmp_path):
         result = _read_files([], str(tmp_path))
@@ -99,6 +122,8 @@ class TestReadMultipleFilesErrors:
 
     def test_missing_file_path_key(self, tmp_path):
         result = _read_files([{"offset": 1}], str(tmp_path))
+        assert "=== FILE: file 1 ===" in result
+        assert "status: error" in result
         assert "error: missing file_path" in result
 
     def test_invalid_offset(self, tmp_path):
@@ -107,6 +132,7 @@ class TestReadMultipleFilesErrors:
             [{"file_path": "a.txt", "offset": "abc"}],
             str(tmp_path),
         )
+        assert "status: error" in result
         assert "error: offset must be an integer" in result
 
     def test_invalid_limit(self, tmp_path):
@@ -115,6 +141,7 @@ class TestReadMultipleFilesErrors:
             [{"file_path": "a.txt", "limit": "abc"}],
             str(tmp_path),
         )
+        assert "status: error" in result
         assert "error: limit must be an integer" in result
 
     def test_invalid_tail(self, tmp_path):
@@ -123,6 +150,7 @@ class TestReadMultipleFilesErrors:
             [{"file_path": "a.txt", "tail": "abc"}],
             str(tmp_path),
         )
+        assert "status: error" in result
         assert "error: tail must be an integer" in result
 
     def test_binary_file_inline_error(self, tmp_path):
@@ -133,6 +161,8 @@ class TestReadMultipleFilesErrors:
             str(tmp_path),
         )
         assert "1: ok" in result
+        assert "=== FILE: bin.dat ===" in result
+        assert "status: error" in result
         assert "binary file detected" in result
 
 
@@ -144,6 +174,7 @@ class TestReadMultipleFilesPathEscape:
             [{"file_path": "../../../etc/passwd"}],
             str(tmp_path),
         )
+        assert "status: error" in result
         assert "error:" in result
 
     def test_symlink_escape_rejected(self, tmp_path):
@@ -157,6 +188,7 @@ class TestReadMultipleFilesPathEscape:
             [{"file_path": "escape"}],
             str(tmp_path),
         )
+        assert "status: error" in result
         assert "error:" in result
 
 
@@ -164,7 +196,6 @@ class TestReadMultipleFilesTruncation:
     """Total output truncation."""
 
     def test_truncation_when_budget_exceeded(self, tmp_path):
-        # Create 10 files each large enough that they collectively exceed 50KB
         per_file_lines = 500
         big_content = "\n".join(f"{'x' * 200}" for _ in range(per_file_lines)) + "\n"
         num_files = 10
@@ -173,22 +204,22 @@ class TestReadMultipleFilesTruncation:
 
         files = [{"file_path": f"f{i:04d}.txt"} for i in range(num_files)]
         result = _read_files(files, str(tmp_path))
+        assert "batch_truncated: true" in result
+        assert "[batch_truncated:" in result
         assert "skipped due to size limit" in result
 
     def test_single_oversized_file_still_returns_content(self, tmp_path):
-        """A single file that exceeds the budget should still produce content."""
-        # Create a file larger than 50KB
         big_content = "\n".join(f"line{i} {'x' * 200}" for i in range(500)) + "\n"
         (tmp_path / "big.txt").write_text(big_content)
 
         result = _read_files([{"file_path": "big.txt"}], str(tmp_path))
-        assert "--- big.txt ---" in result
+        assert "=== FILE: big.txt ===" in result
+        assert "status: ok" in result
         assert "1: line0" in result
-        # Should not say files were skipped — the one file was included
-        assert "skipped" not in result
+        assert "batch_truncated: false" in result
+        assert "[batch_truncated:" not in result
 
     def test_oversized_first_of_two_includes_first(self, tmp_path):
-        """When the first file exceeds the budget, it's included but the rest are skipped."""
         big_content = "\n".join(f"line{i} {'x' * 200}" for i in range(500)) + "\n"
         (tmp_path / "big.txt").write_text(big_content)
         (tmp_path / "small.txt").write_text("hello\n")
@@ -197,10 +228,11 @@ class TestReadMultipleFilesTruncation:
             [{"file_path": "big.txt"}, {"file_path": "small.txt"}],
             str(tmp_path),
         )
-        assert "--- big.txt ---" in result
+        assert "=== FILE: big.txt ===" in result
         assert "1: line0" in result
-        assert "1 file(s) skipped" in result
-        assert "--- small.txt ---" not in result
+        assert "batch_truncated: true" in result
+        assert "[batch_truncated: 1 file(s) skipped due to size limit]" in result
+        assert "=== FILE: small.txt ===" not in result
 
 
 class TestReadMultipleFilesDirectories:
@@ -214,14 +246,17 @@ class TestReadMultipleFilesDirectories:
             [{"file_path": "good.txt"}, {"file_path": "subdir"}],
             str(tmp_path),
         )
-        assert "--- good.txt ---" in result
+        assert "=== FILE: good.txt ===" in result
         assert "1: ok" in result
-        assert "--- subdir ---" in result
+        assert "=== FILE: subdir ===" in result
+        assert "status: error" in result
         assert "is a directory" in result
 
     def test_directory_only(self, tmp_path):
         (tmp_path / "mydir").mkdir()
         result = _read_files([{"file_path": "mydir"}], str(tmp_path))
+        assert "=== FILE: mydir ===" in result
+        assert "status: error" in result
         assert "is a directory" in result
 
 
@@ -262,9 +297,10 @@ class TestReadMultipleFilesDispatch:
             {"files": [{"file_path": "a.txt"}, {"file_path": "b.txt"}]},
             str(tmp_path),
         )
-        assert "--- a.txt ---" in result
+        assert result.startswith("files_succeeded:")
+        assert "=== FILE: a.txt ===" in result
         assert "1: hello" in result
-        assert "--- b.txt ---" in result
+        assert "=== FILE: b.txt ===" in result
         assert "1: world" in result
 
     def test_dispatch_invalid_files_arg(self, tmp_path):
