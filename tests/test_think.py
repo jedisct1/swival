@@ -1003,6 +1003,7 @@ class TestLogging:
         from swival import fmt
 
         fmt.init(color=False, no_color=False)
+        fmt.reset_state()
 
     def test_verbose_logs_to_stderr(self, capsys):
         self._reinit_console()
@@ -1016,7 +1017,8 @@ class TestLogging:
             }
         )
         captured = capsys.readouterr()
-        assert "[think 1/3]" in captured.err
+        assert "[think]" in captured.err
+        assert "\u251c\u2500" in captured.err
         assert "Checking edge cases" in captured.err
 
     def test_quiet_no_stderr(self, capsys):
@@ -1046,8 +1048,8 @@ class TestLogging:
         )
         captured = capsys.readouterr()
         lines = captured.err.strip().split("\n")
-        assert len(lines) == 1
-        assert "Line one Line two Line four" in lines[0]
+        assert len(lines) == 2  # [think] header + tree node
+        assert "Line one Line two Line four" in lines[1]
 
     def test_revision_log_format(self, capsys):
         self._reinit_console()
@@ -1071,7 +1073,8 @@ class TestLogging:
             }
         )
         captured = capsys.readouterr()
-        assert "rev:1" in captured.err
+        assert "rev:" in captured.err
+        assert "Revised first" in captured.err
 
     def test_branch_log_format(self, capsys):
         self._reinit_console()
@@ -1096,8 +1099,8 @@ class TestLogging:
             }
         )
         captured = capsys.readouterr()
-        assert "branch:alt" in captured.err
-        assert "from:1" in captured.err
+        assert "[branch:alt]" in captured.err
+        assert "Alternative" in captured.err
 
 
 # ---------------------------------------------------------------------------

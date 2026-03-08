@@ -3297,6 +3297,7 @@ def repl_loop(
     )
     prompt_text = FormattedText([("bold fg:ansigreen", "swival> ")])
 
+    fmt.reset_state()
     if verbose:
         fmt.repl_banner()
 

@@ -14,6 +14,14 @@ from rich.text import Text
 
 _console = Console(stderr=True)
 
+_think_count = 0
+
+
+def reset_state() -> None:
+    """Reset all module-level rendering state (think tree counter, etc.)."""
+    global _think_count
+    _think_count = 0
+
 
 def init(*, color: bool = False, no_color: bool = False) -> None:
     """Reconfigure the module-level console from CLI flags.
@@ -34,6 +42,8 @@ def init(*, color: bool = False, no_color: bool = False) -> None:
 
 
 def turn_header(n: int, max_n: int, token_est: int) -> None:
+    reset_state()
+    _console.print()
     title = f"Turn {n}/{max_n} (~{token_est} tokens)"
     _console.print(Rule(title, style="cyan"))
 
@@ -71,6 +81,7 @@ def completion(turns: int, exit_code: str) -> None:
         _console.print(
             Text(f"  Agent finished: {turns} turns, exit={exit_code}", style="bold red")
         )
+    _console.print()
 
 
 # -- Tool calls --------------------------------------------------------------
@@ -175,16 +186,23 @@ def think_step(
     branch_id: str | None = None,
     branch_from_thought: int | None = None,
 ) -> None:
-    prefix = f"[think {number}/{total}"
-    if is_revision and revises_thought is not None:
-        prefix += f" rev:{revises_thought}"
-    if branch_id is not None and branch_from_thought is not None:
-        prefix += f" branch:{branch_id} from:{branch_from_thought}"
-    prefix += "]"
+    global _think_count
+
+    if _think_count == 0:
+        _console.print(Text("  [think]", style="yellow"))
+    _think_count += 1
 
     line = Text()
-    line.append(f"  {prefix}", style="yellow")
-    line.append(f" {text}", style="dim italic")
+    if is_revision and revises_thought is not None:
+        line.append("  \u2502  \u2514\u2500 ", style="yellow")
+        line.append(f"rev: {text}", style="dim italic")
+    elif branch_id is not None and branch_from_thought is not None:
+        line.append("  \u251c\u2500 ", style="yellow")
+        line.append(f"[branch:{branch_id}] ", style="yellow")
+        line.append(text, style="dim italic")
+    else:
+        line.append("  \u251c\u2500 ", style="yellow")
+        line.append(text, style="dim italic")
     _console.print(line)
 
 
@@ -234,9 +252,8 @@ _ASSISTANT_MAX_LINES = 100
 class _LeftBar:
     """Renders a child renderable with a blue left-border bar (│)."""
 
-    def __init__(self, renderable, max_lines: int = _ASSISTANT_MAX_LINES):
+    def __init__(self, renderable):
         self.renderable = renderable
-        self.max_lines = max_lines
 
     def __rich_console__(self, console, options):
         inner_width = max(options.max_width - 4, 20)
@@ -244,22 +261,25 @@ class _LeftBar:
         lines = console.render_lines(self.renderable, inner_options, pad=False)
         bar = Segment("  │ ", Style(color="blue"))
         newline = Segment("\n")
-        for i, line in enumerate(lines):
-            if i >= self.max_lines:
-                remaining = len(lines) - self.max_lines
-                yield Segment(
-                    f"  │ ... {remaining} more lines (truncated)\n",
-                    Style(color="blue", dim=True),
-                )
-                break
+        for line in lines:
             yield bar
             yield from line
             yield newline
 
 
 def assistant_text(text: str) -> None:
-    md = Markdown(text)
-    _console.print(_LeftBar(md), end="")
+    src_lines = text.split("\n")
+    if len(src_lines) > _ASSISTANT_MAX_LINES:
+        remaining = len(src_lines) - _ASSISTANT_MAX_LINES
+        text = "\n".join(src_lines[:_ASSISTANT_MAX_LINES])
+        md = Markdown(text)
+        _console.print(_LeftBar(md), end="")
+        _console.print(
+            Text(f"  │ ... {remaining} more lines (truncated)", style="blue dim")
+        )
+    else:
+        md = Markdown(text)
+        _console.print(_LeftBar(md), end="")
 
 
 # -- Reviewer feedback -------------------------------------------------------

@@ -13,9 +13,11 @@ def _capture(func, *args, **kwargs):
     buf = StringIO()
     old = fmt._console
     fmt._console = Console(file=buf, no_color=True, width=80)
+    fmt.reset_state()
     try:
         func(*args, **kwargs)
     finally:
+        fmt.reset_state()
         fmt._console = old
     return buf.getvalue()
 
@@ -25,9 +27,11 @@ def _capture_styled(func, *args, **kwargs):
     buf = StringIO()
     old = fmt._console
     fmt._console = Console(file=buf, force_terminal=True, width=80)
+    fmt.reset_state()
     try:
         func(*args, **kwargs)
     finally:
+        fmt.reset_state()
         fmt._console = old
     return buf.getvalue()
 
@@ -136,10 +140,27 @@ class TestGuardrail:
 
 
 class TestThinkStep:
-    def test_basic(self):
-        out = _capture(fmt.think_step, 2, 5, "Analyzing the problem")
-        assert "[think 2/5]" in out
+    def test_first_step_prints_header(self):
+        out = _capture(fmt.think_step, 1, 5, "Analyzing the problem")
+        assert "[think]" in out
+        assert "\u251c\u2500" in out
         assert "Analyzing the problem" in out
+
+    def test_subsequent_step_no_header(self):
+        buf = StringIO()
+        old = fmt._console
+        fmt._console = Console(file=buf, no_color=True, width=80)
+        fmt.reset_state()
+        try:
+            fmt.think_step(1, 3, "First thought")
+            fmt.think_step(2, 3, "Second thought")
+        finally:
+            fmt.reset_state()
+            fmt._console = old
+        out = buf.getvalue()
+        assert out.count("[think]") == 1
+        assert "First thought" in out
+        assert "Second thought" in out
 
     def test_revision(self):
         out = _capture(
@@ -150,7 +171,9 @@ class TestThinkStep:
             is_revision=True,
             revises_thought=1,
         )
-        assert "[think 3/5 rev:1]" in out
+        assert "\u2502" in out
+        assert "\u2514\u2500" in out
+        assert "rev:" in out
         assert "Correcting step 1" in out
 
     def test_branch(self):
@@ -162,8 +185,39 @@ class TestThinkStep:
             branch_id="alt",
             branch_from_thought=1,
         )
-        assert "branch:alt" in out
-        assert "from:1" in out
+        assert "\u251c\u2500" in out
+        assert "[branch:alt]" in out
+        assert "Alternative approach" in out
+
+    def test_reset_restarts_header(self):
+        buf = StringIO()
+        old = fmt._console
+        fmt._console = Console(file=buf, no_color=True, width=80)
+        fmt.reset_state()
+        try:
+            fmt.think_step(1, 2, "First")
+            fmt.reset_state()
+            fmt.think_step(1, 2, "After reset")
+        finally:
+            fmt.reset_state()
+            fmt._console = old
+        out = buf.getvalue()
+        assert out.count("[think]") == 2
+
+    def test_turn_header_resets_think(self):
+        buf = StringIO()
+        old = fmt._console
+        fmt._console = Console(file=buf, no_color=True, width=80)
+        fmt.reset_state()
+        try:
+            fmt.think_step(1, 2, "Before turn")
+            fmt.turn_header(2, 10, 1000)
+            fmt.think_step(1, 2, "After turn")
+        finally:
+            fmt.reset_state()
+            fmt._console = old
+        out = buf.getvalue()
+        assert out.count("[think]") == 2
 
 
 class TestAssistantText:
@@ -183,10 +237,31 @@ class TestAssistantText:
         assert "│" in out
         assert "print" in out
 
-    def test_truncation(self):
-        long_text = "\n\n".join(f"Paragraph {i}" for i in range(200))
+    def test_truncation_by_logical_lines(self):
+        long_text = "\n".join(f"Line {i}" for i in range(200))
         out = _capture(fmt.assistant_text, long_text)
         assert "truncated" in out
+        assert "100 more lines" in out
+        # First 100 lines rendered, rest truncated
+        assert "Line 0" in out
+        assert "Line 99" in out
+
+    def test_no_truncation_for_long_paragraph_on_narrow_terminal(self):
+        """A single long paragraph must not be truncated regardless of terminal width."""
+        words = " ".join(f"word{i}" for i in range(500))
+        buf = StringIO()
+        old = fmt._console
+        fmt._console = Console(file=buf, no_color=True, width=40)
+        fmt.reset_state()
+        try:
+            fmt.assistant_text(words)
+        finally:
+            fmt.reset_state()
+            fmt._console = old
+        out = buf.getvalue()
+        assert "truncated" not in out
+        assert "word0" in out
+        assert "word499" in out
 
     def test_empty_text(self):
         out = _capture(fmt.assistant_text, "")
@@ -237,6 +312,7 @@ class TestMarkupEscaping:
     def test_brackets_in_think_step(self):
         out = _capture(fmt.think_step, 1, 1, "Check if [link=http://x] works")
         assert "[link=http://x]" in out
+        assert "\u251c\u2500" in out
 
     def test_brackets_in_assistant_text(self):
         out = _capture(fmt.assistant_text, "The tag is [bold red]")
