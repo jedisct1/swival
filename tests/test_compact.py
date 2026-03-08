@@ -706,6 +706,38 @@ class TestContextOverflowClassifier:
                     "http://localhost", "model", [], 100, 0.1, 1.0, None, None, False
                 )
 
+    def test_api_error_with_context_keywords(self):
+        """call_llm raises ContextOverflowError for APIError with context keywords."""
+        import litellm
+
+        with patch("litellm.completion") as mock_comp:
+            mock_comp.side_effect = litellm.APIError(
+                message="ChatgptException - Your input exceeds the context window of this model.",
+                status_code=500,
+                model="test",
+                llm_provider="openai",
+            )
+            with pytest.raises(ContextOverflowError):
+                call_llm(
+                    "http://localhost", "model", [], 100, 0.1, 1.0, None, None, False
+                )
+
+    def test_api_error_without_context_keywords(self):
+        """call_llm raises AgentError for APIError without context keywords."""
+        import litellm
+
+        with patch("litellm.completion") as mock_comp:
+            mock_comp.side_effect = litellm.APIError(
+                message="internal server error",
+                status_code=500,
+                model="test",
+                llm_provider="openai",
+            )
+            with pytest.raises(AgentError):
+                call_llm(
+                    "http://localhost", "model", [], 100, 0.1, 1.0, None, None, False
+                )
+
     def test_call_llm_omits_tool_choice_when_tools_none(self):
         """When tools=None, call_llm should not include tool_choice in kwargs."""
         with patch("litellm.completion") as mock_comp:

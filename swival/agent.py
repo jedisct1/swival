@@ -1404,6 +1404,9 @@ def call_llm(
                 return choice.message, choice.finish_reason
         raise AgentError(f"LLM call failed: {e}")
     except Exception as e:
+        msg_text = str(e)
+        if _CONTEXT_OVERFLOW_RE.search(msg_text):
+            raise ContextOverflowError(f"context window exceeded (inferred): {e}")
         raise AgentError(f"LLM call failed: {e}")
 
     choice = _pick_best_choice(response.choices)
