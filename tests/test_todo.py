@@ -422,8 +422,9 @@ class TestLogging:
         state = TodoState(verbose=True)
         state.process({"action": "add", "task": "Fix the bug"})
         captured = capsys.readouterr()
-        assert "[todo +1]" in captured.err
+        assert "[todo]" in captured.err
         assert "Fix the bug" in captured.err
+        assert "1 remaining" in captured.err
 
     def test_verbose_done_logs(self, capsys):
         self._reinit_console()
@@ -432,7 +433,9 @@ class TestLogging:
         _ = capsys.readouterr()  # discard add output
         state.process({"action": "done", "task": "Fix the bug"})
         captured = capsys.readouterr()
-        assert "[todo \u2713]" in captured.err
+        assert "[todo]" in captured.err
+        assert "0 remaining" in captured.err
+        assert "\u2611" in captured.err  # done checkbox
 
     def test_verbose_clear_logs(self, capsys):
         self._reinit_console()
@@ -442,7 +445,41 @@ class TestLogging:
         _ = capsys.readouterr()
         state.process({"action": "clear"})
         captured = capsys.readouterr()
-        assert "[todo cleared]" in captured.err
+        assert "[todo]" in captured.err
+        assert "2 items removed" in captured.err
+
+    def test_verbose_remove_logs(self, capsys):
+        self._reinit_console()
+        state = TodoState(verbose=True)
+        state.process({"action": "add", "task": "A"})
+        state.process({"action": "add", "task": "B"})
+        _ = capsys.readouterr()
+        state.process({"action": "remove", "task": "A"})
+        captured = capsys.readouterr()
+        assert "[todo]" in captured.err
+        assert "1 remaining" in captured.err
+        # Removed item should not appear
+        assert "\u2610" in captured.err  # pending checkbox for B
+
+    def test_verbose_duplicate_add_shows_note(self, capsys):
+        self._reinit_console()
+        state = TodoState(verbose=True)
+        state.process({"action": "add", "task": "Write unit tests"})
+        _ = capsys.readouterr()
+        state.process({"action": "add", "task": "Write unit tests"})
+        captured = capsys.readouterr()
+        assert "[todo]" in captured.err
+        assert "Already listed" in captured.err
+        assert "Write unit tests" in captured.err
+
+    def test_verbose_clear_empty(self, capsys):
+        self._reinit_console()
+        state = TodoState(verbose=True)
+        state.process({"action": "clear"})
+        captured = capsys.readouterr()
+        assert "[todo]" in captured.err
+        assert "0 items removed" in captured.err
+        assert "0 remaining" in captured.err
 
     def test_quiet_no_stderr(self, capsys):
         self._reinit_console()

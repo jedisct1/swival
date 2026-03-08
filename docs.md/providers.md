@@ -140,12 +140,12 @@ Authentication uses an OAuth device-code flow handled by LiteLLM -- on first use
 `--model` is required. There is no default model.
 
 ```sh
-swival --provider chatgpt --model gpt-5.2-codex "task"
+swival --provider chatgpt --model gpt-5.4 "task"
 ```
 
 On the first run, you will see a device-code prompt with a URL and a code to enter in your browser. Once you complete the flow, the OAuth tokens are stored at `~/.config/litellm/chatgpt/auth.json` and refreshed automatically.
 
-Currently available models are `gpt-5.2-codex` and `gpt-5.2`. Use whichever your ChatGPT Plus or Pro plan has access to.
+Currently available models are `gpt-5.4`, `gpt-5.2-codex`, and `gpt-5.2`. Use whichever your ChatGPT Plus or Pro plan has access to.
 
 ```sh
 swival --provider chatgpt --model gpt-5.2 "task"
@@ -159,6 +159,12 @@ swival --provider chatgpt --model gpt-5.2 "task"
 ```
 
 The `--top-p`, `--seed`, and `tool_choice` parameters are not supported by the ChatGPT Plus/Pro backend. Swival drops them automatically when using this provider.
+
+Models like `gpt-5.4` support tunable reasoning effort. Use `--reasoning-effort` to control how much the model thinks before responding:
+
+```sh
+swival --provider chatgpt --model gpt-5.4 --reasoning-effort high "task"
+```
 
 All OAuth handling happens inside LiteLLM. Swival normalizes the model to `chatgpt/<model_id>` and passes it through. No other configuration is needed.
 
@@ -186,6 +192,8 @@ extra_body = { chat_template_kwargs = { enable_thinking = false } }
 ```
 
 The dictionary is forwarded as `extra_body` to LiteLLM, which passes it through to the server. Refer to your model or server documentation for supported parameters.
+
+For reasoning effort specifically, Swival provides a dedicated `--reasoning-effort` flag instead of requiring `extra_body`. See [Customization](customization.md) for details.
 
 ## Adding More Providers Later
 

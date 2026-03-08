@@ -29,6 +29,7 @@ allowed_dirs_ro = ["/opt/zig/lib/std"]
 proactive_summaries = true
 quiet = false
 extra_body = { chat_template_kwargs = { enable_thinking = false } }
+reasoning_effort = "high"
 
 # Reviewer settings
 reviewer = "swival --reviewer-mode"
@@ -42,7 +43,7 @@ For the `chatgpt` provider (ChatGPT Plus/Pro subscriptions), no API key is neede
 
 ```toml
 provider = "chatgpt"
-model = "gpt-5.2-codex"
+model = "gpt-5.4"
 ```
 
 Relative paths in `allowed_dirs`, `allowed_dirs_ro`, `skills_dir`, `objective`, and `verify` resolve against the config file's parent directory, not the working directory. Tilde paths like `~/projects` expand to the home directory.
@@ -88,6 +89,12 @@ Use `--no-instructions` to skip all instruction files (both CLAUDE.md and AGENTS
 
 ```sh
 swival --no-instructions "task"
+```
+
+Use `--no-memory` to skip loading auto-memory from `.swival/memory/`.
+
+```sh
+swival --no-memory "task"
 ```
 
 If you set `--system-prompt`, instruction files are also skipped because you are providing the full prompt text directly.
@@ -153,6 +160,30 @@ session = Session(extra_body={"chat_template_kwargs": {"enable_thinking": False}
 ```
 
 The dictionary is forwarded as `extra_body` to the LiteLLM completion call, which passes it through to the provider's API. Refer to your model's documentation for supported parameters.
+
+## Reasoning Effort
+
+Some models support a tunable reasoning level that controls how much effort the model puts into thinking before responding. This is a first-class parameter in Swival, separate from `extra_body`.
+
+On the command line:
+
+```sh
+swival --provider chatgpt --model gpt-5.4 --reasoning-effort high "task"
+```
+
+In a config file:
+
+```toml
+reasoning_effort = "high"
+```
+
+In the library API:
+
+```python
+session = Session(reasoning_effort="high")
+```
+
+Valid levels are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `default`. Not all models support this parameter — when used with a model that doesn't support it, the behavior depends on the provider (it may be ignored or cause an error). Only set it when you know your model supports it.
 
 ## Turn And Token Limits
 

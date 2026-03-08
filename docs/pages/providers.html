@@ -69,8 +69,8 @@
 <p>If you pass <code>--max-context-tokens</code>, Swival may reload the model through LM Studio's <code>/api/v1/models/load</code> endpoint.</p>
 <pre><code class="language-sh">swival --max-context-tokens 131072 &quot;task&quot;
 </code></pre>
-<p>If the requested value already matches the loaded context length, no reload happens.
-When a reload is required, it can take noticeable time depending on model size and hardware.</p>
+<p>If the requested value already matches the loaded context length, no reload happens.</p>
+<p>When a reload is required, it can take noticeable time depending on model size and hardware.</p>
 <p>Internally, LM Studio calls are routed through LiteLLM as an OpenAI-compatible endpoint. Swival sends the model as <code>openai/&lt;model_id&gt;</code>, sets <code>api_base</code> to <code>&lt;base_url&gt;/v1</code>, and uses the placeholder API key <code>lm-studio</code>.</p>
 <h2 id="huggingface-inference-api">HuggingFace Inference API</h2>
 <p>For HuggingFace, <code>--model</code> is required and must be in <code>org/model</code> format. Authentication comes from <code>HF_TOKEN</code> by default or <code>--api-key</code> if you pass one explicitly.</p>
@@ -103,7 +103,8 @@ swival --provider openrouter --model z-ai/glm-5 &quot;task&quot;
 <pre><code class="language-sh">swival --provider openrouter --model z-ai/glm-5 \
     --max-context-tokens 131072 &quot;task&quot;
 </code></pre>
-<p>Internally, Swival normalizes OpenRouter models to LiteLLM's <code>openrouter/...</code> format. If the model identifier starts with the literal double prefix <code>openrouter/openrouter/</code>, Swival strips the redundant prefix so LiteLLM does not see a stutter. Any other <code>openrouter/</code> prefix (e.g. <code>openrouter/z-ai/glm-5</code>) is treated as part of the model path and gets prefixed normally, so you should pass bare identifiers like <code>z-ai/glm-5</code>.</p>
+<p>Internally, Swival normalizes OpenRouter models to LiteLLM's <code>openrouter/...</code> format. If the model identifier starts with the literal double prefix <code>openrouter/openrouter/</code>, Swival strips the redundant prefix so LiteLLM does not see a stutter.</p>
+<p>Any other <code>openrouter/</code> prefix (e.g. <code>openrouter/z-ai/glm-5</code>) is treated as part of the model path and gets prefixed normally, so you should pass bare identifiers like <code>z-ai/glm-5</code>.</p>
 <h2 id="generic-openai-compatible">Generic (OpenAI-compatible)</h2>
 <p>The generic provider works with any server that exposes an OpenAI-compatible chat completions endpoint. This covers mlx_lm.server, ollama, llama.cpp, vLLM, LocalAI, text-generation-webui, and similar tools.</p>
 <p>Both <code>--model</code> and <code>--base-url</code> are required. Pass the server's root URL without <code>/v1</code> — Swival appends it automatically. If your URL already ends in <code>/v1</code>, that's fine too.</p>
@@ -135,12 +136,13 @@ swival --provider generic \
 <p>There is no model auto-discovery and no context window reload. Set <code>--max-context-tokens</code> manually if you need Swival to know the window size.</p>
 <p>Internally, generic calls are routed through LiteLLM as <code>openai/&lt;model_id&gt;</code> with <code>api_base</code> pointing at your server's <code>/v1</code> path.</p>
 <h2 id="chatgpt-pluspro">ChatGPT Plus/Pro</h2>
-<p>The <code>chatgpt</code> provider lets you use OpenAI models through your existing ChatGPT Plus or ChatGPT Pro subscription, without needing a separate API key. Authentication uses an OAuth device-code flow handled by LiteLLM -- on first use, LiteLLM prints a device code and a verification URL to your terminal. Open the URL, enter the code, and authorize with your ChatGPT account. The resulting tokens are cached locally and refreshed automatically on subsequent runs.</p>
+<p>The <code>chatgpt</code> provider lets you use OpenAI models through your existing ChatGPT Plus or ChatGPT Pro subscription, without needing a separate API key.</p>
+<p>Authentication uses an OAuth device-code flow handled by LiteLLM -- on first use, LiteLLM prints a device code and a verification URL to your terminal. Open the URL, enter the code, and authorize with your ChatGPT account. The resulting tokens are cached locally and refreshed automatically on subsequent runs.</p>
 <p><code>--model</code> is required. There is no default model.</p>
-<pre><code class="language-sh">swival --provider chatgpt --model gpt-5.2-codex &quot;task&quot;
+<pre><code class="language-sh">swival --provider chatgpt --model gpt-5.4 &quot;task&quot;
 </code></pre>
 <p>On the first run, you will see a device-code prompt with a URL and a code to enter in your browser. Once you complete the flow, the OAuth tokens are stored at <code>~/.config/litellm/chatgpt/auth.json</code> and refreshed automatically.</p>
-<p>Currently available models are <code>gpt-5.2-codex</code> and <code>gpt-5.2</code>. Use whichever your ChatGPT Plus or Pro plan has access to.</p>
+<p>Currently available models are <code>gpt-5.4</code>, <code>gpt-5.2-codex</code>, and <code>gpt-5.2</code>. Use whichever your ChatGPT Plus or Pro plan has access to.</p>
 <pre><code class="language-sh">swival --provider chatgpt --model gpt-5.2 &quot;task&quot;
 </code></pre>
 <p>Two environment variables are available for advanced use. <code>CHATGPT_TOKEN_DIR</code> overrides the default token storage directory. <code>CHATGPT_API_BASE</code> overrides the API base URL.</p>
@@ -148,6 +150,9 @@ swival --provider generic \
 swival --provider chatgpt --model gpt-5.2 &quot;task&quot;
 </code></pre>
 <p>The <code>--top-p</code>, <code>--seed</code>, and <code>tool_choice</code> parameters are not supported by the ChatGPT Plus/Pro backend. Swival drops them automatically when using this provider.</p>
+<p>Models like <code>gpt-5.4</code> support tunable reasoning effort. Use <code>--reasoning-effort</code> to control how much the model thinks before responding:</p>
+<pre><code class="language-sh">swival --provider chatgpt --model gpt-5.4 --reasoning-effort high &quot;task&quot;
+</code></pre>
 <p>All OAuth handling happens inside LiteLLM. Swival normalizes the model to <code>chatgpt/&lt;model_id&gt;</code> and passes it through. No other configuration is needed.</p>
 <h2 id="extra-provider-parameters">Extra Provider Parameters</h2>
 <p>Some models and servers accept parameters that go beyond the standard OpenAI API. Use <code>--extra-body</code> to pass them through. The value is a JSON object that gets forwarded directly to the API call.</p>
@@ -165,6 +170,7 @@ model = &quot;Qwen/Qwen3.5-35B-A3B&quot;
 extra_body = { chat_template_kwargs = { enable_thinking = false } }
 </code></pre>
 <p>The dictionary is forwarded as <code>extra_body</code> to LiteLLM, which passes it through to the server. Refer to your model or server documentation for supported parameters.</p>
+<p>For reasoning effort specifically, Swival provides a dedicated <code>--reasoning-effort</code> flag instead of requiring <code>extra_body</code>. See <a href="customization.html">Customization</a> for details.</p>
 <h2 id="adding-more-providers-later">Adding More Providers Later</h2>
 <p>Because API calls are already abstracted behind LiteLLM, adding a provider is mostly a matter of argument validation, model normalization, and credential wiring. The provider-specific branch in <code>call_llm()</code> is intentionally compact so new providers can be added without changing the rest of the agent loop.</p>
 <p>In practice, each provider branch is only about ten lines of routing logic.</p>

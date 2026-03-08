@@ -71,7 +71,7 @@ API key needed.
 ```sh
 uv tool install swival
 swival "Refactor the error handling in src/api.py" \
-    --provider chatgpt --model gpt-5.2-codex
+    --provider chatgpt --model gpt-5.4
 ```
 
 On first use, a device code and URL are printed to your terminal. Open the URL,
@@ -159,6 +159,8 @@ Full documentation is available at [swival.dev](https://swival.dev/).
 - [Skills](docs.md/skills.md) -- creating and using SKILL.md-based agent skills
 - [Customization](docs.md/customization.md) -- config files, project instructions,
   system prompt overrides, tuning parameters
+- [Context Management](docs.md/context-management.md) -- compaction, snapshots,
+  knowledge survival, and how Swival handles tight context windows
 - [Providers](docs.md/providers.md) -- LM Studio, HuggingFace, OpenRouter,
   ChatGPT Plus/Pro, and generic OpenAI-compatible server configuration
 - [MCP](docs.md/mcp.md) -- connecting external tool servers via the Model Context

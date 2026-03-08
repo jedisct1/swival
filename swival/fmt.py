@@ -184,6 +184,32 @@ def todo_update(action: str, detail: str) -> None:
     _console.print(line)
 
 
+def todo_list(
+    items: list,
+    action: str | None = None,
+    changed_task: str | None = None,
+    note: str | None = None,
+) -> None:
+    """Render the full todo checklist with an optional action annotation."""
+    remaining = sum(1 for i in items if not i.done)
+    header = Text()
+    header.append("  [todo]", style="yellow")
+    header.append(f" {remaining} remaining", style="dim")
+    if note:
+        header.append(f"  ({note})", style="dim italic")
+    _console.print(header)
+    for item in items:
+        line = Text()
+        is_changed = changed_task is not None and item.text == changed_task
+        if item.done:
+            line.append("  \u2611 ", style="dim")
+            line.append(item.text, style="bold dim" if is_changed else "dim")
+        else:
+            line.append("  \u2610 ", style="")
+            line.append(item.text, style="bold" if is_changed else "")
+        _console.print(line)
+
+
 # -- Assistant text ----------------------------------------------------------
 
 

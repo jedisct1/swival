@@ -71,10 +71,12 @@ class Session:
         sandbox_auto_session: bool = True,
         read_guard: bool = True,
         history: bool = True,
+        memory: bool = True,
         config_dir: "Path | None" = None,
         proactive_summaries: bool = False,
         mcp_servers: dict | None = None,
         extra_body: dict | None = None,
+        reasoning_effort: str | None = None,
     ):
         self.base_dir = base_dir
         self.config_dir = config_dir
@@ -105,8 +107,10 @@ class Session:
         self.sandbox_auto_session = sandbox_auto_session
         self.read_guard = read_guard
         self.history = history
+        self.memory = memory
         self.mcp_servers = mcp_servers
         self.extra_body = extra_body
+        self.reasoning_effort = reasoning_effort
 
         # Setup state (cached after first _setup())
         self._setup_done = False
@@ -165,6 +169,8 @@ class Session:
         )
         if self.extra_body is not None:
             self._llm_kwargs["extra_body"] = self.extra_body
+        if self.reasoning_effort is not None:
+            self._llm_kwargs["reasoning_effort"] = self.reasoning_effort
 
         # Resolve --add-dir and --add-dir-ro paths
         self._allowed_dir_paths = _resolve_dir_list(self.allowed_dirs, "allowed_dirs")
@@ -215,6 +221,7 @@ class Session:
             system_prompt=self.system_prompt,
             no_system_prompt=self.no_system_prompt,
             no_instructions=self.no_instructions,
+            no_memory=not self.memory,
             skills_catalog=self._skills_catalog,
             yolo=self.yolo,
             resolved_commands=self._resolved_commands,

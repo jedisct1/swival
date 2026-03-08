@@ -23,6 +23,7 @@ _UNSET = object()  # Sentinel for "not set by CLI"
 # --- Schema ---
 
 SANDBOX_MODES = ("builtin", "agentfs")
+REASONING_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh", "default")
 
 CONFIG_KEYS: dict[str, type | tuple[type, ...]] = {
     "provider": str,
@@ -50,6 +51,7 @@ CONFIG_KEYS: dict[str, type | tuple[type, ...]] = {
     "no_skills": bool,
     "skills_dir": list,
     "no_history": bool,
+    "no_memory": bool,
     "color": bool,
     "quiet": bool,
     "reviewer": str,
@@ -60,6 +62,7 @@ CONFIG_KEYS: dict[str, type | tuple[type, ...]] = {
     "proactive_summaries": bool,
     "no_mcp": bool,
     "extra_body": dict,
+    "reasoning_effort": str,
 }
 
 _LIST_OF_STR_KEYS = {
@@ -102,6 +105,7 @@ _ARGPARSE_DEFAULTS: dict[str, Any] = {
     "no_skills": False,
     "skills_dir": [],
     "no_history": False,
+    "no_memory": False,
     "color": False,
     "no_color": False,
     "quiet": False,
@@ -114,6 +118,7 @@ _ARGPARSE_DEFAULTS: dict[str, Any] = {
     "no_mcp": False,
     "mcp_config": None,
     "extra_body": None,
+    "reasoning_effort": None,
 }
 
 
@@ -173,6 +178,16 @@ def _validate_config(config: dict, source: str) -> None:
         raise ConfigError(
             f"{source}: 'sandbox' must be one of {SANDBOX_MODES!r}, "
             f"got {config['sandbox']!r}"
+        )
+
+    # Validate reasoning_effort enum value
+    if (
+        "reasoning_effort" in config
+        and config["reasoning_effort"] not in REASONING_LEVELS
+    ):
+        raise ConfigError(
+            f"{source}: 'reasoning_effort' must be one of {REASONING_LEVELS!r}, "
+            f"got {config['reasoning_effort']!r}"
         )
 
     # Mutual exclusion: system_prompt + no_system_prompt
@@ -499,6 +514,7 @@ def config_to_session_kwargs(config: dict) -> dict:
     _INVERT_KEYS = {
         "no_read_guard": "read_guard",
         "no_history": "history",
+        "no_memory": "memory",
         "no_sandbox_auto_session": "sandbox_auto_session",
         "quiet": "verbose",
     }
@@ -536,6 +552,7 @@ def generate_config(project: bool = False) -> str:
         "# top_p = 1.0",
         "# seed = 42",
         "# extra_body = { chat_template_kwargs = { enable_thinking = false } }",
+        '# reasoning_effort = "medium"     # "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "default"',
         "",
         "# --- Agent behaviour ---",
         "# max_turns = 50",
@@ -558,6 +575,7 @@ def generate_config(project: bool = False) -> str:
         "# no_skills = false",
         '# skills_dir = ["../my-skills"]',
         "# no_history = false",
+        "# no_memory = false",
         "",
         "# --- MCP servers ---",
         "# no_mcp = false",
