@@ -62,6 +62,61 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "read_multiple_files",
+            "description": (
+                "Read multiple files in one call. Returns line-numbered contents "
+                "grouped by file. Each file can have its own offset/limit/tail. "
+                "Per-file errors are reported inline without failing the batch. "
+                "Use this instead of multiple read_file calls when you already "
+                "know which files you need."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "files": {
+                        "type": "array",
+                        "description": "List of file read requests.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "file_path": {
+                                    "type": "string",
+                                    "description": "Path to the file to read.",
+                                },
+                                "offset": {
+                                    "type": "integer",
+                                    "description": (
+                                        "1-based line number to start from. Defaults to 1."
+                                    ),
+                                    "default": 1,
+                                },
+                                "limit": {
+                                    "type": "integer",
+                                    "description": (
+                                        "Maximum number of lines to return. Defaults to 2000."
+                                    ),
+                                    "default": 2000,
+                                },
+                                "tail": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "description": (
+                                        "Return the last N lines. When set, offset is ignored."
+                                    ),
+                                },
+                            },
+                            "required": ["file_path"],
+                        },
+                        "maxItems": 20,
+                    },
+                },
+                "required": ["files"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "write_file",
             "description": (
                 "Create or overwrite a file. Parent directories are created automatically. "
@@ -330,6 +385,7 @@ _TOOL_ALIASES = {
     "find_files": "list_files",
     "create_file": "write_file",
     "file_read": "read_file",
+    "read_files": "read_multiple_files",
     "file_write": "write_file",
     "file_edit": "edit_file",
 }
@@ -1024,6 +1080,110 @@ def _read_file(
         next_offset = start + lines_emitted + 1  # 1-based
         result += f"\n[{remaining} more lines, use offset={next_offset} to continue]"
     return result
+
+
+_MAX_READ_FILES = 20
+_READ_FILES_BUDGET = MAX_OUTPUT_BYTES  # total bytes across all files
+
+
+def _read_files(
+    files: list[dict],
+    base_dir: str,
+    extra_read_roots: list[Path] = (),
+    extra_write_roots: list[Path] = (),
+    unrestricted: bool = False,
+    tracker=None,
+) -> str:
+    """Read multiple files and return results grouped by file."""
+    if not files:
+        return "error: files list is empty"
+    if len(files) > _MAX_READ_FILES:
+        return f"error: too many files requested ({len(files)}), maximum is {_MAX_READ_FILES}"
+
+    sections = []
+    total_bytes = 0
+    truncated_at = None
+
+    for i, spec in enumerate(files):
+        file_path = spec.get("file_path")
+        if not file_path:
+            sections.append(f"--- file {i + 1} ---\nerror: missing file_path")
+            continue
+
+        offset = spec.get("offset", 1)
+        limit = spec.get("limit", 2000)
+        tail = spec.get("tail")
+
+        try:
+            offset = int(offset)
+        except (ValueError, TypeError):
+            sections.append(f"--- {file_path} ---\nerror: offset must be an integer")
+            continue
+        try:
+            limit = int(limit)
+        except (ValueError, TypeError):
+            sections.append(f"--- {file_path} ---\nerror: limit must be an integer")
+            continue
+        if tail is not None:
+            try:
+                tail = int(tail)
+            except (ValueError, TypeError):
+                sections.append(f"--- {file_path} ---\nerror: tail must be an integer")
+                continue
+            offset = 1  # tail takes precedence
+
+        # Reject directories — this tool is for files only
+        try:
+            resolved = safe_resolve(
+                file_path,
+                base_dir,
+                extra_read_roots=extra_read_roots,
+                extra_write_roots=extra_write_roots,
+                unrestricted=unrestricted,
+            )
+            if resolved.exists() and resolved.is_dir():
+                sections.append(
+                    f"--- {file_path} ---\nerror: is a directory, use read_file to list directories"
+                )
+                continue
+        except ValueError:
+            pass  # let _read_file handle the path error
+
+        result = _read_file(
+            file_path=file_path,
+            base_dir=base_dir,
+            offset=offset,
+            limit=limit,
+            tail=tail,
+            extra_read_roots=extra_read_roots,
+            extra_write_roots=extra_write_roots,
+            unrestricted=unrestricted,
+            tracker=tracker,
+        )
+
+        header = f"--- {file_path} ---"
+        section = f"{header}\n{result}"
+        section_bytes = len(section.encode("utf-8")) + 1  # +1 for separator
+
+        if total_bytes + section_bytes > _READ_FILES_BUDGET:
+            if not sections:
+                # First file exceeds budget — include it anyway (partial
+                # content from _read_file's own line-level truncation) so the
+                # tool never returns zero content for a valid request.
+                sections.append(section)
+                total_bytes += section_bytes
+            truncated_at = i if sections[-1] != section else i + 1
+            break
+
+        sections.append(section)
+        total_bytes += section_bytes
+
+    output = "\n\n".join(sections)
+    if truncated_at is not None:
+        remaining = len(files) - truncated_at
+        if remaining > 0:
+            output += f"\n\n[output truncated — {remaining} file(s) skipped due to size limit]"
+    return output
 
 
 def _write_file(
@@ -1805,6 +1965,18 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
             offset=offset,
             limit=limit,
             tail=tail,
+            extra_read_roots=skill_read_roots,
+            extra_write_roots=extra_write_roots,
+            unrestricted=yolo,
+            tracker=file_tracker,
+        )
+    elif name == "read_multiple_files":
+        files = args.get("files")
+        if not isinstance(files, list):
+            return "error: 'files' must be an array"
+        return _read_files(
+            files=files,
+            base_dir=base_dir,
             extra_read_roots=skill_read_roots,
             extra_write_roots=extra_write_roots,
             unrestricted=yolo,

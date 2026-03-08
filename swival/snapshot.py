@@ -18,6 +18,7 @@ SNAPSHOT_RECAP_PREFIX = "[snapshot:"
 READ_ONLY_TOOLS = frozenset(
     {
         "read_file",
+        "read_multiple_files",
         "list_files",
         "grep",
         "fetch_url",

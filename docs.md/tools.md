@@ -10,6 +10,16 @@ If output is truncated, Swival appends a continuation hint with the next offset.
 
 Large responses are capped at 50 KB per call, and individual long lines are truncated at 2,000 characters. Directory reads return sorted entries and mark subdirectories with a trailing `/`.
 
+## `read_multiple_files`
+
+`read_multiple_files` reads several files in a single call. Each entry in the `files` array can specify its own `offset`, `limit`, and `tail`, just like `read_file`. Results are grouped by file with `--- path ---` headers and the same line-numbered format as `read_file`.
+
+Per-file errors (missing files, binary files, path escapes) are reported inline without failing the batch. The total response is capped at 50 KB across all files. If the budget runs out mid-batch, the files already read are returned along with a truncation notice. A single oversized file is always included (with its own line-level truncation) so the tool never returns empty content for a valid request.
+
+The batch is limited to 20 files per call. Directories are rejected with an inline error — use `read_file` for directory listings.
+
+`read_multiple_files` participates in the read-before-write guard the same way `read_file` does: every file successfully read is recorded.
+
 ## `write_file`
 
 `write_file` creates or overwrites files and automatically creates missing parent directories. It supports two mutually exclusive modes. In normal write mode, you provide `content`. In move mode, you provide `move_from` and Swival performs an atomic rename when possible.
@@ -104,7 +114,7 @@ Calling `save` before `restore` is not required. The system automatically create
 
 ### Dirty Scopes
 
-Tools are classified as read-only or mutating. Read-only tools (`read_file`, `list_files`, `grep`, `fetch_url`, `think`, `todo`, `snapshot`) are safe to collapse because they don't change anything on disk. Mutating tools (`write_file`, `edit_file`, `delete_file`, `run_command`, and unknown MCP tools) dirty the scope.
+Tools are classified as read-only or mutating. Read-only tools (`read_file`, `read_multiple_files`, `list_files`, `grep`, `fetch_url`, `think`, `todo`, `snapshot`) are safe to collapse because they don't change anything on disk. Mutating tools (`write_file`, `edit_file`, `delete_file`, `run_command`, and unknown MCP tools) dirty the scope.
 
 If the scope contains mutating tool calls, `restore` fails with a list of the dirty tools. Pass `force=true` to override when you are confident the summary captures the mutations.
 

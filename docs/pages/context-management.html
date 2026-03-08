@@ -100,7 +100,7 @@
 <h2 id="reactive-compaction">Reactive Compaction</h2>
 <p>When the context overflows — either detected before the LLM call or reported by the provider afterward — Swival runs up to three compaction levels in sequence.</p>
 <h3 id="level-1-shrink-tool-results">Level 1: Shrink Tool Results</h3>
-<p>The gentlest approach. Old tool results (everything except the two most recent turns) are replaced with structured summaries. A file read becomes <code>[read_file: path, N lines — content compacted]</code>. A grep becomes <code>[grep: 'pattern' in path, ~N matches — compacted]</code>. Command output keeps its first and last 200 characters.</p>
+<p>The gentlest approach. Old tool results (everything except the two most recent turns) are replaced with structured summaries. A file read becomes <code>[read_file: path, N lines — content compacted]</code>. A batched read becomes <code>[read_multiple_files: path1, path2, …, N chars — compacted]</code>. A grep becomes <code>[grep: 'pattern' in path, ~N matches — compacted]</code>. Command output keeps its first and last 200 characters.</p>
 <p>The agent retains all its turns and the structure of what it did. It loses the detailed content but keeps the metadata.</p>
 <h3 id="level-2-drop-low-importance-turns">Level 2: Drop Low-Importance Turns</h3>
 <p>If shrinking results wasn't enough, Swival starts dropping entire turns from the middle of the conversation. Not all turns are equal — each one gets an importance score:</p>

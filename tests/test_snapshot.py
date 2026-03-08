@@ -718,6 +718,7 @@ class TestReadOnlyAllowlist:
     def test_all_expected_tools_in_allowlist(self):
         expected = {
             "read_file",
+            "read_multiple_files",
             "list_files",
             "grep",
             "fetch_url",

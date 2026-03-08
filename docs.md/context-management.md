@@ -71,7 +71,7 @@ When the context overflows — either detected before the LLM call or reported b
 
 ### Level 1: Shrink Tool Results
 
-The gentlest approach. Old tool results (everything except the two most recent turns) are replaced with structured summaries. A file read becomes `[read_file: path, N lines — content compacted]`. A grep becomes `[grep: 'pattern' in path, ~N matches — compacted]`. Command output keeps its first and last 200 characters.
+The gentlest approach. Old tool results (everything except the two most recent turns) are replaced with structured summaries. A file read becomes `[read_file: path, N lines — content compacted]`. A batched read becomes `[read_multiple_files: path1, path2, …, N chars — compacted]`. A grep becomes `[grep: 'pattern' in path, ~N matches — compacted]`. Command output keeps its first and last 200 characters.
 
 The agent retains all its turns and the structure of what it did. It loses the detailed content but keeps the metadata.
 

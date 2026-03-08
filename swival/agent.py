@@ -371,6 +371,11 @@ def compact_tool_result(name: str, args: dict | None, content: str) -> str:
         lines = content.count("\n")
         return f"[read_file: {path}, {lines} lines — content compacted]"
 
+    if name == "read_multiple_files":
+        files = args.get("files", [])
+        paths = [f.get("file_path", "?") for f in files] if files else ["?"]
+        return f"[read_multiple_files: {', '.join(paths)}, {len(content)} chars — compacted]"
+
     if name == "grep":
         pattern = args.get("pattern", "?")
         path = args.get("path", ".")
