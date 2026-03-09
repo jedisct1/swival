@@ -7,6 +7,13 @@ All notable user-facing changes to Swival.
 - Moved project-local skills directory from `skills/` to `.swival/skills/`.
 - Fixed spurious "shadowed by itself" warnings when `--skills-dir` pointed to
   the same directory as the project-local skills location.
+- Added `$skill-name` mention syntax: users can type `$deploy` in their message
+  to automatically activate a skill without the model needing to call `use_skill`.
+- Reworked the skill catalog in the system prompt with file paths, trigger rules,
+  and progressive disclosure guidance.
+- Auto-injected skills use assistant+tool message pairs so compaction can shrink
+  or drop them under context pressure.
+- Auto-activated skills are now recorded in JSON reports.
 
 ## 0.1.19
 
