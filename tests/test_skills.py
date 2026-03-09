@@ -266,7 +266,7 @@ class TestDiscoverSkills:
         assert len(catalog) == 1
         assert catalog["pdf"].description == "Local PDF skill."
         captured = capsys.readouterr()
-        assert "shadowed" in captured.err
+        assert "ignored; already loaded" in captured.err
 
     def test_first_extra_dir_wins(self, tmp_path, capsys):
         extra1 = tmp_path / "extra1"
@@ -279,7 +279,7 @@ class TestDiscoverSkills:
         )
         assert catalog["lint"].description == "First lint."
         captured = capsys.readouterr()
-        assert "shadowed" in captured.err
+        assert "ignored; already loaded" in captured.err
 
     def test_nonexistent_extra_dir(self, tmp_path, capsys):
         catalog = discover_skills(

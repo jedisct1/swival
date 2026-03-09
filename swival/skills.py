@@ -209,7 +209,7 @@ def _try_load_skill(
     if name in catalog:
         if verbose:
             existing = catalog[name]
-            fmt.warning(f"skill {name!r} in {entry} shadowed by {existing.path}")
+            fmt.warning(f"skill {name!r} in {entry} ignored; already loaded from {existing.path}")
         return
 
     resolved_path = entry.resolve()
@@ -277,6 +277,11 @@ def discover_skills(
             if entry.is_dir():
                 _try_load_skill(entry, base_resolved, catalog, verbose)
 
+    # Track already-scanned directories to avoid duplicate warnings
+    scanned: set[Path] = set()
+    if local_skills.is_dir():
+        scanned.add(local_skills.resolve())
+
     # Process each --skills-dir path
     for extra in extra_dirs or []:
         p = Path(extra).resolve()
@@ -288,6 +293,9 @@ def discover_skills(
             if verbose:
                 fmt.warning(f"skills path is not a directory: {extra}")
             continue
+        if p in scanned:
+            continue
+        scanned.add(p)
 
         # If the path itself contains a SKILL.md, treat it as a single skill
         if (p / "SKILL.md").is_file():
