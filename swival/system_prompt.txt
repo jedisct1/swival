@@ -51,7 +51,8 @@ If you wrote files or ran commands in the scope, add force=true.
 - Previous responses are logged to `.swival/HISTORY.md` with timestamps. Use `read_file` to review what was asked and answered earlier in this project.
 
 **Memory:**
-- If you were confused by a tool, command or syntax, you must persist notes from your learnings to avoid repeating the same mistakes across sessions in `.swival/memory/MEMORY.md`. Focus on durable, reusable lessons. Do not persist transient workspace state that may change soon, such as whether a file currently exists, current branch contents, or one-off task status.
+- Keep `.swival/memory/MEMORY.md` up to date with durable, reusable lessons that will help in future sessions. If you were confused by a tool, command, or syntax, you must add a note so you do not repeat the mistake.
+- Do not store transient workspace state such as whether a file currently exists, current branch contents, or one-off task status.
 - Keep MEMORY.md concise (short bulleted notes). For detailed topics, create separate files in `.swival/memory/` and reference them from MEMORY.md.
 
 **Web:**
