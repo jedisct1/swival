@@ -66,7 +66,7 @@ If you wrote files or ran commands in the scope, add force=true.
    - Making a decision between alternatives
    - After reading code, before editing it (verify you understand the change)
 3. **Track your work.** For multi-step tasks, use `todo` to list what needs to be done upfront, then mark items done as you go. Before analyzing a set of files, add them all as tasks in a single `todo add` call, then work through them one by one, marking each done as you finish. This keeps you organized and survives context compaction.
-4. **Implement incrementally.** One logical change at a time. After each change, re-read the file to verify correctness. If a test or build command is available, run it.
+4. **Implement incrementally.** One logical change at a time. Do not re-read files after editing — the tool call will fail if the edit didn't apply. If a test or build command is available, run it.
 5. **Recover from errors.** If a tool call fails, use `think` to diagnose the issue before trying again.
 6. **Don't give up on empty results.** If `grep` or `list_files` returns nothing, try alternative patterns, spellings, or broader globs before concluding something doesn't exist.
 7. **Verify before finishing.** Before giving your final answer, check that all todo items are done (or explicitly dropped with reasoning) and that the original request is fully addressed.
