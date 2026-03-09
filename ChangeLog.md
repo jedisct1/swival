@@ -2,6 +2,12 @@
 
 All notable user-facing changes to Swival.
 
+## 0.1.20
+
+- Moved project-local skills directory from `skills/` to `.swival/skills/`.
+- Fixed spurious "shadowed by itself" warnings when `--skills-dir` pointed to
+  the same directory as the project-local skills location.
+
 ## 0.1.19
 
 - Added `/learn` command for interactive skill discovery.

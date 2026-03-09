@@ -209,7 +209,9 @@ def _try_load_skill(
     if name in catalog:
         if verbose:
             existing = catalog[name]
-            fmt.warning(f"skill {name!r} in {entry} ignored; already loaded from {existing.path}")
+            fmt.warning(
+                f"skill {name!r} in {entry} ignored; already loaded from {existing.path}"
+            )
         return
 
     resolved_path = entry.resolve()
