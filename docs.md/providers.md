@@ -53,6 +53,25 @@ swival --provider huggingface \
     "task"
 ```
 
+### HuggingFace Inference Endpoints
+
+HuggingFace [Inference Endpoints](https://huggingface.co/inference-endpoints) let you deploy any supported model on dedicated infrastructure. Create an endpoint from the HuggingFace UI, then point Swival at it with `--base-url`.
+
+```sh
+swival --provider huggingface \
+    --model Qwen/Qwen3-Coder-Next \
+    --base-url https://tfg1ghx03o7xuv5p.us-east-1.aws.endpoints.huggingface.cloud \
+    --repl
+```
+
+Most inference endpoints use vLLM as the serving backend. For tool calling to work, you must add the following to the **Container Arguments** field in your endpoint's configuration on HuggingFace:
+
+```
+--enable-auto-tool-choice --tool-call-parser qwen3_xml
+```
+
+The `--tool-call-parser` value depends on the model you deploy. For Qwen models use `qwen3_xml`, for other model families check the [vLLM tool calling documentation](https://docs.vllm.ai/en/latest/features/tool_calling.html) for the correct parser name. Without these arguments, the endpoint will not return structured tool calls and Swival will not be able to use its tools.
+
 Internally, Swival normalizes the model to `huggingface/<model_id>` for LiteLLM and strips an existing `huggingface/` prefix if you already included it. If `--base-url` is set, it is forwarded as `api_base`.
 
 Dedicated endpoints usually let you use the full deployed model context window rather than tighter serverless limits.
