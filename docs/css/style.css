@@ -156,6 +156,28 @@ img {
     line-height: 1.5;
 }
 
+/* Calibra CTA */
+.calibra-cta {
+    font-size: 1.1rem;
+    margin: 0 auto 2rem;
+    padding: 0.75rem 1.25rem;
+    background: var(--bg-alt);
+    border: 2px solid var(--orange);
+    border-radius: 0.5rem;
+    display: inline-block;
+    color: var(--text);
+}
+
+.calibra-cta a {
+    color: var(--orange);
+    font-weight: 700;
+    text-decoration: underline;
+}
+
+.calibra-cta a:hover {
+    color: var(--link-hover);
+}
+
 /* Terminal block */
 .terminal {
     background: var(--code-bg);
