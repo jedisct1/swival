@@ -88,7 +88,7 @@ swival --provider huggingface --model zai-org/GLM-5 &quot;task&quot;
 <h3 id="huggingface-inference-endpoints">HuggingFace Inference Endpoints</h3>
 <p>HuggingFace <a href="https://huggingface.co/inference-endpoints">Inference Endpoints</a> let you deploy any supported model on dedicated infrastructure. Create an endpoint from the HuggingFace UI, then point Swival at it with <code>--base-url</code>.</p>
 <pre><code class="language-sh">swival --provider huggingface \
-    --model Qwen/Qwen3-Coder-Next \
+    --model Qwen/Qwen3.5-35B-A3B \
     --base-url https://tfg1ghx03o7xuv5p.us-east-1.aws.endpoints.huggingface.cloud \
     --repl
 </code></pre>

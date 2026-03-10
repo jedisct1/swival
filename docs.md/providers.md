@@ -59,7 +59,7 @@ HuggingFace [Inference Endpoints](https://huggingface.co/inference-endpoints) le
 
 ```sh
 swival --provider huggingface \
-    --model Qwen/Qwen3-Coder-Next \
+    --model Qwen/Qwen3.5-35B-A3B \
     --base-url https://tfg1ghx03o7xuv5p.us-east-1.aws.endpoints.huggingface.cloud \
     --repl
 ```
