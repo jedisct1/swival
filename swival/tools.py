@@ -1813,6 +1813,12 @@ def _capture_process(proc: subprocess.Popen, timeout: int, base_dir: str) -> str
         _kill_process_tree(proc)
 
     reader_thread.join(timeout=2)
+    if reader_thread.is_alive():
+        # Reader is still blocked on proc.stdout.read() — a backgrounded
+        # child likely inherited the pipe.  Kill the whole process group so
+        # the pipe closes and the reader can finish.
+        _kill_process_tree(proc)
+        reader_thread.join(timeout=2)
     proc.stdout.close()
 
     # Build result
