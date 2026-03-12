@@ -42,7 +42,9 @@ The `--self-review` flag is a shorthand that automatically builds the reviewer c
 ```sh
 swival --provider huggingface --model zai-org/GLM-5 --yolo \
     --skills-dir ~/skills \
-    --reviewer 'swival --reviewer-mode --provider huggingface --model zai-org/GLM-5 --quiet --yolo --skills-dir ~/skills' \
+    --reviewer 'swival --reviewer-mode \
+        --provider huggingface --model zai-org/GLM-5 \
+        --quiet --yolo --skills-dir ~/skills' \
     "task"
 ```
 
