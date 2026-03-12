@@ -688,32 +688,94 @@ class TestFormatCatalog:
 
 class TestIntegration:
     def test_use_skill_tool_added_when_skills_exist(self, tmp_path):
-        """USE_SKILL_TOOL is added to tools list only when catalog is non-empty."""
-        from swival.tools import USE_SKILL_TOOL
+        """build_tools() includes use_skill when catalog is non-empty."""
+        from swival.agent import build_tools
 
         skills_dir = tmp_path / ".swival" / "skills"
         _make_skill(skills_dir, "pdf", "PDF processing.")
         catalog = discover_skills(str(tmp_path))
 
-        tools = [{"type": "function", "function": {"name": "read_file"}}]
-        if catalog:
-            tools.append(USE_SKILL_TOOL)
-
+        tools = build_tools(resolved_commands={}, skills_catalog=catalog, yolo=False)
         tool_names = [t["function"]["name"] for t in tools]
         assert "use_skill" in tool_names
 
     def test_use_skill_tool_not_added_when_no_skills(self, tmp_path):
-        from swival.tools import USE_SKILL_TOOL
+        from swival.agent import build_tools
 
         catalog = discover_skills(str(tmp_path))
         assert catalog == {}
 
-        tools = [{"type": "function", "function": {"name": "read_file"}}]
-        if catalog:
-            tools.append(USE_SKILL_TOOL)
-
+        tools = build_tools(resolved_commands={}, skills_catalog=catalog, yolo=False)
         tool_names = [t["function"]["name"] for t in tools]
         assert "use_skill" not in tool_names
+
+    def test_build_tools_skill_description_includes_names(self, tmp_path):
+        """use_skill tool description lists available skill names."""
+        from swival.agent import build_tools
+
+        skills_dir = tmp_path / ".swival" / "skills"
+        _make_skill(skills_dir, "pdf", "PDF processing.")
+        _make_skill(skills_dir, "deploy", "Deploy to prod.")
+        catalog = discover_skills(str(tmp_path))
+
+        tools = build_tools(resolved_commands={}, skills_catalog=catalog, yolo=False)
+        skill_tool = [t for t in tools if t["function"]["name"] == "use_skill"][0]
+        desc = skill_tool["function"]["description"]
+        assert "deploy" in desc
+        assert "pdf" in desc
+
+    def test_build_tools_skill_enum(self, tmp_path):
+        """use_skill name parameter has enum with catalog names."""
+        from swival.agent import build_tools
+
+        skills_dir = tmp_path / ".swival" / "skills"
+        _make_skill(skills_dir, "pdf", "PDF processing.")
+        _make_skill(skills_dir, "deploy", "Deploy to prod.")
+        catalog = discover_skills(str(tmp_path))
+
+        tools = build_tools(resolved_commands={}, skills_catalog=catalog, yolo=False)
+        skill_tool = [t for t in tools if t["function"]["name"] == "use_skill"][0]
+        enum = skill_tool["function"]["parameters"]["properties"]["name"]["enum"]
+        assert sorted(enum) == ["deploy", "pdf"]
+
+    def test_build_tools_does_not_mutate_global_use_skill_tool(self, tmp_path):
+        """Deep-copy ensures one catalog's enum/description doesn't leak."""
+        from swival.agent import build_tools
+        from swival.tools import USE_SKILL_TOOL
+
+        original_desc = USE_SKILL_TOOL["function"]["description"]
+        original_props = USE_SKILL_TOOL["function"]["parameters"]["properties"]["name"]
+        assert "enum" not in original_props
+
+        skills_dir = tmp_path / ".swival" / "skills"
+        _make_skill(skills_dir, "pdf", "PDF processing.")
+        catalog = discover_skills(str(tmp_path))
+
+        build_tools(resolved_commands={}, skills_catalog=catalog, yolo=False)
+
+        # Global should be untouched.
+        assert USE_SKILL_TOOL["function"]["description"] == original_desc
+        assert "enum" not in USE_SKILL_TOOL["function"]["parameters"]["properties"]["name"]
+
+    def test_build_tools_large_catalog_short_description(self, tmp_path):
+        """When skill names exceed 200 chars, description uses count instead of listing."""
+        from swival.agent import build_tools
+
+        skills_dir = tmp_path / ".swival" / "skills"
+        # Create enough skills that the joined names exceed 200 chars
+        for i in range(30):
+            name = f"skill-with-a-long-name-{i:02d}"
+            _make_skill(skills_dir, name, f"Skill {i}.")
+        catalog = discover_skills(str(tmp_path))
+        assert len(catalog) == 30
+
+        tools = build_tools(resolved_commands={}, skills_catalog=catalog, yolo=False)
+        skill_tool = [t for t in tools if t["function"]["name"] == "use_skill"][0]
+        desc = skill_tool["function"]["description"]
+        assert "30 skills available" in desc
+        # Enum should still list all names
+        enum = skill_tool["function"]["parameters"]["properties"]["name"]["enum"]
+        assert len(enum) == 30
 
 
 # =========================================================================

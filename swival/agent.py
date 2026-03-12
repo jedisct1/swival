@@ -2257,7 +2257,25 @@ def build_tools(
     """Construct the tools list from base + conditionals."""
     tools = list(TOOLS)
     if skills_catalog:
-        tools.append(USE_SKILL_TOOL)
+        skill_tool = copy.deepcopy(USE_SKILL_TOOL)
+        names_list = sorted(skills_catalog)
+        # Machine-readable constraint — always set.
+        skill_tool["function"]["parameters"]["properties"]["name"]["enum"] = names_list
+        # Human-readable hint in description — keep short for large catalogs.
+        names_str = ", ".join(names_list)
+        if len(names_str) <= 200:
+            skill_tool["function"]["description"] = (
+                f"Activate a skill to get detailed instructions. "
+                f"Available skills: {names_str}. "
+                f"Use this instead of searching for SKILL.md files."
+            )
+        else:
+            skill_tool["function"]["description"] = (
+                f"Activate a skill to get detailed instructions. "
+                f"{len(names_list)} skills available (see enum). "
+                f"Use this instead of searching for SKILL.md files."
+            )
+        tools.append(skill_tool)
     if yolo:
         tool = copy.deepcopy(RUN_COMMAND_TOOL)
         tool["function"]["description"] = "Run any command and return its output."

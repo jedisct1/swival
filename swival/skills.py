@@ -389,18 +389,14 @@ def format_skill_catalog(catalog: dict[str, SkillInfo]) -> str:
     lines.append("")
     lines.append("### How to use skills")
     lines.append(
-        "- **Trigger rules**: If the user mentions a skill with `$skill-name` in their message, "
-        "the skill instructions are automatically injected. If the task clearly matches a "
-        "skill's description above, you **must** use that skill by calling `use_skill` or "
-        "reading the SKILL.md file directly.\n"
-        "- **Progressive disclosure**: After deciding to use a skill, open its `SKILL.md` "
-        "at the path listed above. Read only enough to follow the workflow.\n"
-        "- **Supporting files**: If `SKILL.md` references relative paths (e.g. `scripts/foo.py`), "
-        "resolve them relative to the skill directory.\n"
-        "- **Multiple skills**: If multiple skills apply, use the minimal set that covers the "
-        "request and state the order you'll use them.\n"
-        "- **Missing/blocked**: If a named skill isn't in the list, say so briefly and continue "
-        "with the best fallback."
+        "- Call the `use_skill` tool with the skill name to activate it and receive "
+        "detailed instructions.\n"
+        "- For local skills (those showing a file path above), you may also read the "
+        "SKILL.md file directly.\n"
+        "- For skills without a path shown, `use_skill` is the only way to access them — "
+        "do not search for their files, they are outside the project directory.\n"
+        "- If the user mentions a skill with `$skill-name`, it is activated automatically.\n"
+        "- If multiple skills apply, activate the minimal set that covers the request."
     )
     return "\n".join(lines)
 

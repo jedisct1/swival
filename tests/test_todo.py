@@ -641,6 +641,58 @@ class TestInputNormalization:
         assert result["total"] == 1
         assert result["items"][0]["task"] == "hello"
 
+    def test_json_encoded_list_string_unwrapped(self):
+        """tasks as a JSON-encoded list string should be parsed into individual tasks."""
+        state = TodoState()
+        result = json.loads(
+            state.process(
+                {"action": "add", "tasks": '["Task one", "Task two", "Task three"]'}
+            )
+        )
+        assert result["total"] == 3
+        assert result["items"][0]["task"] == "Task one"
+        assert result["items"][1]["task"] == "Task two"
+        assert result["items"][2]["task"] == "Task three"
+
+    def test_json_encoded_list_string_done(self):
+        """JSON-encoded list string works for done action too."""
+        state = TodoState()
+        state.process({"action": "add", "tasks": ["Alpha", "Beta"]})
+        result = json.loads(
+            state.process({"action": "done", "tasks": '["Alpha", "Beta"]'})
+        )
+        assert result["remaining"] == 0
+
+    def test_json_encoded_list_invalid_json_fallback(self):
+        """A string starting with '[' but not valid JSON stays as a single task."""
+        state = TodoState()
+        result = json.loads(
+            state.process({"action": "add", "tasks": "[not valid json"})
+        )
+        assert result["total"] == 1
+        assert result["items"][0]["task"] == "[not valid json"
+
+    def test_json_encoded_list_non_string_items(self):
+        """JSON-encoded list with non-string items coerces them to strings."""
+        state = TodoState()
+        result = json.loads(
+            state.process({"action": "add", "tasks": '["hello", 42, true]'})
+        )
+        assert result["total"] == 3
+        assert result["items"][1]["task"] == "42"
+        assert result["items"][2]["task"] == "True"
+
+    def test_json_encoded_list_alias_no_false_conflict(self):
+        """tasks='["hello"]' (unwraps to ["hello"]) with task='hello' should not conflict."""
+        state = TodoState()
+        result = json.loads(
+            state.process(
+                {"action": "add", "tasks": '["hello"]', "task": "hello"}
+            )
+        )
+        assert result["total"] == 1
+        assert result["items"][0]["task"] == "hello"
+
     def test_per_item_strip(self):
         state = TodoState()
         result = json.loads(state.process({"action": "add", "tasks": ["  A  ", "B  "]}))

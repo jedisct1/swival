@@ -30,7 +30,16 @@ def _safe_todo_path(notes_dir: str) -> Path:
 def _to_stripped_list(raw) -> list[str]:
     """Coerce a string, list, or other value into a list of stripped strings."""
     if isinstance(raw, str):
-        return [raw.strip()]
+        stripped = raw.strip()
+        # LLMs sometimes JSON-encode the array as a string — unwrap it.
+        if stripped.startswith("["):
+            try:
+                parsed = json.loads(stripped)
+                if isinstance(parsed, list):
+                    return [t.strip() if isinstance(t, str) else str(t) for t in parsed]
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return [stripped]
     if isinstance(raw, list):
         return [t.strip() if isinstance(t, str) else str(t) for t in raw]
     return [str(raw).strip()]
