@@ -1497,7 +1497,7 @@ def run_reviewer(
         return 2, "", ""
     stdout = proc.stdout.decode("utf-8", errors="replace")
     stderr = proc.stderr.decode("utf-8", errors="replace")
-    if stderr and verbose:
+    if stderr and verbose and proc.returncode == 2:
         fmt.warning(f"reviewer stderr: {stderr.rstrip()}")
     return proc.returncode, stdout, stderr
 
