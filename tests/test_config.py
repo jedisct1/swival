@@ -720,7 +720,7 @@ class TestMaxReviewRoundsConfig:
     def test_default_value(self):
         args = _make_args()
         apply_config_to_args(args, {})
-        assert args.max_review_rounds == 5
+        assert args.max_review_rounds == 15
 
     def test_config_fills_unset(self):
         args = _make_args()

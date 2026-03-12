@@ -74,6 +74,25 @@
     --reviewer &quot;swival --reviewer-mode&quot;
 </code></pre>
 <p>When <code>--reviewer-mode</code> is active, Swival reads the base directory from the first positional argument (as passed by the outer instance), reads the agent's answer from standard input, reads the task from <code>SWIVAL_TASK</code> (or a <code>--objective</code> file), calls the LLM to evaluate the answer, parses the verdict, and exits with the appropriate code.</p>
+<h3 id="self-review">Self-Review</h3>
+<p>The <code>--self-review</code> flag is a shorthand that automatically builds the reviewer command by mirroring the current invocation's provider, model, and other settings. Instead of writing the reviewer command by hand:</p>
+<pre><code class="language-sh">swival --provider chatgpt --model gpt-5.4 --yolo \
+    --skills-dir ~/skills \
+    --reviewer 'swival --reviewer-mode --provider chatgpt --model gpt-5.4 --quiet --yolo --skills-dir ~/skills' \
+    &quot;task&quot;
+</code></pre>
+<p>Use <code>--self-review</code>:</p>
+<pre><code class="language-sh">swival --provider chatgpt --model gpt-5.4 --yolo \
+    --skills-dir ~/skills \
+    --self-review \
+    &quot;task&quot;
+</code></pre>
+<p>The synthesized reviewer command inherits <code>--provider</code>, <code>--model</code>, <code>--base-url</code>, <code>--yolo</code>, <code>--skills-dir</code>, <code>--max-context-tokens</code>, and <code>--max-output-tokens</code> from the outer invocation. It always adds <code>--reviewer-mode</code> and <code>--quiet</code>.</p>
+<p>API keys are not placed on the reviewer command line to avoid exposing secrets in process listings. If <code>--api-key</code> was set on the outer invocation, Swival passes it to the reviewer subprocess via the provider-specific environment variable (<code>HF_TOKEN</code>, <code>OPENROUTER_API_KEY</code>, <code>OPENAI_API_KEY</code>, or <code>CHATGPT_API_KEY</code>). Keys already set via environment variables are inherited automatically.</p>
+<p><code>--report</code> and <code>--cache</code> are not mirrored because reviewer mode does not initialize report or cache infrastructure.</p>
+<p><code>--self-review</code> is incompatible with <code>--reviewer</code>, <code>--repl</code>, and <code>--reviewer-mode</code>. It can be set in <code>swival.toml</code>:</p>
+<pre><code class="language-toml">self_review = true
+</code></pre>
 <h3 id="reviewer-mode-options">Reviewer Mode Options</h3>
 <table>
 <thead>
@@ -125,8 +144,13 @@
 verify = &quot;verification/working.md&quot;
 review_prompt = &quot;Focus on correctness and test coverage&quot;
 </code></pre>
+<p>Or, if you want the reviewer to mirror your provider and model settings automatically:</p>
+<pre><code class="language-toml">self_review = true
+verify = &quot;verification/working.md&quot;
+review_prompt = &quot;Focus on correctness and test coverage&quot;
+</code></pre>
 <p>The <code>reviewer</code> value is shell-split; the first token is resolved via PATH when it's a bare command name, or against the config directory when it starts with <code>./</code>, <code>../</code>, or <code>~</code>. Remaining tokens are preserved as-is. The <code>verify</code> and <code>objective</code> paths resolve relative to the config directory, consistent with <code>allowed_dirs</code> and <code>skills_dir</code>.</p>
-<p>Note that <code>reviewer_mode</code> is deliberately not supported in config files. A config file with <code>reviewer_mode = true</code> would silently force every <code>swival</code> invocation into reviewer mode, breaking normal usage.</p>
+<p>Note that <code>reviewer_mode</code> is deliberately not supported in config files. A config file with <code>reviewer_mode = true</code> would silently force every <code>swival</code> invocation into reviewer mode, breaking normal usage. <code>self_review</code> does not have this problem — the inner reviewer process inherits the config but clears the flag automatically.</p>
 <h2 id="writing-a-custom-reviewer-script">Writing A Custom Reviewer Script</h2>
 <p>A minimal reviewer that accepts only when tests pass:</p>
 <pre><code class="language-bash">#!/usr/bin/env bash

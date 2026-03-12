@@ -1461,6 +1461,40 @@ def call_llm(
     return choice.message, choice.finish_reason
 
 
+# Provider → env var that resolve_provider() checks for that provider
+_PROVIDER_KEY_ENV: dict[str, str] = {
+    "huggingface": "HF_TOKEN",
+    "openrouter": "OPENROUTER_API_KEY",
+    "generic": "OPENAI_API_KEY",
+    "chatgpt": "CHATGPT_API_KEY",
+}
+
+
+def _build_self_review_cmd(args: argparse.Namespace) -> str:
+    """Build a reviewer command that mirrors the current invocation's settings."""
+    import shlex
+
+    parts = [sys.executable, "-m", "swival.agent", "--reviewer-mode", "--quiet"]
+
+    if args.yolo:
+        parts.append("--yolo")
+    if args.provider and args.provider != "lmstudio":
+        parts.extend(["--provider", args.provider])
+    if args.model:
+        parts.extend(["--model", str(args.model)])
+    if args.base_url:
+        parts.extend(["--base-url", str(args.base_url)])
+    if args.skills_dir:
+        for d in args.skills_dir:
+            parts.extend(["--skills-dir", d])
+    if args.max_context_tokens:
+        parts.extend(["--max-context-tokens", str(args.max_context_tokens)])
+    if args.max_output_tokens and args.max_output_tokens != 32768:
+        parts.extend(["--max-output-tokens", str(args.max_output_tokens)])
+
+    return shlex.join(parts)
+
+
 def run_reviewer(
     reviewer_cmd: str,
     base_dir: str,
@@ -1548,7 +1582,8 @@ def build_parser():
         "--api-key",
         type=str,
         default=_UNSET,
-        help="API key for the provider (overrides env var).",
+        help="API key for the provider (overrides env var: HF_TOKEN, "
+        "OPENROUTER_API_KEY, OPENAI_API_KEY, or CHATGPT_API_KEY).",
     )
     parser.add_argument(
         "--base-dir",
@@ -1787,6 +1822,13 @@ def build_parser():
         "call LLM to judge, exit 0/1/2.",
     )
     parser.add_argument(
+        "--self-review",
+        action="store_true",
+        default=_UNSET,
+        help="Use a second swival instance as reviewer, inheriting provider, model, "
+        "skills-dir, and yolo settings from the current invocation.",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=_UNSET,
@@ -1900,8 +1942,9 @@ def main():
         if args.question is None:
             parser.error("--reviewer-mode requires a positional argument (base_dir)")
 
-        # Snapshot whether --reviewer was explicitly on CLI (before config merge)
+        # Snapshot whether these were explicitly on CLI (before config merge)
         reviewer_from_cli = args.reviewer is not _UNSET
+        self_review_from_cli = args.self_review is not _UNSET and args.self_review
 
         base_dir = Path(args.question).resolve()
         try:
@@ -1910,10 +1953,14 @@ def main():
             parser.error(str(e))
         apply_config_to_args(args, file_config)
 
-        # Config inheritance hazard: clear the reviewer key
+        # Config inheritance hazard: clear keys that don't apply in reviewer mode
         if reviewer_from_cli:
             parser.error("--reviewer-mode and --reviewer cannot be used together")
         args.reviewer = None
+
+        if self_review_from_cli:
+            parser.error("--self-review is incompatible with --reviewer-mode")
+        args.self_review = False
 
         args.verbose = not args.quiet
         fmt.init(color=args.color, no_color=args.no_color)
@@ -1936,12 +1983,20 @@ def main():
     # Derived values (after all sentinels are resolved)
     args.verbose = not args.quiet
 
+    # Synthesize reviewer command from current args when --self-review is set
+    if args.self_review:
+        if args.reviewer:
+            parser.error("--self-review and --reviewer cannot be used together")
+        args.reviewer = _build_self_review_cmd(args)
+
     if not args.repl and args.question is None:
         parser.error("question is required (or use --repl)")
     if args.report and args.repl:
         parser.error("--report is incompatible with --repl")
     if args.reviewer and args.repl:
         parser.error("--reviewer is incompatible with --repl")
+    if args.self_review and args.repl:
+        parser.error("--self-review is incompatible with --repl")
 
     fmt.init(color=args.color, no_color=args.no_color)
 
@@ -2190,7 +2245,7 @@ def resolve_provider(
             )
         api_base = base_url
         model_id = model
-        resolved_key = api_key
+        resolved_key = api_key or os.environ.get("CHATGPT_API_KEY")
         context_length = max_context_tokens
         if context_length is None:
             try:
@@ -2628,6 +2683,11 @@ def _run_main(args, report, _write_report, parser):
             model_id = getattr(args, "_resolved_model_id", None)
             if model_id:
                 reviewer_env["SWIVAL_MODEL"] = model_id
+            # Pass API key via provider-specific env var (avoid CLI exposure)
+            if args.self_review and args.api_key:
+                env_var = _PROVIDER_KEY_ENV.get(args.provider)
+                if env_var:
+                    reviewer_env[env_var] = args.api_key
 
         while True:
             try:

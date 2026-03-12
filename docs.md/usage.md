@@ -85,7 +85,7 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 
 `--base-url` sets a custom API base URL. For LM Studio, the default base URL is `http://127.0.0.1:1234` when `--base-url` is not set.
 
-`--api-key` provides a key directly on the command line and takes precedence over provider environment variables such as `HF_TOKEN` or `OPENROUTER_API_KEY`.
+`--api-key` provides a key directly on the command line and takes precedence over provider environment variables (`HF_TOKEN` for huggingface, `OPENROUTER_API_KEY` for openrouter, `OPENAI_API_KEY` for generic, or `CHATGPT_API_KEY` for chatgpt).
 
 ### Behavior Tuning Flags
 
@@ -174,6 +174,8 @@ See [MCP](mcp.md) for full configuration details.
 `--reviewer COMMAND` runs an external reviewer after each answer. The command string is shell-split, so you can pass arguments inline (e.g. `--reviewer "swival --reviewer-mode"`). This flag is incompatible with `--repl`.
 
 `--max-review-rounds N` limits how many times the reviewer can request retries and defaults to `15`. Set to `0` to accept the first answer without retries.
+
+`--self-review` uses a second Swival instance as reviewer, inheriting provider, model, skills-dir, and yolo settings from the current invocation. Incompatible with `--repl` and `--reviewer`. See [Reviews](reviews.md) for details.
 
 `--reviewer-mode` runs Swival as a reviewer process that speaks the reviewer protocol. It reads `base_dir` from the positional argument, the answer from standard input, evaluates with the LLM, and exits 0 (accept), 1 (retry), or 2 (error). Incompatible with `--repl` and `--reviewer`.
 

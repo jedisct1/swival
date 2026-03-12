@@ -158,6 +158,8 @@ The `chatgpt` provider lets you use OpenAI models through your existing ChatGPT 
 
 Authentication uses an OAuth device-code flow handled by LiteLLM -- on first use, LiteLLM prints a device code and a verification URL to your terminal. Open the URL, enter the code, and authorize with your ChatGPT account. The resulting tokens are cached locally and refreshed automatically on subsequent runs.
 
+If you need to pass an API key explicitly (for example, when using `--self-review` which passes credentials via environment variables), set `CHATGPT_API_KEY` or use `--api-key`.
+
 `--model` is required. There is no default model.
 
 ```sh

@@ -35,6 +35,38 @@ swival "Refactor error handling in src/api.py" \
 
 When `--reviewer-mode` is active, Swival reads the base directory from the first positional argument (as passed by the outer instance), reads the agent's answer from standard input, reads the task from `SWIVAL_TASK` (or a `--objective` file), calls the LLM to evaluate the answer, parses the verdict, and exits with the appropriate code.
 
+### Self-Review
+
+The `--self-review` flag is a shorthand that automatically builds the reviewer command by mirroring the current invocation's provider, model, and other settings. Instead of writing the reviewer command by hand:
+
+```sh
+swival --provider chatgpt --model gpt-5.4 --yolo \
+    --skills-dir ~/skills \
+    --reviewer 'swival --reviewer-mode --provider chatgpt --model gpt-5.4 --quiet --yolo --skills-dir ~/skills' \
+    "task"
+```
+
+Use `--self-review`:
+
+```sh
+swival --provider chatgpt --model gpt-5.4 --yolo \
+    --skills-dir ~/skills \
+    --self-review \
+    "task"
+```
+
+The synthesized reviewer command inherits `--provider`, `--model`, `--base-url`, `--yolo`, `--skills-dir`, `--max-context-tokens`, and `--max-output-tokens` from the outer invocation. It always adds `--reviewer-mode` and `--quiet`.
+
+API keys are not placed on the reviewer command line to avoid exposing secrets in process listings. If `--api-key` was set on the outer invocation, Swival passes it to the reviewer subprocess via the provider-specific environment variable (`HF_TOKEN`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, or `CHATGPT_API_KEY`). Keys already set via environment variables are inherited automatically.
+
+`--report` and `--cache` are not mirrored because reviewer mode does not initialize report or cache infrastructure.
+
+`--self-review` is incompatible with `--reviewer`, `--repl`, and `--reviewer-mode`. It can be set in `swival.toml`:
+
+```toml
+self_review = true
+```
+
 ### Reviewer Mode Options
 
 | Option                 | Description                                                                             |
@@ -89,9 +121,17 @@ verify = "verification/working.md"
 review_prompt = "Focus on correctness and test coverage"
 ```
 
+Or, if you want the reviewer to mirror your provider and model settings automatically:
+
+```toml
+self_review = true
+verify = "verification/working.md"
+review_prompt = "Focus on correctness and test coverage"
+```
+
 The `reviewer` value is shell-split; the first token is resolved via PATH when it's a bare command name, or against the config directory when it starts with `./`, `../`, or `~`. Remaining tokens are preserved as-is. The `verify` and `objective` paths resolve relative to the config directory, consistent with `allowed_dirs` and `skills_dir`.
 
-Note that `reviewer_mode` is deliberately not supported in config files. A config file with `reviewer_mode = true` would silently force every `swival` invocation into reviewer mode, breaking normal usage.
+Note that `reviewer_mode` is deliberately not supported in config files. A config file with `reviewer_mode = true` would silently force every `swival` invocation into reviewer mode, breaking normal usage. `self_review` does not have this problem — the inner reviewer process inherits the config but clears the flag automatically.
 
 ## Writing A Custom Reviewer Script
 

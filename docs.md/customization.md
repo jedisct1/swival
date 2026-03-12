@@ -36,6 +36,7 @@ cache = true
 
 # Reviewer settings
 reviewer = "swival --reviewer-mode"
+# self_review = true               # shorthand: mirrors provider/model into reviewer
 review_prompt = "Focus on correctness and test coverage"
 max_review_rounds = 10
 objective = "objective.md"
