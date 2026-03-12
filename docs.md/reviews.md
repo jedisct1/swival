@@ -181,7 +181,7 @@ fi
 
 Every time the reviewer returns exit code `1`, Swival appends reviewer feedback as a user message and re-enters the loop with a fresh turn budget. The full conversation stays intact, so the model can build on prior work instead of restarting from scratch.
 
-To prevent infinite cycles, Swival limits the number of review rounds. The default is five. You can change this with `--max-review-rounds` or `max_review_rounds` in config.
+To prevent infinite cycles, Swival limits the number of review rounds. The default is fifteen. You can change this with `--max-review-rounds` or `max_review_rounds` in config.
 
 ```sh
 swival "task" --reviewer ./review.sh --max-review-rounds 10

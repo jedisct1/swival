@@ -28,7 +28,7 @@ The JSON below is from a verified local run using `--model dummy-model --max-tur
     "context_length": null,
     "yolo": false,
     "allowed_commands": [],
-    "max_review_rounds": 5,
+    "max_review_rounds": 15,
     "skills_discovered": [],
     "instructions_loaded": []
   },
