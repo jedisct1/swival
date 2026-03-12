@@ -2,6 +2,16 @@
 
 All notable user-facing changes to Swival.
 
+## 0.1.22
+
+- Added `--self-review` option: the agent reviews its own work before finishing.
+- Improved reviewer feedback visibility and made expected actions more explicit.
+- Reviewer now shows informational stderr as warnings instead of silently
+  discarding it.
+- Bumped up the default number of review rounds to 15.
+- Fixed cache miss cascade caused by dropped `tool_call` fields in cached
+  responses.
+
 ## 0.1.21
 
 - Added optional SQLite LLM response cache (`--cache`) for faster repeated
