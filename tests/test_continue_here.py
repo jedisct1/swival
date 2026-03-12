@@ -98,6 +98,12 @@ class TestFindUserTask:
             _user("Tip: Consider using the `think` tool before making edits."),
             _user("Reminder: You have 3 unfinished todo items."),
             _user("Your response was cut off. Please use the provided tools."),
+            _user(
+                "[REVIEWER FEEDBACK — Round 2]\n"
+                "A reviewer has evaluated your answer and requested changes. "
+                "You MUST address the feedback below by taking concrete "
+                "tool-call actions.\n\nfix the typo"
+            ),
         ]
         assert _find_last_user_task(msgs) == "real task"
 

@@ -64,6 +64,7 @@ SYNTHETIC_USER_PREFIXES: tuple[str, ...] = (
     "STOP:",
     "Tip:",
     "Reminder:",
+    "[REVIEWER FEEDBACK",
 )
 
 _SUMMARIZE_SYSTEM_PROMPT = (
@@ -2686,7 +2687,16 @@ def _run_main(args, report, _write_report, parser):
                     break
                 if args.verbose:
                     fmt.review_feedback(review_round, review_text)
-                messages.append({"role": "user", "content": review_text})
+                retry_msg = (
+                    f"[REVIEWER FEEDBACK — Round {review_round}]\n"
+                    "A reviewer has evaluated your answer and requested changes. "
+                    "You MUST address the feedback below by taking concrete "
+                    "tool-call actions — do not simply rewrite your previous "
+                    "answer. If the task cannot be completed as requested, use "
+                    "tools to gather evidence, then report the failure clearly.\n\n"
+                    f"{review_text}"
+                )
+                messages.append({"role": "user", "content": retry_msg})
                 if report:
                     turn_offset = report.max_turn_seen
                 loop_kwargs["max_turns"] = args.max_turns
