@@ -1991,8 +1991,8 @@ def main():
 
     # Read question from stdin if not provided and stdin is piped
     if not args.repl and args.question is None and not sys.stdin.isatty():
-        args.question = sys.stdin.read()
-        if not args.question or not args.question.strip():
+        args.question = sys.stdin.read().strip()
+        if not args.question:
             parser.error("question is required (stdin was empty)")
 
     if not args.repl and args.question is None:
