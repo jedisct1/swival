@@ -2,6 +2,15 @@
 
 All notable user-facing changes to Swival.
 
+## 0.1.24
+
+- Added A2A server mode (`--serve`): expose a swival Session as an A2A endpoint,
+  with context-keyed multi-turn sessions, bearer auth, and TTL-based cleanup.
+- Added customizable A2A server agent card: `--serve-name`, `--serve-description`,
+  and `[[serve_skills]]` in `swival.toml` let you control how the agent advertises
+  itself.
+- Added `/tools` REPL command to list available tools.
+
 ## 0.1.23
 
 - Added A2A (Agent-to-Agent) support: connect to remote agents via
