@@ -194,6 +194,44 @@ Task outcomes map from Session results: a successful `ask()` produces a `complet
 
 The server auto-generates an Agent Card from the session configuration. The card includes the server name (derived from provider and model), capabilities, and endpoint URL. When `--serve-auth-token` is set, the card declares a bearer security scheme.
 
+#### Custom Name and Description
+
+Override the auto-generated name and description with `--serve-name` and `--serve-description`:
+
+```sh
+swival --serve --serve-name "Code Review Bot" \
+  --serve-description "Reviews Python code for bugs, security issues, and style"
+```
+
+Or in `swival.toml`:
+
+```toml
+serve_name = "Code Review Bot"
+serve_description = "Reviews Python code for bugs, security issues, and style"
+```
+
+#### Defining Skills
+
+Skills tell client agents what your server is good at. Define them in `swival.toml`:
+
+```toml
+[[serve_skills]]
+id = "review"
+name = "Code Review"
+description = "Analyze code for correctness, security, and style"
+examples = ["Review this pull request", "Check this function for bugs"]
+
+[[serve_skills]]
+id = "explain"
+name = "Code Explanation"
+description = "Explain how a piece of code works"
+examples = ["What does this function do?"]
+```
+
+Each skill requires an `id` field. The `id` must be a stable identifier that matches `[a-zA-Z0-9_-]+` with no double underscores or leading/trailing `_-` characters. The `name`, `description`, and `examples` fields are optional but recommended for client-side routing.
+
+Project-level `serve_skills` in `swival.toml` replace global-level skills entirely (no per-skill merging).
+
 ### Library API
 
 You can also create and run the server programmatically:
@@ -206,6 +244,9 @@ server = A2aServer(
     host="0.0.0.0",
     port=8080,
     auth_token="sk-...",
+    name="Code Review Bot",
+    description="Reviews Python code for bugs and style",
+    skills=[{"id": "review", "name": "Code Review", "description": "Analyze code"}],
 )
 server.serve()
 ```

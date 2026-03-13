@@ -85,24 +85,46 @@ class A2aTask:
 # ---------------------------------------------------------------------------
 
 
+def _build_skills_list(skills: list[dict] | None) -> list[dict]:
+    """Convert skill dicts to A2A AgentSkill wire format (camelCase keys)."""
+    if not skills:
+        return []
+    result = []
+    for s in skills:
+        entry: dict[str, Any] = {"id": s["id"]}
+        if "name" in s:
+            entry["name"] = s["name"]
+        if "description" in s:
+            entry["description"] = s["description"]
+        if "examples" in s:
+            entry["examples"] = s["examples"]
+        result.append(entry)
+    return result
+
+
 def build_agent_card(
     session_kwargs: dict,
     host: str,
     port: int,
     *,
     auth_token: str | None = None,
+    name: str | None = None,
+    description: str | None = None,
+    skills: list[dict] | None = None,
 ) -> dict:
     """Auto-generate an A2A Agent Card from session config.
 
     Returns a dict ready to be served as JSON at /.well-known/agent-card.json.
     """
-    provider = session_kwargs.get("provider", "lmstudio")
-    model = session_kwargs.get("model") or "default"
-    name = f"swival ({provider}/{model})"
-    description = (
-        "A coding agent powered by swival. Accepts natural-language tasks "
-        "and executes them using tool-augmented LLM reasoning."
-    )
+    if name is None:
+        provider = session_kwargs.get("provider", "lmstudio")
+        model = session_kwargs.get("model") or "default"
+        name = f"swival ({provider}/{model})"
+    if description is None:
+        description = (
+            "A coding agent powered by swival. Accepts natural-language tasks "
+            "and executes them using tool-augmented LLM reasoning."
+        )
 
     url = f"http://{host}:{port}/"
 
@@ -125,7 +147,7 @@ def build_agent_card(
         ],
         "defaultInputModes": ["text/plain"],
         "defaultOutputModes": ["text/plain"],
-        "skills": [],
+        "skills": _build_skills_list(skills),
     }
 
     if auth_token:
@@ -194,6 +216,9 @@ class A2aServer:
         auth_token: str | None = None,
         ttl: int = DEFAULT_TTL,
         max_sessions: int = DEFAULT_MAX_SESSIONS,
+        name: str | None = None,
+        description: str | None = None,
+        skills: list[dict] | None = None,
     ):
         self.session_kwargs = dict(session_kwargs)
         self.host = host
@@ -216,7 +241,13 @@ class A2aServer:
 
         # Agent card (built once)
         self._agent_card = build_agent_card(
-            session_kwargs, host, port, auth_token=auth_token
+            session_kwargs,
+            host,
+            port,
+            auth_token=auth_token,
+            name=name,
+            description=description,
+            skills=skills,
         )
 
         self._cleanup_task: asyncio.Task | None = None

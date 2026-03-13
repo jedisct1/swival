@@ -2057,6 +2057,18 @@ def build_parser():
         help="Bearer token for A2A server auth. Only used with --serve.",
     )
     parser.add_argument(
+        "--serve-name",
+        type=str,
+        default=_UNSET,
+        help="Custom agent name for the A2A agent card. Only used with --serve.",
+    )
+    parser.add_argument(
+        "--serve-description",
+        type=str,
+        default=_UNSET,
+        help="Custom agent description for the A2A agent card. Only used with --serve.",
+    )
+    parser.add_argument(
         "--verify",
         type=str,
         default=_UNSET,
@@ -2170,6 +2182,9 @@ def main():
     # Stash A2A servers from TOML config before apply_config_to_args strips them
     args._a2a_servers_toml = file_config.pop("a2a_servers", None)
 
+    # Stash serve_skills from TOML config before apply_config_to_args strips them
+    args._serve_skills_config = file_config.pop("serve_skills", None)
+
     apply_config_to_args(args, file_config)
 
     # Derived values (after all sentinels are resolved)
@@ -2278,11 +2293,18 @@ def main():
 
         from .a2a_server import A2aServer
 
+        serve_skills = getattr(args, "_serve_skills_config", None)
+
         server = A2aServer(
             session_kwargs=session_kwargs,
             host=args.serve_host,
             port=args.serve_port,
             auth_token=args.serve_auth_token,
+            name=args.serve_name if args.serve_name is not _UNSET else None,
+            description=args.serve_description
+            if args.serve_description is not _UNSET
+            else None,
+            skills=serve_skills,
         )
         server.serve()
         sys.exit(0)

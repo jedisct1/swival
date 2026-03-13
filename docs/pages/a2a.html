@@ -206,6 +206,31 @@ result = session.run(&quot;Ask the research agent to summarize recent papers on 
 <p>Task outcomes map from Session results: a successful <code>ask()</code> produces a <code>completed</code> task, an exhausted run with no answer produces <code>input-required</code> (needs more information), and an exhausted run with a partial answer or an exception produces <code>failed</code>.</p>
 <h3 id="agent-card">Agent Card</h3>
 <p>The server auto-generates an Agent Card from the session configuration. The card includes the server name (derived from provider and model), capabilities, and endpoint URL. When <code>--serve-auth-token</code> is set, the card declares a bearer security scheme.</p>
+<h4 id="custom-name-and-description">Custom Name and Description</h4>
+<p>Override the auto-generated name and description with <code>--serve-name</code> and <code>--serve-description</code>:</p>
+<pre><code class="language-sh">swival --serve --serve-name &quot;Code Review Bot&quot; \
+  --serve-description &quot;Reviews Python code for bugs, security issues, and style&quot;
+</code></pre>
+<p>Or in <code>swival.toml</code>:</p>
+<pre><code class="language-toml">serve_name = &quot;Code Review Bot&quot;
+serve_description = &quot;Reviews Python code for bugs, security issues, and style&quot;
+</code></pre>
+<h4 id="defining-skills">Defining Skills</h4>
+<p>Skills tell client agents what your server is good at. Define them in <code>swival.toml</code>:</p>
+<pre><code class="language-toml">[[serve_skills]]
+id = &quot;review&quot;
+name = &quot;Code Review&quot;
+description = &quot;Analyze code for correctness, security, and style&quot;
+examples = [&quot;Review this pull request&quot;, &quot;Check this function for bugs&quot;]
+
+[[serve_skills]]
+id = &quot;explain&quot;
+name = &quot;Code Explanation&quot;
+description = &quot;Explain how a piece of code works&quot;
+examples = [&quot;What does this function do?&quot;]
+</code></pre>
+<p>Each skill requires an <code>id</code> field. The <code>id</code> must be a stable identifier that matches <code>[a-zA-Z0-9_-]+</code> with no double underscores or leading/trailing <code>_-</code> characters. The <code>name</code>, <code>description</code>, and <code>examples</code> fields are optional but recommended for client-side routing.</p>
+<p>Project-level <code>serve_skills</code> in <code>swival.toml</code> replace global-level skills entirely (no per-skill merging).</p>
 <h3 id="library-api_1">Library API</h3>
 <p>You can also create and run the server programmatically:</p>
 <pre><code class="language-python">from swival.a2a_server import A2aServer
@@ -215,6 +240,9 @@ server = A2aServer(
     host=&quot;0.0.0.0&quot;,
     port=8080,
     auth_token=&quot;sk-...&quot;,
+    name=&quot;Code Review Bot&quot;,
+    description=&quot;Reviews Python code for bugs and style&quot;,
+    skills=[{&quot;id&quot;: &quot;review&quot;, &quot;name&quot;: &quot;Code Review&quot;, &quot;description&quot;: &quot;Analyze code&quot;}],
 )
 server.serve()
 </code></pre>

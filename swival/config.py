@@ -69,6 +69,8 @@ CONFIG_KEYS: dict[str, type | tuple[type, ...]] = {
     "reasoning_effort": str,
     "cache": bool,
     "cache_dir": str,
+    "serve_name": str,
+    "serve_description": str,
 }
 
 _LIST_OF_STR_KEYS = {
@@ -132,6 +134,8 @@ _ARGPARSE_DEFAULTS: dict[str, Any] = {
     "reasoning_effort": None,
     "cache": False,
     "cache_dir": None,
+    "serve_name": None,
+    "serve_description": None,
 }
 
 
@@ -287,9 +291,10 @@ def _load_single(path: Path, label: str) -> dict:
     except tomllib.TOMLDecodeError as e:
         raise ConfigError(f"{label}: invalid TOML: {e}") from e
 
-    # Extract mcp_servers and a2a_servers before validation (nested tables)
+    # Extract mcp_servers, a2a_servers, serve_skills before validation (nested tables)
     mcp_servers = config.pop("mcp_servers", None)
     a2a_servers = config.pop("a2a_servers", None)
+    serve_skills = config.pop("serve_skills", None)
 
     # Strip unknown keys after warning (keep only known ones for downstream)
     _validate_config(config, label)
@@ -308,6 +313,13 @@ def _load_single(path: Path, label: str) -> dict:
             raise ConfigError(f"{label}: 'a2a_servers' must be a table")
         _validate_a2a_server_configs(a2a_servers, label)
         known["a2a_servers"] = a2a_servers
+
+    # Re-attach serve_skills if present
+    if serve_skills is not None:
+        if not isinstance(serve_skills, list):
+            raise ConfigError(f"{label}: 'serve_skills' must be an array of tables")
+        _validate_serve_skills(serve_skills, label)
+        known["serve_skills"] = serve_skills
 
     return known
 
@@ -475,6 +487,73 @@ def load_a2a_config(path: Path) -> dict[str, dict]:
     return servers
 
 
+# --- Serve skills validation ---
+
+
+_SERVE_SKILL_KNOWN_KEYS = {"id", "name", "description", "examples"}
+
+
+def _validate_serve_skills(skills: list, source: str) -> None:
+    """Validate structure of serve_skills entries."""
+    from .a2a_types import sanitize_skill_id
+
+    seen_ids: set[str] = set()
+    for i, skill in enumerate(skills):
+        prefix = f"{source}: serve_skills[{i}]"
+        if not isinstance(skill, dict):
+            raise ConfigError(f"{prefix}: expected a table, got {type(skill).__name__}")
+
+        # id is required
+        if "id" not in skill:
+            raise ConfigError(f"{prefix}: missing required key 'id'")
+
+        skill_id = skill["id"]
+        if not isinstance(skill_id, str):
+            raise ConfigError(
+                f"{prefix}.id: expected string, got {type(skill_id).__name__}"
+            )
+
+        # id must be stable under sanitization
+        sanitized = sanitize_skill_id(skill_id)
+        if sanitized != skill_id:
+            raise ConfigError(
+                f"{prefix}.id: {skill_id!r} is not a valid skill ID "
+                f"(would be sanitized to {sanitized!r}). Use the sanitized form directly."
+            )
+
+        # id must be unique
+        if skill_id in seen_ids:
+            raise ConfigError(f"{prefix}.id: duplicate skill ID {skill_id!r}")
+        seen_ids.add(skill_id)
+
+        # Optional field types
+        for key in ("name", "description"):
+            if key in skill and not isinstance(skill[key], str):
+                raise ConfigError(
+                    f"{prefix}.{key}: expected string, got {type(skill[key]).__name__}"
+                )
+
+        if "examples" in skill:
+            if not isinstance(skill["examples"], list):
+                raise ConfigError(
+                    f"{prefix}.examples: expected list, got {type(skill['examples']).__name__}"
+                )
+            for j, ex in enumerate(skill["examples"]):
+                if not isinstance(ex, str):
+                    raise ConfigError(
+                        f"{prefix}.examples[{j}]: expected string, "
+                        f"got {type(ex).__name__}"
+                    )
+
+        # Warn about unknown keys
+        unknown = set(skill.keys()) - _SERVE_SKILL_KNOWN_KEYS
+        if unknown:
+            print(
+                f"warning: {prefix}: unknown keys {unknown}",
+                file=sys.stderr,
+            )
+
+
 # --- Public API ---
 
 
@@ -523,6 +602,19 @@ def load_config(base_dir: Path) -> dict:
         a2a_merged.update(project_a2a)  # project wins
     if a2a_merged:
         merged["a2a_servers"] = a2a_merged
+
+    # Handle serve_skills separately (project replaces global wholesale)
+    global_serve_skills = global_config.pop("serve_skills", None)
+    project_serve_skills = project_config.pop("serve_skills", None)
+    serve_skills = (
+        project_serve_skills
+        if project_serve_skills is not None
+        else global_serve_skills
+    )
+    if serve_skills is not None:
+        merged["serve_skills"] = serve_skills
+    else:
+        merged.pop("serve_skills", None)  # remove stale value from shallow merge
 
     # Re-validate mutual exclusion on merged result (could conflict across files)
     if merged.get("system_prompt") and merged.get("no_system_prompt"):
@@ -681,6 +773,9 @@ def config_to_session_kwargs(config: dict) -> dict:
         "mcp_config",
         "no_a2a",
         "a2a_config",
+        "serve_name",
+        "serve_description",
+        "serve_skills",
     }
     _INVERT_KEYS = {
         "no_read_guard": "read_guard",
@@ -777,6 +872,11 @@ def generate_config(project: bool = False) -> str:
         '# review_prompt = "Focus on correctness"',
         '# objective = "objective.md"',
         '# verify = "verification/working.md"',
+        "",
+        "# --- A2A serve ---",
+        '# serve_name = "My Agent"',
+        '# serve_description = "What this agent does"',
+        '# serve_skills = [{id = "ask", name = "Ask", description = "Send a question"}]',
         "",
     ]
     return "\n".join(lines)

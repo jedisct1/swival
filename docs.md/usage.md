@@ -187,6 +187,10 @@ See [A2A](a2a.md) for full configuration details.
 
 `--serve-auth-token TOKEN` enables bearer token authentication on the A2A server. When set, all requests must include a valid `Authorization: Bearer <token>` header.
 
+`--serve-name NAME` sets a custom agent name in the A2A agent card. Defaults to `swival (provider/model)`.
+
+`--serve-description TEXT` sets a custom agent description in the A2A agent card.
+
 See [A2A](a2a.md) for full server documentation.
 
 ### Output And Reporting Flags

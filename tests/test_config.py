@@ -1106,3 +1106,152 @@ class TestReasoningEffort:
     def test_in_generate_config(self):
         content = generate_config()
         assert "reasoning_effort" in content
+
+
+# ===========================================================================
+# Serve skills validation
+# ===========================================================================
+
+
+class TestServeSkills:
+    """Tests for serve_skills config loading, validation, and merge."""
+
+    def test_validate_valid_skills(self):
+        from swival.config import _validate_serve_skills
+
+        skills = [
+            {
+                "id": "review",
+                "name": "Review",
+                "description": "Review code",
+                "examples": ["Review this"],
+            },
+            {"id": "explain"},
+        ]
+        # Should not raise
+        _validate_serve_skills(skills, "test")
+
+    def test_validate_missing_id(self):
+        from swival.config import _validate_serve_skills
+
+        with pytest.raises(ConfigError, match="missing required key 'id'"):
+            _validate_serve_skills([{"name": "Review"}], "test")
+
+    def test_validate_duplicate_id(self):
+        from swival.config import _validate_serve_skills
+
+        skills = [{"id": "review"}, {"id": "review"}]
+        with pytest.raises(ConfigError, match="duplicate skill ID"):
+            _validate_serve_skills(skills, "test")
+
+    def test_validate_id_not_string(self):
+        from swival.config import _validate_serve_skills
+
+        with pytest.raises(ConfigError, match="expected string"):
+            _validate_serve_skills([{"id": 42}], "test")
+
+    def test_validate_id_mutates_under_sanitization(self):
+        from swival.config import _validate_serve_skills
+
+        with pytest.raises(ConfigError, match="not a valid skill ID"):
+            _validate_serve_skills([{"id": "-review-"}], "test")
+
+    def test_validate_id_with_spaces_rejected(self):
+        from swival.config import _validate_serve_skills
+
+        with pytest.raises(ConfigError, match="not a valid skill ID"):
+            _validate_serve_skills([{"id": "my skill"}], "test")
+
+    def test_validate_not_a_dict(self):
+        from swival.config import _validate_serve_skills
+
+        with pytest.raises(ConfigError, match="expected a table"):
+            _validate_serve_skills(["not a dict"], "test")
+
+    def test_validate_examples_not_list(self):
+        from swival.config import _validate_serve_skills
+
+        with pytest.raises(ConfigError, match="expected list"):
+            _validate_serve_skills([{"id": "x", "examples": "not a list"}], "test")
+
+    def test_validate_examples_element_not_string(self):
+        from swival.config import _validate_serve_skills
+
+        with pytest.raises(ConfigError, match="expected string"):
+            _validate_serve_skills([{"id": "x", "examples": [42]}], "test")
+
+    def test_validate_name_not_string(self):
+        from swival.config import _validate_serve_skills
+
+        with pytest.raises(ConfigError, match="expected string"):
+            _validate_serve_skills([{"id": "x", "name": 42}], "test")
+
+    def test_validate_unknown_keys_warn(self, capsys):
+        from swival.config import _validate_serve_skills
+
+        _validate_serve_skills([{"id": "x", "future_field": True}], "test")
+        assert "unknown keys" in capsys.readouterr().err
+
+    def test_config_loading_serve_skills(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+        toml_content = (
+            'serve_name = "Bot"\n'
+            'serve_description = "A bot"\n'
+            '[[serve_skills]]\nid = "ask"\nname = "Ask"\n'
+        )
+        _write_toml(tmp_path / "swival.toml", toml_content)
+        result = load_config(tmp_path)
+        assert result["serve_name"] == "Bot"
+        assert result["serve_description"] == "A bot"
+        assert len(result["serve_skills"]) == 1
+        assert result["serve_skills"][0]["id"] == "ask"
+
+    def test_config_merge_project_replaces_global_skills(self, tmp_path, monkeypatch):
+        global_dir = tmp_path / "global"
+        global_dir.mkdir()
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(global_dir))
+        _write_toml(
+            global_dir / "swival" / "config.toml",
+            '[[serve_skills]]\nid = "global-skill"\n',
+        )
+        _write_toml(
+            tmp_path / "swival.toml",
+            '[[serve_skills]]\nid = "project-skill"\n',
+        )
+        result = load_config(tmp_path)
+        assert len(result["serve_skills"]) == 1
+        assert result["serve_skills"][0]["id"] == "project-skill"
+
+    def test_config_merge_global_skills_used_when_no_project(
+        self, tmp_path, monkeypatch
+    ):
+        global_dir = tmp_path / "global"
+        global_dir.mkdir()
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(global_dir))
+        _write_toml(
+            global_dir / "swival" / "config.toml",
+            '[[serve_skills]]\nid = "global-skill"\n',
+        )
+        # No project config
+        result = load_config(tmp_path)
+        assert len(result["serve_skills"]) == 1
+        assert result["serve_skills"][0]["id"] == "global-skill"
+
+    def test_config_to_session_kwargs_drops_serve_keys(self):
+        config = {
+            "serve_name": "Bot",
+            "serve_description": "A bot",
+            "serve_skills": [{"id": "ask"}],
+            "provider": "lmstudio",
+        }
+        kwargs = config_to_session_kwargs(config)
+        assert "serve_name" not in kwargs
+        assert "serve_description" not in kwargs
+        assert "serve_skills" not in kwargs
+        assert kwargs["provider"] == "lmstudio"
+
+    def test_serve_skills_not_a_list_in_config(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+        _write_toml(tmp_path / "swival.toml", 'serve_skills = "nope"\n')
+        with pytest.raises(ConfigError, match="must be an array"):
+            load_config(tmp_path)

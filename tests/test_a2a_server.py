@@ -554,6 +554,104 @@ class TestBuildAgentCard:
         assert len(ifaces) == 1
         assert ifaces[0]["protocolVersion"] == "1.0"
 
+    def test_custom_name(self):
+        card = build_agent_card(
+            session_kwargs={"provider": "openrouter", "model": "qwen3"},
+            host="127.0.0.1",
+            port=5000,
+            name="My Custom Agent",
+        )
+        assert card["name"] == "My Custom Agent"
+
+    def test_custom_description(self):
+        card = build_agent_card(
+            session_kwargs={},
+            host="127.0.0.1",
+            port=5000,
+            description="A specialized agent for code review",
+        )
+        assert card["description"] == "A specialized agent for code review"
+
+    def test_custom_name_none_uses_default(self):
+        card = build_agent_card(
+            session_kwargs={"provider": "openrouter", "model": "qwen3"},
+            host="127.0.0.1",
+            port=5000,
+            name=None,
+        )
+        assert "openrouter" in card["name"]
+        assert "qwen3" in card["name"]
+
+    def test_custom_description_none_uses_default(self):
+        card = build_agent_card(
+            session_kwargs={},
+            host="127.0.0.1",
+            port=5000,
+            description=None,
+        )
+        assert "coding agent" in card["description"]
+
+    def test_skills_in_card(self):
+        skills = [
+            {
+                "id": "review",
+                "name": "Code Review",
+                "description": "Analyze code",
+                "examples": ["Review this PR"],
+            },
+            {
+                "id": "explain",
+                "name": "Code Explanation",
+                "description": "Explain code",
+            },
+        ]
+        card = build_agent_card(
+            session_kwargs={},
+            host="127.0.0.1",
+            port=5000,
+            skills=skills,
+        )
+        assert len(card["skills"]) == 2
+        assert card["skills"][0]["id"] == "review"
+        assert card["skills"][0]["name"] == "Code Review"
+        assert card["skills"][0]["examples"] == ["Review this PR"]
+        assert card["skills"][1]["id"] == "explain"
+        assert "examples" not in card["skills"][1]
+
+    def test_skills_none_gives_empty_list(self):
+        card = build_agent_card(
+            session_kwargs={},
+            host="127.0.0.1",
+            port=5000,
+            skills=None,
+        )
+        assert card["skills"] == []
+
+    def test_skills_empty_list(self):
+        card = build_agent_card(
+            session_kwargs={},
+            host="127.0.0.1",
+            port=5000,
+            skills=[],
+        )
+        assert card["skills"] == []
+
+    def test_all_customizations_together(self):
+        skills = [{"id": "ask", "name": "Ask", "description": "Ask a question"}]
+        card = build_agent_card(
+            session_kwargs={"provider": "openrouter", "model": "qwen3"},
+            host="127.0.0.1",
+            port=5000,
+            auth_token="secret",
+            name="My Agent",
+            description="Does things",
+            skills=skills,
+        )
+        assert card["name"] == "My Agent"
+        assert card["description"] == "Does things"
+        assert len(card["skills"]) == 1
+        assert "securitySchemes" in card
+
 
 # ---------------------------------------------------------------------------
 # 12. A2aTask dataclass
