@@ -2,6 +2,14 @@
 
 All notable user-facing changes to Swival.
 
+## 0.1.23
+
+- Added A2A (Agent-to-Agent) support: connect to remote agents via
+  `[a2a_servers.*]` in `swival.toml` or `--a2a-config`, with tools exposed as
+  `a2a__<agent>__<skill>`.
+- Added budgeted memory injection. Use `--memory-full` for legacy full injection.
+- Added support for reading questions from stdin when piped.
+
 ## 0.1.22
 
 - Added `--self-review` option: the agent reviews its own work before finishing.
