@@ -145,6 +145,12 @@
 <p><code>--no-a2a</code> disables A2A agent connections entirely, even if agents are configured in <code>swival.toml</code>.</p>
 <p><code>--a2a-config FILE</code> provides an explicit path to an A2A TOML config file with <code>[a2a_servers.*]</code> tables.</p>
 <p>See <a href="a2a.html">A2A</a> for full configuration details.</p>
+<h3 id="a2a-server-flags">A2A Server Flags</h3>
+<p><code>--serve</code> starts Swival as an A2A server instead of running a one-shot task or REPL. Incoming tasks are handled by Session instances keyed by contextId. Incompatible with <code>--repl</code>.</p>
+<p><code>--serve-host HOST</code> sets the bind address for the A2A server. Default is <code>0.0.0.0</code>.</p>
+<p><code>--serve-port PORT</code> sets the port for the A2A server. Default is <code>8080</code>.</p>
+<p><code>--serve-auth-token TOKEN</code> enables bearer token authentication on the A2A server. When set, all requests must include a valid <code>Authorization: Bearer &lt;token&gt;</code> header.</p>
+<p>See <a href="a2a.html">A2A</a> for full server documentation.</p>
 <h3 id="output-and-reporting-flags">Output And Reporting Flags</h3>
 <p><code>--quiet</code> and <code>-q</code> suppress diagnostics and keep terminal output focused on final answers.</p>
 <p><code>--report FILE</code> writes a JSON run report to <code>FILE</code>. This flag is incompatible with <code>--repl</code>.</p>

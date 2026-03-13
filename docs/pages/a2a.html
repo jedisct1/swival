@@ -183,6 +183,42 @@ result = session.run(&quot;Ask the research agent to summarize recent papers on 
 <li>Interrupted: <code>input-required</code>, <code>auth-required</code></li>
 </ul>
 <p>Terminal tasks return their result immediately. Interrupted tasks return with continuation metadata so the model can resume.</p>
+<h2 id="serving-as-an-a2a-agent">Serving As An A2A Agent</h2>
+<p>Swival can also run as an A2A server, exposing a Session as an endpoint that other agents can call. This lets you wrap any swival configuration (provider, model, tools, skills, MCP servers) as a remote A2A agent.</p>
+<pre><code class="language-sh">swival --serve --provider openrouter --model z-ai/glm-5
+</code></pre>
+<p>This starts an HTTP server at <code>0.0.0.0:8080</code> that accepts A2A JSON-RPC requests and serves an Agent Card at <code>/.well-known/agent-card.json</code>.</p>
+<h3 id="server-cli-flags">Server CLI Flags</h3>
+<p><code>--serve</code> starts the A2A server instead of running a one-shot task or REPL.</p>
+<p><code>--serve-host HOST</code> sets the bind address (default: <code>0.0.0.0</code>).</p>
+<p><code>--serve-port PORT</code> sets the port (default: <code>8080</code>).</p>
+<p><code>--serve-auth-token TOKEN</code> enables bearer token authentication. When set, all JSON-RPC requests must include an <code>Authorization: Bearer &lt;token&gt;</code> header.</p>
+<p>All other flags (<code>--provider</code>, <code>--model</code>, <code>--allowed-commands</code>, <code>--yolo</code>, <code>--mcp-config</code>, etc.) configure the underlying Session that handles incoming tasks.</p>
+<h3 id="how-it-works">How It Works</h3>
+<p>Each incoming <code>SendMessage</code> request is routed to a Session instance keyed by <code>contextId</code>. If no <code>contextId</code> is provided, the server generates one. The server uses <code>Session.ask()</code> for each message, preserving conversation state across calls within the same context.</p>
+<p>Sessions are cleaned up after a configurable TTL (default: 1 hour). If the session limit is reached (default: 100), the least-recently-used session is evicted. Per-context locks ensure sequential processing of messages within the same context.</p>
+<p>The server supports three JSON-RPC methods:</p>
+<ul>
+<li><strong>SendMessage</strong> — sends a message to a session and returns the task result</li>
+<li><strong>GetTask</strong> — retrieves the current state of a task by ID</li>
+<li><strong>ListTasks</strong> — lists tasks, optionally filtered by <code>contextId</code></li>
+</ul>
+<p>Task outcomes map from Session results: a successful <code>ask()</code> produces a <code>completed</code> task, an exhausted run with no answer produces <code>input-required</code> (needs more information), and an exhausted run with a partial answer or an exception produces <code>failed</code>.</p>
+<h3 id="agent-card">Agent Card</h3>
+<p>The server auto-generates an Agent Card from the session configuration. The card includes the server name (derived from provider and model), capabilities, and endpoint URL. When <code>--serve-auth-token</code> is set, the card declares a bearer security scheme.</p>
+<h3 id="library-api_1">Library API</h3>
+<p>You can also create and run the server programmatically:</p>
+<pre><code class="language-python">from swival.a2a_server import A2aServer
+
+server = A2aServer(
+    session_kwargs={&quot;provider&quot;: &quot;openrouter&quot;, &quot;model&quot;: &quot;z-ai/glm-5&quot;},
+    host=&quot;0.0.0.0&quot;,
+    port=8080,
+    auth_token=&quot;sk-...&quot;,
+)
+server.serve()
+</code></pre>
+<p>The <code>A2aServer.app</code> property returns a Starlette ASGI application, which can be mounted in larger applications or used with any ASGI server.</p>
         </article>
     </div>
     <footer class="site-footer">
