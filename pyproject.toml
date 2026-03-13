@@ -28,6 +28,7 @@ dependencies = [
     "rich>=14.3",
     "prompt-toolkit>=3.0.52",
     "mcp>=1.26,<2",
+    "rank-bm25>=0.2.2",
 ]
 
 [project.urls]

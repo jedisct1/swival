@@ -1020,6 +1020,7 @@ def load_instructions(
 
 MAX_MEMORY_LINES = 200
 MAX_MEMORY_CHARS = 8_000
+MAX_MEMORY_FILE_BYTES = 512_000  # 512KB sane cap for budgeted mode
 
 _MEMORY_PREAMBLE = (
     "[These are your notes from previous sessions — factual observations,\n"
@@ -1027,33 +1028,12 @@ _MEMORY_PREAMBLE = (
 )
 
 
-def load_memory(base_dir: str, *, verbose: bool = False) -> str:
-    """Load auto-memory from .swival/memory/MEMORY.md if present.
+BOOTSTRAP_TOKEN_BUDGET = 400
+RETRIEVAL_TOKEN_BUDGET = 400
 
-    Returns an XML-wrapped ``<memory>`` block, or "" if no memory is found.
-    Truncates at MAX_MEMORY_LINES lines and MAX_MEMORY_CHARS characters.
-    """
-    try:
-        memory_path = _safe_memory_path(base_dir)
-    except ValueError:
-        if verbose:
-            fmt.warning("memory path escapes base directory, skipping")
-        return ""
 
-    if not memory_path.is_file():
-        return ""
-
-    try:
-        with memory_path.open(encoding="utf-8", errors="replace") as f:
-            raw = f.read(MAX_MEMORY_CHARS + 1)
-    except OSError:
-        if verbose:
-            fmt.warning(f"failed to read memory from {memory_path}")
-        return ""
-
-    if not raw or not raw.strip():
-        return ""
-
+def _load_memory_full(raw: str, verbose: bool, memory_path: Path) -> str:
+    """Legacy full injection: load everything, truncate by lines/chars."""
     lines = raw.splitlines(keepends=True)
     truncated_by = None
     if len(lines) > MAX_MEMORY_LINES:
@@ -1083,6 +1063,156 @@ def load_memory(base_dir: str, *, verbose: bool = False) -> str:
         )
         if truncated_by:
             fmt.info(f"Memory truncated by {truncated_by} cap")
+
+    return content
+
+
+def load_memory(
+    base_dir: str,
+    *,
+    verbose: bool = False,
+    memory_full: bool = False,
+    user_query: str | None = None,
+    report: "ReportCollector | None" = None,
+) -> str:
+    """Load auto-memory from .swival/memory/MEMORY.md if present.
+
+    Returns an XML-wrapped ``<memory>`` block, or "" if no memory is found.
+
+    When *memory_full* is True, injects the entire file (legacy behavior).
+    Otherwise, uses budgeted two-part injection: bootstrap entries first,
+    then BM25-retrieved entries keyed from *user_query*.
+    """
+    from .tokens import count_tokens, truncate_to_tokens
+    from .memory import parse_memory, retrieve_bm25
+
+    try:
+        memory_path = _safe_memory_path(base_dir)
+    except ValueError:
+        if verbose:
+            fmt.warning("memory path escapes base directory, skipping")
+        return ""
+
+    if not memory_path.is_file():
+        return ""
+
+    # In full mode, the old line/char caps apply inside _load_memory_full.
+    # In budgeted mode, we read the full file for BM25 ranking, with a sane cap.
+    read_limit = (MAX_MEMORY_CHARS + 1) if memory_full else MAX_MEMORY_FILE_BYTES
+    try:
+        with memory_path.open(encoding="utf-8", errors="replace") as f:
+            raw = f.read(read_limit)
+    except OSError:
+        if verbose:
+            fmt.warning(f"failed to read memory from {memory_path}")
+        return ""
+
+    if not raw or not raw.strip():
+        return ""
+
+    # Legacy full injection mode
+    if memory_full:
+        content = _load_memory_full(raw, verbose, memory_path)
+        if report:
+            report.record_memory(
+                total_entries=0,
+                bootstrap_entries=0,
+                retrievable_entries=0,
+                bootstrap_tokens=count_tokens(content),
+                retrieval_tokens=0,
+                retrieved_ids=[],
+                mode="full",
+            )
+        return f"<memory>\n{_MEMORY_PREAMBLE}\n\n{content}\n</memory>"
+
+    # Budgeted injection
+    entries = parse_memory(raw)
+    if not entries:
+        return ""
+
+    bootstrap = [e for e in entries if e.is_bootstrap]
+    retrievable = [e for e in entries if not e.is_bootstrap]
+
+    def _pack_entries(
+        entry_list: list, budget: int
+    ) -> tuple[list[str], int, list[str]]:
+        """Pack entries into a budget, truncating the last if needed."""
+        parts: list[str] = []
+        tokens_used = 0
+        ids: list[str] = []
+        for entry in entry_list:
+            entry_tokens = entry.tokens
+            if tokens_used + entry_tokens > budget:
+                remaining = budget - tokens_used
+                if remaining > 20:
+                    parts.append(truncate_to_tokens(entry.content, remaining))
+                    tokens_used += remaining
+                    ids.append(entry.id)
+                break
+            parts.append(entry.content)
+            tokens_used += entry_tokens
+            ids.append(entry.id)
+        return parts, tokens_used, ids
+
+    # Part 1: bootstrap block (always included, within budget)
+    bootstrap_parts, bootstrap_tokens, _ = _pack_entries(
+        bootstrap, BOOTSTRAP_TOKEN_BUDGET
+    )
+
+    # Part 2: retrieval block (BM25-ranked, within budget)
+    retrieved_ids: list[str] = []
+    retrieval_parts: list[str] = []
+    retrieval_tokens = 0
+
+    if retrievable:
+        if user_query:
+            results = retrieve_bm25(
+                user_query,
+                retrievable,
+                top_k=5,
+                token_budget=RETRIEVAL_TOKEN_BUDGET,
+            )
+            for entry, _score in results:
+                retrieval_parts.append(entry.content)
+                retrieval_tokens += entry.tokens
+                retrieved_ids.append(entry.id)
+        else:
+            # No query available — take first entries that fit
+            retrieval_parts, retrieval_tokens, retrieved_ids = _pack_entries(
+                retrievable, RETRIEVAL_TOKEN_BUDGET
+            )
+
+    # Assemble
+    sections: list[str] = []
+    if bootstrap_parts:
+        sections.extend(bootstrap_parts)
+    if retrieval_parts:
+        sections.extend(retrieval_parts)
+
+    if verbose:
+        fmt.info(
+            f"Memory: {len(entries)} entries "
+            f"({len(bootstrap)} bootstrap, {len(retrievable)} retrievable), "
+            f"injecting {bootstrap_tokens}+{retrieval_tokens} tokens"
+        )
+        if retrieved_ids:
+            fmt.info(f"Retrieved memory entries: {', '.join(retrieved_ids)}")
+
+    if report:
+        report.record_memory(
+            total_entries=len(entries),
+            bootstrap_entries=len(bootstrap),
+            retrievable_entries=len(retrievable),
+            bootstrap_tokens=bootstrap_tokens,
+            retrieval_tokens=retrieval_tokens,
+            retrieved_ids=retrieved_ids,
+            mode="budgeted",
+        )
+
+    if not sections:
+        return ""
+
+    content = "\n\n".join(sections)
 
     return f"<memory>\n{_MEMORY_PREAMBLE}\n\n{content}\n</memory>"
 
@@ -1702,6 +1832,12 @@ def build_parser():
         action="store_true",
         default=_UNSET,
         help="Don't load auto-memory from .swival/memory/.",
+    )
+    parser.add_argument(
+        "--memory-full",
+        action="store_true",
+        default=_UNSET,
+        help="Inject all of MEMORY.md into the prompt (skip budgeted retrieval).",
     )
     parser.add_argument(
         "--no-continue",
@@ -2378,6 +2514,9 @@ def build_system_prompt(
     config_dir: "Path | None" = None,
     mcp_tool_info: dict | None = None,
     no_continue: bool = False,
+    memory_full: bool = False,
+    user_query: str | None = None,
+    report: "ReportCollector | None" = None,
 ) -> tuple[str | None, list[str]]:
     """Assemble full system prompt with instructions, date, skills, memory.
 
@@ -2402,7 +2541,13 @@ def build_system_prompt(
                 system_content += "\n\n" + instructions
 
         if not no_memory:
-            memory_text = load_memory(base_dir, verbose=verbose)
+            memory_text = load_memory(
+                base_dir,
+                verbose=verbose,
+                memory_full=memory_full,
+                user_query=user_query,
+                report=report,
+            )
             if memory_text:
                 system_content += "\n\n" + memory_text
 
@@ -2589,6 +2734,7 @@ def _run_main(args, report, _write_report, parser):
         no_system_prompt=args.no_system_prompt,
         no_instructions=args.no_instructions,
         no_memory=getattr(args, "no_memory", False),
+        memory_full=getattr(args, "memory_full", False),
         skills_catalog=skills_catalog,
         yolo=yolo,
         resolved_commands=resolved_commands,
@@ -2596,6 +2742,8 @@ def _run_main(args, report, _write_report, parser):
         config_dir=getattr(args, "config_dir", None),
         mcp_tool_info=mcp_tool_info,
         no_continue=getattr(args, "no_continue", False),
+        user_query=getattr(args, "question", None),
+        report=report,
     )
     messages = []
     if system_content is not None:

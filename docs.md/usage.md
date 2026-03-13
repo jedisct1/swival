@@ -69,7 +69,7 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 
 `/continue-status` shows whether a continue file exists from a prior interrupted session and previews its contents.
 
-`/learn` reviews the current session for mistakes and confusions, then persists notes to `.swival/memory/MEMORY.md` for future sessions to learn from.
+`/learn` reviews the current session for mistakes and confusions, then persists notes to `.swival/memory/MEMORY.md` for future sessions to learn from. On subsequent runs, memory entries are parsed by heading and selectively injected into the prompt using BM25 retrieval keyed from the user's question, keeping memory token cost bounded.
 
 `/init` runs a three-pass workflow that scans your project and generates an `AGENTS.md` file.
 
@@ -148,6 +148,8 @@ Useful for long-running sessions.
 `--no-instructions` prevents loading `CLAUDE.md` and `AGENTS.md` from both the base directory and the user config directory.
 
 `--no-memory` prevents loading auto-memory from `.swival/memory/`.
+
+`--memory-full` injects the entire `MEMORY.md` into the prompt instead of the default budgeted retrieval. Useful as a fallback if retrieval misses entries.
 
 `--system-prompt` and `--no-system-prompt` are mutually exclusive.
 

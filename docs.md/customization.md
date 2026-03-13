@@ -101,6 +101,12 @@ Use `--no-memory` to skip loading auto-memory from `.swival/memory/`.
 swival --no-memory "task"
 ```
 
+Use `--memory-full` to inject the entire `MEMORY.md` file into the prompt instead of the default budgeted retrieval. This is the legacy behavior and serves as a fallback if the retrieval-based injection misses entries you need.
+
+```sh
+swival --memory-full "task"
+```
+
 If you set `--system-prompt`, instruction files are also skipped because you are providing the full prompt text directly.
 
 ## System Prompt Control

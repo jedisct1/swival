@@ -72,6 +72,7 @@ class Session:
         read_guard: bool = True,
         history: bool = True,
         memory: bool = True,
+        memory_full: bool = False,
         config_dir: "Path | None" = None,
         proactive_summaries: bool = False,
         mcp_servers: dict | None = None,
@@ -111,6 +112,7 @@ class Session:
         self.read_guard = read_guard
         self.history = history
         self.memory = memory
+        self.memory_full = memory_full
         self.mcp_servers = mcp_servers
         self.extra_body = extra_body
         self.reasoning_effort = reasoning_effort
@@ -229,14 +231,15 @@ class Session:
 
             self._llm_cache = open_cache(self.base_dir, self.cache_dir)
 
-        # Build system prompt
+        # Build system prompt (without memory — memory is injected per-call
+        # in run()/ask() so it can be keyed from the user's question).
         mcp_tool_info = self._mcp_manager.get_tool_info() if self._mcp_manager else None
         self._system_content, self._instructions_loaded = build_system_prompt(
             base_dir=self.base_dir,
             system_prompt=self.system_prompt,
             no_system_prompt=self.no_system_prompt,
             no_instructions=self.no_instructions,
-            no_memory=not self.memory,
+            no_memory=True,
             skills_catalog=self._skills_catalog,
             yolo=self.yolo,
             resolved_commands=self._resolved_commands,
@@ -256,14 +259,45 @@ class Session:
 
         self._setup_done = True
 
-    def _make_initial_messages(self) -> list[dict]:
+    def _system_with_memory(
+        self,
+        question: str,
+        report: "ReportCollector | None" = None,
+    ) -> str | None:
+        """Return system content with memory injected, keyed from *question*."""
+        if self._system_content is None:
+            return None
+        if not self.memory:
+            return self._system_content
+        # Custom system_prompt skips memory (same logic as build_system_prompt)
+        if self.system_prompt:
+            return self._system_content
+
+        from .agent import load_memory
+
+        memory_text = load_memory(
+            self.base_dir,
+            verbose=self.verbose,
+            memory_full=self.memory_full,
+            user_query=question,
+            report=report,
+        )
+        if memory_text:
+            return self._system_content + "\n\n" + memory_text
+        return self._system_content
+
+    def _make_initial_messages(
+        self,
+        system_content: str | None = None,
+    ) -> list[dict]:
         """Create the initial messages list with system prompt if configured."""
+        content = system_content if system_content is not None else self._system_content
         messages: list[dict] = []
-        if self._system_content is not None:
-            messages.append({"role": "system", "content": self._system_content})
+        if content is not None:
+            messages.append({"role": "system", "content": content})
         return messages
 
-    def _make_per_run_state(self) -> dict:
+    def _make_per_run_state(self, system_content: str | None = None) -> dict:
         """Create fresh per-run state: thinking, tracker, skill roots, messages."""
         from .agent import CompactionState
 
@@ -273,7 +307,7 @@ class Session:
             "snapshot_state": SnapshotState(verbose=self.verbose),
             "file_tracker": FileAccessTracker() if self.read_guard else None,
             "skill_read_roots": list(self._allowed_dir_ro_paths),
-            "messages": self._make_initial_messages(),
+            "messages": self._make_initial_messages(system_content),
             "compaction_state": CompactionState() if self.proactive_summaries else None,
         }
         return state
@@ -316,11 +350,11 @@ class Session:
 
         from .agent import run_agent_loop, append_history
 
-        state = self._make_per_run_state()
+        collector = ReportCollector() if report else None
+        system_content = self._system_with_memory(question, collector)
+        state = self._make_per_run_state(system_content=system_content)
         messages = state["messages"]
         messages.append({"role": "user", "content": question})
-
-        collector = ReportCollector() if report else None
         loop_kwargs = self._build_loop_kwargs(state)
 
         answer, exhausted = run_agent_loop(
@@ -367,7 +401,8 @@ class Session:
         from .agent import run_agent_loop, append_history
 
         if self._conv_state is None:
-            self._conv_state = self._make_per_run_state()
+            system_content = self._system_with_memory(question)
+            self._conv_state = self._make_per_run_state(system_content=system_content)
 
         state = self._conv_state
         messages = state["messages"]

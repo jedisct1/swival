@@ -27,6 +27,7 @@ class ReportCollector:
         self.total_tool_time = 0.0
         self.max_turn_seen = 0
         self.skills_used: list[str] = []
+        self.memory_stats: dict | None = None
         self._last_report: dict | None = None
 
     def record_llm_call(
@@ -115,6 +116,27 @@ class ReportCollector:
         self.truncated_responses += 1
         self.events.append({"turn": turn, "type": "truncated_response"})
 
+    def record_memory(
+        self,
+        *,
+        total_entries: int,
+        bootstrap_entries: int,
+        retrievable_entries: int,
+        bootstrap_tokens: int,
+        retrieval_tokens: int,
+        retrieved_ids: list[str],
+        mode: str,
+    ):
+        self.memory_stats = {
+            "total_entries": total_entries,
+            "bootstrap_entries": bootstrap_entries,
+            "retrievable_entries": retrievable_entries,
+            "bootstrap_tokens": bootstrap_tokens,
+            "retrieval_tokens": retrieval_tokens,
+            "retrieved_ids": retrieved_ids,
+            "mode": mode,
+        }
+
     def record_review(
         self,
         review_round: int,
@@ -201,6 +223,7 @@ class ReportCollector:
                 "review_rounds": review_rounds,
                 **({"todo": todo_stats} if todo_stats else {}),
                 **({"snapshot": snapshot_stats} if snapshot_stats else {}),
+                **({"memory": self.memory_stats} if self.memory_stats else {}),
             },
             "timeline": self.events,
         }

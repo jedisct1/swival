@@ -27,6 +27,7 @@ Every tool that returns content has a hard cap on how much it can put into the c
 - **MCP tool results** follow the same pattern: inline up to 20KB, saved to file above that.
 - **URL fetches** are capped at 5MB for the raw download and 50KB for the converted output.
 - **Instruction files** (`CLAUDE.md`, `AGENTS.md`) are each capped at 10,000 characters.
+- **Auto-memory** (`.swival/memory/MEMORY.md`) is injected through a budgeted two-part pipeline. Entries tagged with `<!-- bootstrap -->` are always included (up to 400 tokens). Remaining entries are ranked by BM25 relevance against the user's question and the top results are injected (up to 400 tokens). Total memory cost stays within 800 tokens even for large memory files. Use `--memory-full` to inject everything (legacy behavior).
 
 These limits are deliberately conservative. They prevent a single tool call from consuming a significant fraction of a small context window.
 

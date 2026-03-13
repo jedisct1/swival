@@ -105,7 +105,14 @@ class TestArgumentParsing:
         """Without --repl and no question, main() should call parser.error()."""
         # The parser itself accepts question as nargs="?", so parse_args([])
         # succeeds. Validation happens in main().
-        with patch("swival.agent.build_parser") as mock_bp:
+        mock_stdin = MagicMock()
+        mock_stdin.isatty.return_value = True
+        with (
+            patch("swival.agent.build_parser") as mock_bp,
+            patch("swival.agent.sys") as mock_sys,
+        ):
+            mock_sys.stdin = mock_stdin
+            mock_sys.argv = ["swival"]
             mock_parser = MagicMock()
             mock_args = SimpleNamespace(
                 question=None,
