@@ -93,6 +93,7 @@
 <p><code>/continue</code> restarts the agent loop for the existing conversation without adding a new user message.</p>
 <p><code>/continue-status</code> shows whether a continue file exists from a prior interrupted session and previews its contents.</p>
 <p><code>/learn</code> reviews the current session for mistakes and confusions, then persists notes to <code>.swival/memory/MEMORY.md</code> for future sessions to learn from. On subsequent runs, memory entries are parsed by heading and selectively injected into the prompt using BM25 retrieval keyed from the user's question, keeping memory token cost bounded.</p>
+<p><code>/tools</code> lists all tools available in the current session — built-in, MCP, and A2A — grouped by source with full descriptions.</p>
 <p><code>/init</code> runs a three-pass workflow that scans your project and generates an <code>AGENTS.md</code> file.</p>
 <p><code>/exit</code> and <code>/quit</code> leave the REPL. Pressing <code>Ctrl-D</code> exits as well.</p>
 <h2 id="cli-flags">CLI Flags</h2>

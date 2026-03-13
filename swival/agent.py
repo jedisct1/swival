@@ -3707,9 +3707,72 @@ def _repl_help() -> None:
         "  /continue          Reset turn counter and continue the agent loop\n"
         "  /continue-status   Show if a continue file exists from a prior session\n"
         "  /learn             Review session for mistakes and persist to memory\n"
+        "  /tools             List all available tools\n"
         "  /init              Generate AGENTS.md for the current project\n"
         "  /exit, /quit       Exit the REPL"
     )
+
+
+def _repl_tools(tools: list, mcp_manager=None, a2a_manager=None) -> None:
+    """Print all available tools grouped by source."""
+    # Collect MCP/A2A tool info from managers for classification.
+    mcp_info = mcp_manager.get_tool_info() if mcp_manager is not None else {}
+    a2a_info = a2a_manager.get_tool_info() if a2a_manager is not None else {}
+    external_names: set[str] = set()
+    for entries in (*mcp_info.values(), *a2a_info.values()):
+        external_names.update(name for name, _ in entries)
+
+    # Built-in: everything not claimed by MCP/A2A.
+    builtin: list[tuple[str, str]] = []
+    for t in tools:
+        name = t["function"]["name"]
+        if name not in external_names:
+            builtin.append((name, t["function"].get("description", "")))
+    builtin.sort()
+
+    def _format_entries(entries: list[tuple[str, str]], indent: str) -> list[str]:
+        if not entries:
+            return []
+        col = max(len(name) for name, _ in entries) + 2
+        lines: list[str] = []
+        for name, desc in entries:
+            padding = " " * (col - len(name))
+            # Normalize embedded newlines to hanging-indent continuation.
+            desc_lines = desc.split("\n")
+            first = f"{indent}{name}{padding}{desc_lines[0]}"
+            lines.append(first)
+            if len(desc_lines) > 1:
+                hang = " " * (len(indent) + col)
+                for cont in desc_lines[1:]:
+                    lines.append(f"{hang}{cont}")
+        return lines
+
+    parts: list[str] = []
+
+    if builtin:
+        parts.append("Built-in tools:")
+        parts.extend(_format_entries(builtin, "  "))
+
+    for source_info, kind, noun in [
+        (mcp_info, "MCP tools", "server"),
+        (a2a_info, "A2A tools", "agent"),
+    ]:
+        if not source_info:
+            continue
+        n = len(source_info)
+        label = noun if n == 1 else f"{noun}s"
+        if parts:
+            parts.append("")
+        parts.append(f"{kind} ({n} {label}):")
+        for group in sorted(source_info):
+            entries = sorted(source_info[group])
+            parts.append(f"  {group}:")
+            parts.extend(_format_entries(entries, "    "))
+
+    if parts:
+        fmt.info("\n".join(parts))
+    else:
+        fmt.info("No tools available.")
 
 
 def _repl_clear(
@@ -4009,6 +4072,9 @@ def repl_loop(
 
         if cmd == "/help":
             _repl_help()
+            continue
+        elif cmd == "/tools":
+            _repl_tools(tools, mcp_manager, a2a_manager)
             continue
         elif cmd == "/clear":
             _repl_clear(

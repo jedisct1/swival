@@ -15,6 +15,7 @@ from swival.agent import (
     INIT_WRITE_PROMPT,
     LEARN_PROMPT,
     _repl_help,
+    _repl_tools,
     _repl_clear,
     _repl_add_dir,
     _repl_add_dir_ro,
@@ -417,6 +418,7 @@ class TestHelpCommand:
         assert "/compact" in captured.err
         assert "/add-dir" in captured.err
         assert "/continue" in captured.err
+        assert "/tools" in captured.err
         assert "/init" in captured.err
         assert "/exit" in captured.err
 
@@ -436,6 +438,137 @@ class TestHelpCommand:
         assert mock_loop.call_count == 0
         # messages should only have the system message
         assert len(messages) == 1
+
+
+# ---------------------------------------------------------------------------
+# /tools command
+# ---------------------------------------------------------------------------
+
+
+def _tool(name, desc=""):
+    """Build a minimal OpenAI function-calling tool dict."""
+    return {"type": "function", "function": {"name": name, "description": desc}}
+
+
+class TestToolsCommand:
+    def test_tools_in_repl(self, tmp_path):
+        """/tools does not call run_agent_loop or mutate messages."""
+        messages = [_sys("system")]
+        tools = [_tool("read_file", "Read a file.")]
+        mock_session = MagicMock()
+        mock_session.prompt.side_effect = ["/tools", "/exit"]
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop") as mock_loop,
+        ):
+            repl_loop(messages, tools, **_loop_kwargs(tmp_path))
+
+        assert mock_loop.call_count == 0
+        assert len(messages) == 1
+
+    def test_builtin_tools_listed(self, capsys):
+        """Built-in tools appear with full descriptions."""
+        tools = [
+            _tool("edit_file", "Replace a string in a file."),
+            _tool("read_file", "Read a file or directory."),
+        ]
+        _repl_tools(tools)
+        out = capsys.readouterr().err
+        assert "Built-in tools:" in out
+        assert "edit_file" in out
+        assert "read_file" in out
+        assert "Replace a string in a file." in out
+
+    def test_builtin_sorted(self, capsys):
+        """Built-in tools are sorted alphabetically."""
+        tools = [_tool("write_file"), _tool("edit_file"), _tool("read_file")]
+        _repl_tools(tools)
+        out = capsys.readouterr().err
+        assert out.index("edit_file") < out.index("read_file") < out.index("write_file")
+
+    def test_mcp_tools_grouped(self, capsys):
+        """MCP tools are grouped by server with correct count."""
+        tools = [
+            _tool("read_file", "Read."),
+            _tool("mcp__gh__search", "Search repos."),
+            _tool("mcp__fs__read", "Read fs."),
+        ]
+        mcp_mgr = MagicMock()
+        mcp_mgr.get_tool_info.return_value = {
+            "gh": [("mcp__gh__search", "Search repos.")],
+            "fs": [("mcp__fs__read", "Read fs.")],
+        }
+        _repl_tools(tools, mcp_manager=mcp_mgr)
+        out = capsys.readouterr().err
+        assert "MCP tools (2 servers):" in out
+        assert "gh:" in out
+        assert "fs:" in out
+        # Servers sorted: fs before gh
+        assert out.index("fs:") < out.index("gh:")
+
+    def test_a2a_tools_grouped(self, capsys):
+        """A2A tools are grouped by agent with correct count."""
+        tools = [_tool("a2a__coder__review", "Review code.")]
+        a2a_mgr = MagicMock()
+        a2a_mgr.get_tool_info.return_value = {
+            "coder": [("a2a__coder__review", "Review code.")],
+        }
+        _repl_tools(tools, a2a_manager=a2a_mgr)
+        out = capsys.readouterr().err
+        assert "A2A tools (1 agent):" in out
+        assert "coder:" in out
+        assert "Review code." in out
+
+    def test_no_managers_no_mcp_a2a_sections(self, capsys):
+        """Without managers, MCP/A2A sections are absent."""
+        tools = [_tool("read_file", "Read.")]
+        _repl_tools(tools)
+        out = capsys.readouterr().err
+        assert "Built-in tools:" in out
+        assert "MCP" not in out
+        assert "A2A" not in out
+
+    def test_embedded_newlines_hanging_indent(self, capsys):
+        """Descriptions with newlines get hanging-indent continuation."""
+        tools = [
+            _tool("a2a__bot__ask", "Ask the bot.\nExamples: hello; help me"),
+        ]
+        a2a_mgr = MagicMock()
+        a2a_mgr.get_tool_info.return_value = {
+            "bot": [("a2a__bot__ask", "Ask the bot.\nExamples: hello; help me")],
+        }
+        _repl_tools(tools, a2a_manager=a2a_mgr)
+        out = capsys.readouterr().err
+        lines = out.strip().split("\n")
+        # Find the continuation line with "Examples:"
+        cont_lines = [ln for ln in lines if "Examples:" in ln]
+        assert len(cont_lines) == 1
+        # The continuation line should be indented further than the tool name line
+        name_line = [ln for ln in lines if "a2a__bot__ask" in ln][0]
+        desc_start = name_line.index("Ask the bot.")
+        cont_line = cont_lines[0]
+        # Continuation should start at the same column as the description
+        stripped = cont_line.lstrip()
+        indent_len = len(cont_line) - len(stripped)
+        assert indent_len >= desc_start
+
+    def test_singular_server_label(self, capsys):
+        """Single MCP server uses 'server' not 'servers'."""
+        tools = [_tool("mcp__gh__search", "Search.")]
+        mcp_mgr = MagicMock()
+        mcp_mgr.get_tool_info.return_value = {
+            "gh": [("mcp__gh__search", "Search.")],
+        }
+        _repl_tools(tools, mcp_manager=mcp_mgr)
+        out = capsys.readouterr().err
+        assert "MCP tools (1 server):" in out
+
+    def test_empty_tools(self, capsys):
+        """No tools at all prints a fallback message."""
+        _repl_tools([])
+        out = capsys.readouterr().err
+        assert "No tools available." in out
 
 
 # ---------------------------------------------------------------------------
