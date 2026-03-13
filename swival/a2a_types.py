@@ -43,10 +43,20 @@ AGENT_CARD_PATH = "/.well-known/agent-card.json"
 
 A2A_VERSION = "1.0"
 
-# --- Terminal and interrupted task states ---
+# --- Task state constants ---
 
-TERMINAL_STATES = frozenset({"completed", "failed", "canceled", "rejected"})
-INTERRUPTED_STATES = frozenset({"input-required", "auth-required"})
+STATE_WORKING = "working"
+STATE_COMPLETED = "completed"
+STATE_FAILED = "failed"
+STATE_CANCELED = "canceled"
+STATE_REJECTED = "rejected"
+STATE_INPUT_REQUIRED = "input-required"
+STATE_AUTH_REQUIRED = "auth-required"
+
+TERMINAL_STATES = frozenset(
+    {STATE_COMPLETED, STATE_FAILED, STATE_CANCELED, STATE_REJECTED}
+)
+INTERRUPTED_STATES = frozenset({STATE_INPUT_REQUIRED, STATE_AUTH_REQUIRED})
 
 # --- Server name validation (same rules as MCP) ---
 

@@ -175,6 +175,18 @@ See [MCP](mcp.md) for full configuration details.
 
 See [A2A](a2a.md) for full configuration details.
 
+### A2A Server Flags
+
+`--serve` starts Swival as an A2A server instead of running a one-shot task or REPL. Incoming tasks are handled by Session instances keyed by contextId. Incompatible with `--repl`.
+
+`--serve-host HOST` sets the bind address for the A2A server. Default is `0.0.0.0`.
+
+`--serve-port PORT` sets the port for the A2A server. Default is `8080`.
+
+`--serve-auth-token TOKEN` enables bearer token authentication on the A2A server. When set, all requests must include a valid `Authorization: Bearer <token>` header.
+
+See [A2A](a2a.md) for full server documentation.
+
 ### Output And Reporting Flags
 
 `--quiet` and `-q` suppress diagnostics and keep terminal output focused on final answers.

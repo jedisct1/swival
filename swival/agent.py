@@ -2033,6 +2033,30 @@ def build_parser():
         help="Top-p (nucleus) sampling (default: 1.0).",
     )
     parser.add_argument(
+        "--serve",
+        action="store_true",
+        default=False,
+        help="Start an A2A server exposing this agent as an endpoint.",
+    )
+    parser.add_argument(
+        "--serve-host",
+        type=str,
+        default="0.0.0.0",
+        help="Host for the A2A server (default: 0.0.0.0). Only used with --serve.",
+    )
+    parser.add_argument(
+        "--serve-port",
+        type=int,
+        default=8080,
+        help="Port for the A2A server (default: 8080). Only used with --serve.",
+    )
+    parser.add_argument(
+        "--serve-auth-token",
+        type=str,
+        default=None,
+        help="Bearer token for A2A server auth. Only used with --serve.",
+    )
+    parser.add_argument(
         "--verify",
         type=str,
         default=_UNSET,
@@ -2157,13 +2181,21 @@ def main():
             parser.error("--self-review and --reviewer cannot be used together")
         args.reviewer = _build_self_review_cmd(args)
 
+    # --- A2A serve mode ---
+    _is_serve = getattr(args, "serve", False)
+
     # Read question from stdin if not provided and stdin is piped
-    if not args.repl and args.question is None and not sys.stdin.isatty():
+    if (
+        not args.repl
+        and not _is_serve
+        and args.question is None
+        and not sys.stdin.isatty()
+    ):
         args.question = sys.stdin.read().strip()
         if not args.question:
             parser.error("question is required (stdin was empty)")
 
-    if not args.repl and args.question is None:
+    if not args.repl and not _is_serve and args.question is None:
         parser.error("question is required (or use --repl)")
     if args.report and args.repl:
         parser.error("--report is incompatible with --repl")
@@ -2224,6 +2256,36 @@ def main():
             fmt.info(
                 f"Resume: swival --sandbox agentfs --sandbox-session {session} ..."
             )
+
+    # --- A2A serve mode ---
+    # Placed after validations and AgentFS re-exec so all CLI checks apply.
+    if _is_serve:
+        from .config import args_to_session_kwargs
+
+        session_kwargs = args_to_session_kwargs(args, str(base_dir))
+
+        # MCP servers
+        if not getattr(args, "no_mcp", False):
+            mcp_servers = _resolve_mcp_servers(args, base_dir)
+            if mcp_servers:
+                session_kwargs["mcp_servers"] = mcp_servers
+
+        # A2A client servers (outbound, for the served agent to call)
+        if not getattr(args, "no_a2a", False):
+            a2a_servers = _resolve_a2a_servers(args)
+            if a2a_servers:
+                session_kwargs["a2a_servers"] = a2a_servers
+
+        from .a2a_server import A2aServer
+
+        server = A2aServer(
+            session_kwargs=session_kwargs,
+            host=args.serve_host,
+            port=args.serve_port,
+            auth_token=args.serve_auth_token,
+        )
+        server.serve()
+        sys.exit(0)
 
     report = ReportCollector() if args.report else None
 
@@ -2673,6 +2735,45 @@ def _show_agentfs_diff_hint(args) -> None:
         fmt.sandbox_hint(f"Review changes: {hint}")
 
 
+def _resolve_mcp_servers(args, base_dir) -> dict | None:
+    """Resolve MCP server configs from TOML + JSON sources. Returns merged dict or None."""
+    from .config import load_mcp_json, merge_mcp_configs
+
+    toml_servers = getattr(args, "_mcp_servers_toml", None)
+    json_servers = None
+
+    mcp_config_path = getattr(args, "mcp_config", None)
+    if mcp_config_path:
+        p = Path(mcp_config_path)
+        if not p.is_file():
+            raise ConfigError(f"--mcp-config file not found: {mcp_config_path}")
+        json_servers = load_mcp_json(p)
+    else:
+        default_mcp = Path(base_dir).resolve() / ".mcp.json"
+        if default_mcp.is_file():
+            json_servers = load_mcp_json(default_mcp)
+
+    return merge_mcp_configs(toml_servers, json_servers) or None
+
+
+def _resolve_a2a_servers(args) -> dict | None:
+    """Resolve A2A server configs from TOML + config file. Returns merged dict or None."""
+    a2a_servers = getattr(args, "_a2a_servers_toml", None) or {}
+
+    a2a_config_path = getattr(args, "a2a_config", None)
+    if a2a_config_path:
+        from .config import load_a2a_config
+
+        p = Path(a2a_config_path)
+        if not p.is_file():
+            raise ConfigError(f"--a2a-config file not found: {a2a_config_path}")
+        file_servers = load_a2a_config(p)
+        file_servers.update(a2a_servers)
+        a2a_servers = file_servers
+
+    return a2a_servers or None
+
+
 def _run_main(args, report, _write_report, parser):
     # Provider-specific model discovery and context configuration
     try:
@@ -2734,25 +2835,9 @@ def _run_main(args, report, _write_report, parser):
     mcp_manager = None
     mcp_tool_info = {}
     if not getattr(args, "no_mcp", False):
-        from .config import load_mcp_json, merge_mcp_configs
         from .mcp_client import McpManager
 
-        toml_servers = getattr(args, "_mcp_servers_toml", None)
-        json_servers = None
-
-        mcp_config_path = getattr(args, "mcp_config", None)
-        if mcp_config_path:
-            p = Path(mcp_config_path)
-            if not p.is_file():
-                raise ConfigError(f"--mcp-config file not found: {mcp_config_path}")
-            json_servers = load_mcp_json(p)
-        else:
-            # Default: look for .mcp.json in project root
-            default_mcp = Path(base_dir).resolve() / ".mcp.json"
-            if default_mcp.is_file():
-                json_servers = load_mcp_json(default_mcp)
-
-        mcp_servers = merge_mcp_configs(toml_servers, json_servers)
+        mcp_servers = _resolve_mcp_servers(args, base_dir)
         if mcp_servers:
             mcp_manager = McpManager(mcp_servers, verbose=args.verbose)
             # start() connects to servers; individual connection failures
@@ -2777,20 +2862,7 @@ def _run_main(args, report, _write_report, parser):
     if not getattr(args, "no_a2a", False):
         from .a2a_client import A2aManager
 
-        a2a_servers = getattr(args, "_a2a_servers_toml", None) or {}
-
-        a2a_config_path = getattr(args, "a2a_config", None)
-        if a2a_config_path:
-            from .config import load_a2a_config
-
-            p = Path(a2a_config_path)
-            if not p.is_file():
-                raise ConfigError(f"--a2a-config file not found: {a2a_config_path}")
-            file_servers = load_a2a_config(p)
-            # File config is base, TOML overrides
-            file_servers.update(a2a_servers)
-            a2a_servers = file_servers
-
+        a2a_servers = _resolve_a2a_servers(args)
         if a2a_servers:
             a2a_manager = A2aManager(a2a_servers, verbose=args.verbose)
             a2a_manager.start()

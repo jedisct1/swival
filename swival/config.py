@@ -582,6 +582,84 @@ def apply_config_to_args(args: argparse.Namespace, config: dict) -> None:
             setattr(args, dest, default)
 
 
+def args_to_session_kwargs(args, base_dir: str) -> dict:
+    """Convert an argparse namespace to Session constructor kwargs.
+
+    Handles the argparse-dest -> Session-kwarg mapping including boolean
+    inversions (no_read_guard -> read_guard, etc.) and key renames
+    (add_dir -> allowed_dirs). Filters None values so Session defaults apply.
+    """
+    # Argparse dest -> Session kwarg name (where they differ)
+    _RENAME = {
+        "add_dir": "allowed_dirs",
+        "add_dir_ro": "allowed_dirs_ro",
+    }
+    _INVERT = {
+        "no_read_guard": "read_guard",
+        "no_history": "history",
+        "no_memory": "memory",
+        "no_continue": "continue_here",
+        "no_sandbox_auto_session": "sandbox_auto_session",
+        "quiet": "verbose",
+    }
+    # Argparse dests that map directly to Session kwargs
+    _DIRECT = [
+        "provider",
+        "model",
+        "api_key",
+        "base_url",
+        "max_turns",
+        "max_output_tokens",
+        "max_context_tokens",
+        "temperature",
+        "top_p",
+        "seed",
+        "yolo",
+        "allowed_commands",
+        "system_prompt",
+        "no_system_prompt",
+        "no_instructions",
+        "no_skills",
+        "sandbox",
+        "sandbox_session",
+        "sandbox_strict_read",
+        "memory_full",
+        "config_dir",
+        "proactive_summaries",
+        "extra_body",
+        "reasoning_effort",
+        "cache",
+        "cache_dir",
+    ]
+
+    kwargs: dict = {"base_dir": base_dir}
+
+    for dest in _DIRECT:
+        val = getattr(args, dest, None)
+        if val is not None:
+            kwargs[dest] = val
+
+    for dest, kwarg in _RENAME.items():
+        val = getattr(args, dest, None) or []
+        kwargs[kwarg] = val
+
+    for dest, kwarg in _INVERT.items():
+        val = getattr(args, dest, False)
+        kwargs[kwarg] = not val
+
+    # skills_dir uses None as sentinel for "not set"
+    skills_dir = getattr(args, "skills_dir", None)
+    if skills_dir is not None:
+        kwargs["skills_dir"] = skills_dir
+
+    # verbose is derived from quiet (already handled by _INVERT)
+    # but args.verbose may have been set directly
+    if hasattr(args, "verbose") and "verbose" not in kwargs:
+        kwargs["verbose"] = args.verbose
+
+    return kwargs
+
+
 def config_to_session_kwargs(config: dict) -> dict:
     """Convert config dict to Session constructor kwargs.
 
