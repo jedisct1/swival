@@ -11,6 +11,8 @@ import threading
 import uuid
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 
+from .a2a_types import A2A_META_PREFIX
+
 TOOLS = [
     {
         "type": "function",
@@ -1779,6 +1781,44 @@ def _guard_mcp_output(result: str, base_dir: str, tool_name: str) -> str:
     )
 
 
+def _guard_a2a_output(result: str, base_dir: str, tool_name: str) -> str:
+    """Size-guard A2A tool output, preserving continuation metadata.
+
+    A2A results encode contextId/taskId in the first line as
+    ``[input-required] contextId=... taskId=...`` or ``[contextId=...]``.
+    If the payload exceeds the inline limit, only those specific headers
+    are extracted before saving the body to file; arbitrary bracketed
+    content (e.g. a large JSON array) is not treated as metadata.
+    """
+    size = len(result.encode("utf-8"))
+    if size <= MCP_INLINE_LIMIT:
+        return result
+
+    # Extract metadata header only if the first line is a recognised A2A header
+    meta_header = ""
+    body = result
+    first_nl = result.find("\n")
+    if first_nl > 0:
+        first_line = result[:first_nl]
+        if A2A_META_PREFIX.match(first_line):
+            meta_header = first_line
+            body = result[first_nl + 1 :]
+
+    was_truncated = False
+    body_encoded = body.encode("utf-8")
+    if len(body_encoded) > MCP_FILE_LIMIT:
+        body = body_encoded[:MCP_FILE_LIMIT].decode("utf-8", errors="replace")
+        was_truncated = True
+
+    saved_notice = _save_large_output(
+        body, base_dir, tool_name=tool_name, was_truncated=was_truncated
+    )
+
+    if meta_header:
+        return f"{meta_header}\n{saved_notice}"
+    return saved_notice
+
+
 def _capture_process(proc: subprocess.Popen, timeout: int, base_dir: str) -> str:
     """Capture output from a running subprocess with timeout enforcement."""
     output_chunks: list[bytes] = []
@@ -2041,22 +2081,24 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
     skill_read_roots = kwargs.get("skill_read_roots", ())
     file_tracker = kwargs.get("file_tracker")
 
-    # MCP tool dispatch
-    if name.startswith("mcp__"):
-        mcp_manager = kwargs.get("mcp_manager")
-        if mcp_manager is None:
-            return f"error: MCP tool {name!r} called but no MCP manager is active"
-        result, is_error = mcp_manager.call_tool(name, args)
-        if is_error:
-            # Cap error output to prevent giant error payloads from
-            # stuffing context. Errors are diagnostic, not data to
-            # page through, so no file save.
-            if len(result.encode("utf-8")) > MCP_INLINE_LIMIT:
-                result = _safe_truncate(
-                    result, MCP_INLINE_LIMIT, "\n[error output truncated]"
-                )
-            return result
-        return _guard_mcp_output(result, base_dir, name)
+    # MCP / A2A tool dispatch
+    for prefix, manager_key, guard_fn in (
+        ("mcp__", "mcp_manager", _guard_mcp_output),
+        ("a2a__", "a2a_manager", _guard_a2a_output),
+    ):
+        if name.startswith(prefix):
+            manager = kwargs.get(manager_key)
+            if manager is None:
+                kind = prefix.rstrip("_").upper()
+                return f"error: {kind} tool {name!r} called but no {kind} manager is active"
+            result, is_error = manager.call_tool(name, args)
+            if is_error:
+                if len(result.encode("utf-8")) > MCP_INLINE_LIMIT:
+                    result = _safe_truncate(
+                        result, MCP_INLINE_LIMIT, "\n[error output truncated]"
+                    )
+                return result
+            return guard_fn(result, base_dir, name)
 
     if name == "think":
         thinking_state = kwargs.get("thinking_state")

@@ -354,18 +354,34 @@ def repl_banner() -> None:
     _console.print(Text("Interactive mode. Type /exit or Ctrl-D to quit.", style="dim"))
 
 
-# -- MCP servers -------------------------------------------------------------
+# -- External servers (MCP / A2A) --------------------------------------------
 
 
-def mcp_server_start(name: str, tool_count: int) -> None:
+def _server_start(kind: str, name: str, tool_count: int) -> None:
     line = Text()
-    line.append(f"  MCP {name}", style="cyan")
+    line.append(f"  {kind} {name}", style="cyan")
     line.append(f"  {tool_count} tool(s)", style="dim")
     _console.print(line)
 
 
-def mcp_server_error(name: str, error: str) -> None:
+def _server_error(kind: str, name: str, error: str) -> None:
     line = Text()
-    line.append(f"  MCP {name}", style="bold red")
+    line.append(f"  {kind} {name}", style="bold red")
     line.append(f"  {error}", style="red")
     _console.print(line)
+
+
+def mcp_server_start(name: str, tool_count: int) -> None:
+    _server_start("MCP", name, tool_count)
+
+
+def mcp_server_error(name: str, error: str) -> None:
+    _server_error("MCP", name, error)
+
+
+def a2a_server_start(name: str, tool_count: int) -> None:
+    _server_start("A2A", name, tool_count)
+
+
+def a2a_server_error(name: str, error: str) -> None:
+    _server_error("A2A", name, error)

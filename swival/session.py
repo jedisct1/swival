@@ -76,6 +76,7 @@ class Session:
         config_dir: "Path | None" = None,
         proactive_summaries: bool = False,
         mcp_servers: dict | None = None,
+        a2a_servers: dict | None = None,
         extra_body: dict | None = None,
         reasoning_effort: str | None = None,
         continue_here: bool = True,
@@ -114,6 +115,7 @@ class Session:
         self.memory = memory
         self.memory_full = memory_full
         self.mcp_servers = mcp_servers
+        self.a2a_servers = a2a_servers
         self.extra_body = extra_body
         self.reasoning_effort = reasoning_effort
         self.continue_here = continue_here
@@ -140,6 +142,9 @@ class Session:
 
         # MCP manager (created in _setup if mcp_servers is non-empty)
         self._mcp_manager = None
+
+        # A2A manager (created in _setup if a2a_servers is non-empty)
+        self._a2a_manager = None
 
         # Per-conversation state (for ask() mode)
         self._conv_state: dict | None = None
@@ -225,6 +230,16 @@ class Session:
                 verbose=self.verbose,
             )
 
+        # Initialize A2A agents
+        if self.a2a_servers:
+            from .a2a_client import A2aManager
+
+            self._a2a_manager = A2aManager(self.a2a_servers, verbose=self.verbose)
+            self._a2a_manager.start()
+            a2a_tools = self._a2a_manager.list_tools()
+            if a2a_tools:
+                self._tools.extend(a2a_tools)
+
         # Open cache
         if self.cache:
             from .cache import open_cache
@@ -234,6 +249,7 @@ class Session:
         # Build system prompt (without memory — memory is injected per-call
         # in run()/ask() so it can be keyed from the user's question).
         mcp_tool_info = self._mcp_manager.get_tool_info() if self._mcp_manager else None
+        a2a_tool_info = self._a2a_manager.get_tool_info() if self._a2a_manager else None
         self._system_content, self._instructions_loaded = build_system_prompt(
             base_dir=self.base_dir,
             system_prompt=self.system_prompt,
@@ -246,6 +262,7 @@ class Session:
             verbose=self.verbose,
             config_dir=self.config_dir,
             mcp_tool_info=mcp_tool_info,
+            a2a_tool_info=a2a_tool_info,
             no_continue=not self.continue_here,
         )
 
@@ -342,6 +359,8 @@ class Session:
             kwargs["compaction_state"] = state["compaction_state"]
         if self._mcp_manager is not None:
             kwargs["mcp_manager"] = self._mcp_manager
+        if self._a2a_manager is not None:
+            kwargs["a2a_manager"] = self._a2a_manager
         return kwargs
 
     def run(self, question: str, *, report: bool = False) -> Result:
@@ -431,6 +450,8 @@ class Session:
             self._llm_cache = None
         if self._mcp_manager is not None:
             self._mcp_manager.close()
+        if self._a2a_manager is not None:
+            self._a2a_manager.close()
 
     def reset(self) -> None:
         """Clear conversation state without invalidating setup. Next ask() starts fresh."""

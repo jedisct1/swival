@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>A2A — Swival</title>
+    <meta name="description" content="A2A — Swival documentation">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="A2A — Swival">
+    <meta property="og:description" content="A2A — Swival documentation">
+    <meta property="og:image" content="https://swival.dev/img/logo.png">
+    <meta property="og:url" content="https://swival.dev/pages/a2a.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="A2A — Swival">
+    <meta name="twitter:description" content="A2A — Swival documentation">
+    <meta name="twitter:image" content="https://swival.dev/img/logo.png">
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="../" class="header-logo">
+                <img src="../img/logo.png" alt="Swival">
+            </a>
+            <nav class="header-nav">
+                <a href="./">Docs</a>
+                <a href="https://github.com/swival/swival">GitHub</a>
+            </nav>
+        </div>
+    </header>
+    <div class="docs-layout">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+<h4>Basics</h4>
+<ul>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="usage.html">Usage</a></li>
+<li><a href="tools.html">Tools</a></li>
+<li><a href="context-management.html">Context Management</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Configuration & Deployment</h4>
+<ul>
+<li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
+<li><a href="skills.html">Skills</a></li>
+<li><a href="mcp.html">MCP</a></li>
+<li><a href="a2a.html" class="active">A2A</a></li>
+<li><a href="customization.html">Customization</a></li>
+<li><a href="providers.html">Providers</a></li>
+<li><a href="reports.html">Reports</a></li>
+<li><a href="reviews.html">Reviews</a></li>
+<li><a href="agentfs.html">AgentFS</a></li>
+</ul>
+</div>
+        </aside>
+        <article class="docs-content">
+            <h1 id="a2a">A2A</h1>
+<p>Swival can connect to remote agents via the <a href="https://google.github.io/A2A/">Agent-to-Agent (A2A) protocol</a> v1.0. When A2A agents are configured, Swival fetches their Agent Cards at startup, discovers their skills, and exposes each skill as a tool in the agent loop.</p>
+<p>Unlike MCP tools, which have custom parameter schemas defined by the server, A2A skills always use the same generic shape: a <code>message</code> string (required), plus optional <code>context_id</code> and <code>task_id</code> for multi-turn conversations. The model talks to remote agents in natural language.</p>
+<p>Each A2A tool is namespaced as <code>a2a__&lt;agent_name&gt;__&lt;skill_id&gt;</code> to avoid collisions with built-in tools and across agents. The model calls them like any other tool. Swival routes the call to the correct agent and returns the result.</p>
+<p>If an A2A agent fails to connect at startup, Swival logs a warning and continues without that agent's tools. If an agent fails mid-session, its tools are marked as degraded and return an error message instead of blocking the agent loop.</p>
+<p>Tool name collisions across agents cause the colliding agent's tools to be skipped entirely, with a warning.</p>
+<h2 id="agent-card-discovery">Agent Card Discovery</h2>
+<p>At startup, Swival fetches each agent's Agent Card from <code>&lt;url&gt;/.well-known/agent-card.json</code> (or a custom <code>card_url</code> if configured). The card declares the agent's name, description, skills, and endpoint URL.</p>
+<p>If the card declares skills, each skill becomes a separate tool. If no skills are declared, Swival creates a single generic <code>ask</code> tool for that agent.</p>
+<h2 id="multi-turn-conversations">Multi-Turn Conversations</h2>
+<p>A2A supports multi-turn conversations through <code>contextId</code>. When an agent returns a result, the response includes a <code>contextId</code> that groups related interactions. To continue the conversation, the model passes that <code>contextId</code> back in the next call.</p>
+<p>Some agents may return an <code>input-required</code> state, meaning they need more information before completing the task. In that case, the response includes both a <code>contextId</code> and a <code>taskId</code>. To resume, the model passes both back in the next call.</p>
+<p>During context compaction, Swival preserves these IDs so the model can continue multi-turn interactions even after older messages are dropped.</p>
+<h2 id="toml-configuration">TOML Configuration</h2>
+<p>Add <code>[a2a_servers.&lt;name&gt;]</code> tables to <code>swival.toml</code>. Each agent needs a <code>url</code> pointing to its A2A endpoint.</p>
+<pre><code class="language-toml">[a2a_servers.research-agent]
+url = &quot;https://research.example.com&quot;
+
+[a2a_servers.code-review]
+url = &quot;https://review.example.com&quot;
+auth_type = &quot;bearer&quot;
+auth_token = &quot;sk-...&quot;
+timeout = 180
+</code></pre>
+<p>Agent names must match <code>[a-zA-Z0-9_-]+</code> and cannot contain double underscores (since <code>__</code> is used as the namespacing separator in tool names).</p>
+<h3 id="configuration-fields">Configuration Fields</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>url</code></td>
+<td>Yes</td>
+<td>Base URL of the A2A agent</td>
+</tr>
+<tr>
+<td><code>card_url</code></td>
+<td>No</td>
+<td>Override for the Agent Card URL (defaults to <code>&lt;url&gt;/.well-known/agent-card.json</code>)</td>
+</tr>
+<tr>
+<td><code>auth_type</code></td>
+<td>No</td>
+<td>Authentication type: <code>bearer</code> or <code>api_key</code></td>
+</tr>
+<tr>
+<td><code>auth_token</code></td>
+<td>No</td>
+<td>Authentication token or key</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td>No</td>
+<td>Request timeout in seconds (default: 120)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="authentication">Authentication</h3>
+<p>Two authentication methods are supported:</p>
+<p>Bearer token -- sends <code>Authorization: Bearer &lt;token&gt;</code> on all requests:</p>
+<pre><code class="language-toml">[a2a_servers.my-agent]
+url = &quot;https://agent.example.com&quot;
+auth_type = &quot;bearer&quot;
+auth_token = &quot;sk-...&quot;
+</code></pre>
+<p>API key -- sends <code>X-API-Key: &lt;token&gt;</code> on all requests:</p>
+<pre><code class="language-toml">[a2a_servers.my-agent]
+url = &quot;https://agent.example.com&quot;
+auth_type = &quot;api_key&quot;
+auth_token = &quot;key-...&quot;
+</code></pre>
+<h2 id="standalone-config-file">Standalone Config File</h2>
+<p>You can also put A2A configuration in a separate TOML file and pass it with <code>--a2a-config</code>:</p>
+<pre><code class="language-sh">swival --a2a-config agents.toml &quot;task&quot;
+</code></pre>
+<p>The file uses the same <code>[a2a_servers.*]</code> format as <code>swival.toml</code>:</p>
+<pre><code class="language-toml">[a2a_servers.research-agent]
+url = &quot;https://research.example.com&quot;
+
+[a2a_servers.code-review]
+url = &quot;https://review.example.com&quot;
+</code></pre>
+<p>When both <code>--a2a-config</code> and <code>swival.toml</code> define agents, the TOML config takes precedence by agent name.</p>
+<h2 id="config-precedence">Config Precedence</h2>
+<p>When the project and global config both define A2A agents, project-level agents win by name, and global-only agents are merged in.</p>
+<p><code>--no-a2a</code> disables A2A agent connections entirely, even if agents are configured.</p>
+<h2 id="cli-flags">CLI Flags</h2>
+<p><code>--no-a2a</code> disables A2A agent connections entirely.</p>
+<p><code>--a2a-config FILE</code> provides an explicit path to an A2A TOML config file.</p>
+<h2 id="output-handling">Output Handling</h2>
+<p>A2A tool outputs are size-guarded the same way as MCP tools. Results up to 20 KB are returned inline. Larger results are saved to <code>.swival/cmd_output_*.txt</code> and the model receives a pointer message to use <code>read_file</code> for paginated access.</p>
+<p>When saving large A2A output to file, Swival preserves continuation metadata (the <code>[contextId=...]</code> or <code>[input-required]</code> header line) so the model can still continue multi-turn conversations even when the response body is too large for inline display.</p>
+<p>Error outputs are kept inline but truncated at 20 KB.</p>
+<p>During context compaction, A2A tool results receive structured summaries that preserve <code>input-required</code> headers with their <code>contextId</code> and <code>taskId</code>, so multi-turn state survives compaction.</p>
+<h2 id="library-api">Library API</h2>
+<p>The <code>Session</code> class accepts <code>a2a_servers</code> as a constructor argument. Pass a dictionary mapping agent names to config dicts:</p>
+<pre><code class="language-python">from swival import Session
+
+session = Session(
+    a2a_servers={
+        &quot;research-agent&quot;: {
+            &quot;url&quot;: &quot;https://research.example.com&quot;,
+            &quot;auth_type&quot;: &quot;bearer&quot;,
+            &quot;auth_token&quot;: &quot;sk-...&quot;,
+        }
+    }
+)
+result = session.run(&quot;Ask the research agent to summarize recent papers on RAG&quot;)
+</code></pre>
+<p>Use <code>Session</code> as a context manager to ensure A2A connections are cleaned up:</p>
+<pre><code class="language-python">with Session(a2a_servers={&quot;agent&quot;: {&quot;url&quot;: &quot;https://...&quot;}}) as session:
+    result = session.run(&quot;task&quot;)
+</code></pre>
+<h2 id="protocol-details">Protocol Details</h2>
+<p>Swival implements the A2A v1.0 JSON-RPC binding. It sends <code>SendMessage</code> requests with <code>returnImmediately=false</code> (blocking mode) as the primary path. If the server returns a non-terminal task instead of blocking, Swival falls back to polling with <code>GetTask</code> using exponential backoff.</p>
+<p>Responses can be either Task-shaped (with <code>id</code>, <code>status</code>, and optional <code>artifacts</code>) or Message-shaped (with <code>role</code> and <code>parts</code>). Swival handles both.</p>
+<p>Task states are categorized as:</p>
+<ul>
+<li>Terminal: <code>completed</code>, <code>failed</code>, <code>canceled</code>, <code>rejected</code></li>
+<li>Interrupted: <code>input-required</code>, <code>auth-required</code></li>
+</ul>
+<p>Terminal tasks return their result immediately. Interrupted tasks return with continuation metadata so the model can resume.</p>
+        </article>
+    </div>
+    <footer class="site-footer">
+        MIT License &middot;
+        <a href="https://github.com/swival/swival">GitHub</a>
+    </footer>
+</body>
+</html>

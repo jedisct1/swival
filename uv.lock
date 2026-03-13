@@ -1557,6 +1557,7 @@ version = "0.1.22"
 source = { editable = "." }
 dependencies = [
     { name = "html-to-markdown" },
+    { name = "httpx" },
     { name = "litellm" },
     { name = "mcp" },
     { name = "prompt-toolkit" },
@@ -1578,6 +1579,7 @@ website = [
 [package.metadata]
 requires-dist = [
     { name = "html-to-markdown", specifier = ">=2.28" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "litellm", specifier = ">=1.82" },
     { name = "mcp", specifier = ">=1.26,<2" },
     { name = "prompt-toolkit", specifier = ">=3.0.52" },

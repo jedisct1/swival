@@ -1,6 +1,6 @@
 # Tools
 
-Swival gives the model a fixed set of tools at runtime. Most tools are always available. `run_command` appears only when you enable command execution with `--allowed-commands` or `--yolo`, `use_skill` appears only when skills are discovered, and MCP tools appear when external MCP servers are configured.
+Swival gives the model a fixed set of tools at runtime. Most tools are always available. `run_command` appears only when you enable command execution with `--allowed-commands` or `--yolo`, `use_skill` appears only when skills are discovered, MCP tools appear when external MCP servers are configured, and A2A tools appear when remote A2A agents are configured.
 
 ## `read_file`
 
@@ -114,7 +114,7 @@ Calling `save` before `restore` is not required. The system automatically create
 
 ### Dirty Scopes
 
-Tools are classified as read-only or mutating. Read-only tools (`read_file`, `read_multiple_files`, `list_files`, `grep`, `fetch_url`, `think`, `todo`, `snapshot`) are safe to collapse because they don't change anything on disk. Mutating tools (`write_file`, `edit_file`, `delete_file`, `run_command`, and unknown MCP tools) dirty the scope.
+Tools are classified as read-only or mutating. Read-only tools (`read_file`, `read_multiple_files`, `list_files`, `grep`, `fetch_url`, `think`, `todo`, `snapshot`) are safe to collapse because they don't change anything on disk. Mutating tools (`write_file`, `edit_file`, `delete_file`, `run_command`, unknown MCP tools, and A2A tools) dirty the scope.
 
 If the scope contains mutating tool calls, `restore` fails with a list of the dirty tools. Pass `force=true` to override when you are confident the summary captures the mutations.
 
@@ -147,3 +147,9 @@ In REPL mode, you can also trigger snapshots manually with `/save`, `/restore`, 
 Swival can connect to external tool servers via the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP). MCP tools are discovered at startup and exposed alongside built-in tools. MCP tool output is size-guarded: results up to 20 KB are returned inline, larger results are saved to `.swival/` for paginated reads via `read_file`, and output is hard-capped at 10 MB.
 
 See [MCP](mcp.md) for configuration and details.
+
+## A2A Tools
+
+Swival can connect to remote agents via the [Agent-to-Agent (A2A) protocol](https://google.github.io/A2A/). A2A tools are discovered at startup and exposed alongside built-in tools. Unlike MCP tools, A2A tools always accept a natural-language `message` plus optional `context_id` and `task_id` for multi-turn conversations. A2A tool output is size-guarded the same way as MCP output, with continuation metadata preserved across size limits and context compaction.
+
+See [A2A](a2a.md) for configuration and details.

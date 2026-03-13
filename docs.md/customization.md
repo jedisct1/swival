@@ -41,6 +41,12 @@ review_prompt = "Focus on correctness and test coverage"
 max_review_rounds = 10
 objective = "objective.md"
 verify = "verification/working.md"
+
+# A2A agents (see docs.md/a2a.md)
+[a2a_servers.research-agent]
+url = "https://research.example.com"
+auth_type = "bearer"
+auth_token = "sk-..."
 ```
 
 For the `chatgpt` provider (ChatGPT Plus/Pro subscriptions), no API key is needed since authentication is handled through OAuth:

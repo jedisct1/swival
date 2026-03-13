@@ -46,6 +46,7 @@
 <li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
 <li><a href="skills.html">Skills</a></li>
 <li><a href="mcp.html">MCP</a></li>
+<li><a href="a2a.html">A2A</a></li>
 <li><a href="customization.html" class="active">Customization</a></li>
 <li><a href="providers.html">Providers</a></li>
 <li><a href="reports.html">Reports</a></li>
@@ -87,6 +88,12 @@ review_prompt = &quot;Focus on correctness and test coverage&quot;
 max_review_rounds = 10
 objective = &quot;objective.md&quot;
 verify = &quot;verification/working.md&quot;
+
+# A2A agents (see docs.md/a2a.md)
+[a2a_servers.research-agent]
+url = &quot;https://research.example.com&quot;
+auth_type = &quot;bearer&quot;
+auth_token = &quot;sk-...&quot;
 </code></pre>
 <p>For the <code>chatgpt</code> provider (ChatGPT Plus/Pro subscriptions), no API key is needed since authentication is handled through OAuth:</p>
 <pre><code class="language-toml">provider = &quot;chatgpt&quot;
@@ -120,6 +127,9 @@ Don't add dependencies without asking.
 </code></pre>
 <p>Use <code>--no-memory</code> to skip loading auto-memory from <code>.swival/memory/</code>.</p>
 <pre><code class="language-sh">swival --no-memory &quot;task&quot;
+</code></pre>
+<p>Use <code>--memory-full</code> to inject the entire <code>MEMORY.md</code> file into the prompt instead of the default budgeted retrieval. This is the legacy behavior and serves as a fallback if the retrieval-based injection misses entries you need.</p>
+<pre><code class="language-sh">swival --memory-full &quot;task&quot;
 </code></pre>
 <p>If you set <code>--system-prompt</code>, instruction files are also skipped because you are providing the full prompt text directly.</p>
 <h2 id="system-prompt-control">System Prompt Control</h2>

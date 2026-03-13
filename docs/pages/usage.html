@@ -46,6 +46,7 @@
 <li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
 <li><a href="skills.html">Skills</a></li>
 <li><a href="mcp.html">MCP</a></li>
+<li><a href="a2a.html">A2A</a></li>
 <li><a href="customization.html">Customization</a></li>
 <li><a href="providers.html">Providers</a></li>
 <li><a href="reports.html">Reports</a></li>
@@ -91,7 +92,7 @@
 <p><code>/extend</code> doubles the current turn budget. <code>/extend &lt;N&gt;</code> sets the turn budget to an exact value.</p>
 <p><code>/continue</code> restarts the agent loop for the existing conversation without adding a new user message.</p>
 <p><code>/continue-status</code> shows whether a continue file exists from a prior interrupted session and previews its contents.</p>
-<p><code>/learn</code> reviews the current session for mistakes and confusions, then persists notes to <code>.swival/memory/MEMORY.md</code> for future sessions to learn from.</p>
+<p><code>/learn</code> reviews the current session for mistakes and confusions, then persists notes to <code>.swival/memory/MEMORY.md</code> for future sessions to learn from. On subsequent runs, memory entries are parsed by heading and selectively injected into the prompt using BM25 retrieval keyed from the user's question, keeping memory token cost bounded.</p>
 <p><code>/init</code> runs a three-pass workflow that scans your project and generates an <code>AGENTS.md</code> file.</p>
 <p><code>/exit</code> and <code>/quit</code> leave the REPL. Pressing <code>Ctrl-D</code> exits as well.</p>
 <h2 id="cli-flags">CLI Flags</h2>
@@ -131,6 +132,7 @@
 <p><code>--no-system-prompt</code> omits the system message entirely.</p>
 <p><code>--no-instructions</code> prevents loading <code>CLAUDE.md</code> and <code>AGENTS.md</code> from both the base directory and the user config directory.</p>
 <p><code>--no-memory</code> prevents loading auto-memory from <code>.swival/memory/</code>.</p>
+<p><code>--memory-full</code> injects the entire <code>MEMORY.md</code> into the prompt instead of the default budgeted retrieval. Useful as a fallback if retrieval misses entries.</p>
 <p><code>--system-prompt</code> and <code>--no-system-prompt</code> are mutually exclusive.</p>
 <h3 id="skills-flags">Skills Flags</h3>
 <p><code>--skills-dir</code> adds external skill directories and can be passed more than once.</p>
@@ -139,6 +141,10 @@
 <p><code>--no-mcp</code> disables MCP server connections entirely, even if servers are configured in <code>swival.toml</code> or <code>.mcp.json</code>.</p>
 <p><code>--mcp-config FILE</code> provides an explicit path to an MCP JSON config file. When set, this replaces the default <code>.mcp.json</code> lookup in the project root.</p>
 <p>See <a href="mcp.html">MCP</a> for full configuration details.</p>
+<h3 id="a2a-flags">A2A Flags</h3>
+<p><code>--no-a2a</code> disables A2A agent connections entirely, even if agents are configured in <code>swival.toml</code>.</p>
+<p><code>--a2a-config FILE</code> provides an explicit path to an A2A TOML config file with <code>[a2a_servers.*]</code> tables.</p>
+<p>See <a href="a2a.html">A2A</a> for full configuration details.</p>
 <h3 id="output-and-reporting-flags">Output And Reporting Flags</h3>
 <p><code>--quiet</code> and <code>-q</code> suppress diagnostics and keep terminal output focused on final answers.</p>
 <p><code>--report FILE</code> writes a JSON run report to <code>FILE</code>. This flag is incompatible with <code>--repl</code>.</p>

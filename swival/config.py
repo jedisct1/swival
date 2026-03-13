@@ -64,6 +64,7 @@ CONFIG_KEYS: dict[str, type | tuple[type, ...]] = {
     "max_review_rounds": int,
     "proactive_summaries": bool,
     "no_mcp": bool,
+    "no_a2a": bool,
     "extra_body": dict,
     "reasoning_effort": str,
     "cache": bool,
@@ -125,6 +126,8 @@ _ARGPARSE_DEFAULTS: dict[str, Any] = {
     "proactive_summaries": False,
     "no_mcp": False,
     "mcp_config": None,
+    "no_a2a": False,
+    "a2a_config": None,
     "extra_body": None,
     "reasoning_effort": None,
     "cache": False,
@@ -284,8 +287,9 @@ def _load_single(path: Path, label: str) -> dict:
     except tomllib.TOMLDecodeError as e:
         raise ConfigError(f"{label}: invalid TOML: {e}") from e
 
-    # Extract mcp_servers before validation (it's a nested table, not a flat key)
+    # Extract mcp_servers and a2a_servers before validation (nested tables)
     mcp_servers = config.pop("mcp_servers", None)
+    a2a_servers = config.pop("a2a_servers", None)
 
     # Strip unknown keys after warning (keep only known ones for downstream)
     _validate_config(config, label)
@@ -297,6 +301,13 @@ def _load_single(path: Path, label: str) -> dict:
             raise ConfigError(f"{label}: 'mcp_servers' must be a table")
         _validate_mcp_server_configs(mcp_servers, label)
         known["mcp_servers"] = mcp_servers
+
+    # Re-attach a2a_servers if present
+    if a2a_servers is not None:
+        if not isinstance(a2a_servers, dict):
+            raise ConfigError(f"{label}: 'a2a_servers' must be a table")
+        _validate_a2a_server_configs(a2a_servers, label)
+        known["a2a_servers"] = a2a_servers
 
     return known
 
@@ -406,6 +417,64 @@ def merge_mcp_configs(
     return merged
 
 
+# --- A2A config helpers ---
+
+
+_A2A_SERVER_FIELD_TYPES: dict[str, type | tuple[type, ...]] = {
+    "url": str,
+    "card_url": str,
+    "auth_type": str,
+    "auth_token": str,
+    "timeout": (int, float),
+}
+
+
+def _validate_a2a_server_configs(servers: dict, source: str) -> None:
+    """Validate structure and field types of A2A server configurations."""
+    from .a2a_types import validate_server_name
+
+    for name, cfg in servers.items():
+        validate_server_name(name)
+        if not isinstance(cfg, dict):
+            raise ConfigError(f"{source}: a2a_servers.{name} must be a table")
+        if "url" not in cfg:
+            raise ConfigError(f"{source}: a2a_servers.{name} must have 'url'")
+
+        prefix = f"{source}: a2a_servers.{name}"
+        for field, expected in _A2A_SERVER_FIELD_TYPES.items():
+            if field in cfg:
+                if isinstance(cfg[field], bool) and expected is not bool:
+                    raise ConfigError(
+                        f"{prefix}.{field}: expected {_type_name(expected)}, got bool"
+                    )
+                if not isinstance(cfg[field], expected):
+                    raise ConfigError(
+                        f"{prefix}.{field}: expected {_type_name(expected)}, "
+                        f"got {type(cfg[field]).__name__}"
+                    )
+
+
+def load_a2a_config(path: Path) -> dict[str, dict]:
+    """Load A2A server configs from a TOML file.
+
+    Expects [a2a_servers.*] tables. Returns a dict of name -> config.
+    """
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+    except tomllib.TOMLDecodeError as e:
+        raise ConfigError(f"{path}: invalid TOML: {e}") from e
+    except OSError as e:
+        raise ConfigError(f"{path}: cannot read file: {e}")
+
+    servers = data.get("a2a_servers", {})
+    if not isinstance(servers, dict):
+        raise ConfigError(f"{path}: 'a2a_servers' must be a table")
+
+    _validate_a2a_server_configs(servers, str(path))
+    return servers
+
+
 # --- Public API ---
 
 
@@ -443,6 +512,17 @@ def load_config(base_dir: Path) -> dict:
     mcp_servers = merge_mcp_configs(project_mcp, global_mcp)
     if mcp_servers:
         merged["mcp_servers"] = mcp_servers
+
+    # Handle a2a_servers separately (merge by server name, not overwrite)
+    global_a2a = global_config.pop("a2a_servers", None)
+    project_a2a = project_config.pop("a2a_servers", None)
+    a2a_merged: dict[str, dict] = {}
+    if global_a2a:
+        a2a_merged.update(global_a2a)
+    if project_a2a:
+        a2a_merged.update(project_a2a)  # project wins
+    if a2a_merged:
+        merged["a2a_servers"] = a2a_merged
 
     # Re-validate mutual exclusion on merged result (could conflict across files)
     if merged.get("system_prompt") and merged.get("no_system_prompt"):
@@ -521,6 +601,8 @@ def config_to_session_kwargs(config: dict) -> dict:
         "max_review_rounds",
         "no_mcp",
         "mcp_config",
+        "no_a2a",
+        "a2a_config",
     }
     _INVERT_KEYS = {
         "no_read_guard": "read_guard",

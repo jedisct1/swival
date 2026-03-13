@@ -167,6 +167,14 @@ Useful for long-running sessions.
 
 See [MCP](mcp.md) for full configuration details.
 
+### A2A Flags
+
+`--no-a2a` disables A2A agent connections entirely, even if agents are configured in `swival.toml`.
+
+`--a2a-config FILE` provides an explicit path to an A2A TOML config file with `[a2a_servers.*]` tables.
+
+See [A2A](a2a.md) for full configuration details.
+
 ### Output And Reporting Flags
 
 `--quiet` and `-q` suppress diagnostics and keep terminal output focused on final answers.

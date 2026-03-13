@@ -37,6 +37,7 @@ from .snapshot import (
 from .thinking import ThinkingState
 from .todo import TodoState
 from .tracker import FileAccessTracker
+from .a2a_client import A2aShutdownError
 from .mcp_client import McpShutdownError
 from .tools import (
     TOOLS,
@@ -417,6 +418,17 @@ def compact_tool_result(name: str, args: dict | None, content: str) -> str:
         return f"[fetch_url: {url}, {len(content)} chars — content compacted]"
 
     if name.startswith("mcp__"):
+        head = content[:300]
+        return f"[{name}: {len(content)} chars — compacted]\nFirst 300 chars:\n{head}"
+
+    if name.startswith("a2a__"):
+        # Preserve contextId/taskId for input-required tasks
+        if "[input-required]" in content:
+            # Extract the header line with IDs
+            for line in content.splitlines():
+                if line.startswith("[input-required]"):
+                    return f"[{name}: {line} — compacted]"
+            return f"[{name}: input-required — compacted]"
         head = content[:300]
         return f"[{name}: {len(content)} chars — compacted]\nFirst 300 chars:\n{head}"
 
@@ -1245,6 +1257,7 @@ def handle_tool_call(
     todo_state=None,
     snapshot_state=None,
     mcp_manager=None,
+    a2a_manager=None,
     messages=None,
 ):
     """Execute a single tool call and return (tool_msg, metadata).
@@ -1296,11 +1309,14 @@ def handle_tool_call(
             file_tracker=file_tracker,
             tool_call_id=tool_call.id,
             mcp_manager=mcp_manager,
+            a2a_manager=a2a_manager,
             messages=messages,
             verbose=verbose,
         )
     except McpShutdownError:
         result = "error: MCP server is shutting down"
+    except A2aShutdownError:
+        result = "error: A2A agent is shutting down"
     except Exception as e:
         result = f"error: {e}"
     elapsed = time.monotonic() - t0
@@ -1858,6 +1874,19 @@ def build_parser():
         help="Disable MCP server connections entirely.",
     )
     parser.add_argument(
+        "--a2a-config",
+        type=str,
+        default=None,
+        metavar="FILE",
+        help="Path to an A2A TOML config file with [a2a_servers.*] tables.",
+    )
+    parser.add_argument(
+        "--no-a2a",
+        action="store_true",
+        default=_UNSET,
+        help="Disable A2A agent connections entirely.",
+    )
+    parser.add_argument(
         "--no-read-guard",
         action="store_true",
         default=_UNSET,
@@ -2113,6 +2142,9 @@ def main():
 
     # Stash MCP servers from TOML config before apply_config_to_args strips them
     args._mcp_servers_toml = file_config.pop("mcp_servers", None)
+
+    # Stash A2A servers from TOML config before apply_config_to_args strips them
+    args._a2a_servers_toml = file_config.pop("a2a_servers", None)
 
     apply_config_to_args(args, file_config)
 
@@ -2513,6 +2545,7 @@ def build_system_prompt(
     verbose: bool,
     config_dir: "Path | None" = None,
     mcp_tool_info: dict | None = None,
+    a2a_tool_info: dict | None = None,
     no_continue: bool = False,
     memory_full: bool = False,
     user_query: str | None = None,
@@ -2581,6 +2614,9 @@ def build_system_prompt(
     if mcp_tool_info and not system_prompt:
         system_content += "\n\n" + _format_mcp_tool_info(mcp_tool_info)
 
+    if a2a_tool_info and not system_prompt:
+        system_content += "\n\n" + _format_a2a_tool_info(a2a_tool_info)
+
     # Load continue-here file from a previous interrupted session
     if not no_continue:
         from .continue_here import load_continue_file, format_continue_prompt
@@ -2594,9 +2630,11 @@ def build_system_prompt(
     return system_content, instructions_loaded
 
 
-def _format_mcp_tool_info(tool_info: dict[str, list[tuple[str, str]]]) -> str:
-    """Format MCP tool info for the system prompt."""
-    lines = ["## MCP Tools", "", "Tools provided by external MCP servers:", ""]
+def _format_external_tool_info(
+    heading: str, preamble: str, tool_info: dict[str, list[tuple[str, str]]]
+) -> str:
+    """Format external tool info (MCP or A2A) for the system prompt."""
+    lines = [f"## {heading}", "", preamble, ""]
     for server_name, tools in sorted(tool_info.items()):
         lines.append(f"**{server_name}**:")
         for namespaced_name, description in tools:
@@ -2604,6 +2642,22 @@ def _format_mcp_tool_info(tool_info: dict[str, list[tuple[str, str]]]) -> str:
             lines.append(f"- `{namespaced_name}`{desc}")
         lines.append("")
     return "\n".join(lines)
+
+
+def _format_mcp_tool_info(tool_info: dict[str, list[tuple[str, str]]]) -> str:
+    return _format_external_tool_info(
+        "MCP Tools", "Tools provided by external MCP servers:", tool_info
+    )
+
+
+def _format_a2a_tool_info(tool_info: dict[str, list[tuple[str, str]]]) -> str:
+    return _format_external_tool_info(
+        "A2A Tools",
+        "Tools provided by remote A2A agents. Each tool accepts a natural-language\n"
+        "message. For multi-turn conversations, pass back the contextId from a\n"
+        "previous result. For input-required resumption, pass both contextId and taskId.",
+        tool_info,
+    )
 
 
 def _show_agentfs_diff_hint(args) -> None:
@@ -2717,6 +2771,34 @@ def _run_main(args, report, _write_report, parser):
             # Capture tool info AFTER pruning so prompt matches reality
             mcp_tool_info = mcp_manager.get_tool_info()
 
+    # Initialize A2A agents
+    a2a_manager = None
+    a2a_tool_info = {}
+    if not getattr(args, "no_a2a", False):
+        from .a2a_client import A2aManager
+
+        a2a_servers = getattr(args, "_a2a_servers_toml", None) or {}
+
+        a2a_config_path = getattr(args, "a2a_config", None)
+        if a2a_config_path:
+            from .config import load_a2a_config
+
+            p = Path(a2a_config_path)
+            if not p.is_file():
+                raise ConfigError(f"--a2a-config file not found: {a2a_config_path}")
+            file_servers = load_a2a_config(p)
+            # File config is base, TOML overrides
+            file_servers.update(a2a_servers)
+            a2a_servers = file_servers
+
+        if a2a_servers:
+            a2a_manager = A2aManager(a2a_servers, verbose=args.verbose)
+            a2a_manager.start()
+            a2a_tools = a2a_manager.list_tools()
+            if a2a_tools:
+                tools.extend(a2a_tools)
+            a2a_tool_info = a2a_manager.get_tool_info()
+
     # --- Cache lifecycle ---
     llm_cache = None
     if getattr(args, "cache", False):
@@ -2741,6 +2823,7 @@ def _run_main(args, report, _write_report, parser):
         verbose=args.verbose,
         config_dir=getattr(args, "config_dir", None),
         mcp_tool_info=mcp_tool_info,
+        a2a_tool_info=a2a_tool_info,
         no_continue=getattr(args, "no_continue", False),
         user_query=getattr(args, "question", None),
         report=report,
@@ -2789,6 +2872,7 @@ def _run_main(args, report, _write_report, parser):
         llm_kwargs=llm_kwargs,
         file_tracker=file_tracker,
         mcp_manager=mcp_manager,
+        a2a_manager=a2a_manager,
         cache=llm_cache,
     )
 
@@ -3005,6 +3089,7 @@ def run_agent_loop(
     turn_offset: int = 0,
     compaction_state: "CompactionState | None" = None,
     mcp_manager=None,
+    a2a_manager=None,
     continue_here: bool = True,
     cache=None,
 ) -> tuple[str | None, bool]:
@@ -3374,6 +3459,7 @@ def run_agent_loop(
                 todo_state=todo_state,
                 snapshot_state=snapshot_state,
                 mcp_manager=mcp_manager,
+                a2a_manager=a2a_manager,
                 messages=messages,
             )
             messages.append(tool_msg)
@@ -3771,6 +3857,7 @@ def repl_loop(
     no_history: bool = False,
     compaction_state: "CompactionState | None" = None,
     mcp_manager=None,
+    a2a_manager=None,
     continue_here: bool = True,
     cache=None,
 ) -> None:
@@ -3814,6 +3901,7 @@ def repl_loop(
         file_tracker=file_tracker,
         compaction_state=compaction_state,
         mcp_manager=mcp_manager,
+        a2a_manager=a2a_manager,
         cache=cache,
     )
 

@@ -134,8 +134,9 @@ success/failure counts, context compaction events, and guardrail interventions.
 Useful for comparing models, settings, skills, and MCP servers systematically
 on real coding tasks.
 
-**Skills and MCP.** Extend the agent with SKILL.md-based skills for reusable
-workflows, and connect to external tools via the Model Context Protocol.
+**Skills, MCP, and A2A.** Extend the agent with SKILL.md-based skills for
+reusable workflows, connect to external tools via the Model Context Protocol,
+and talk to remote agents via the Agent-to-Agent (A2A) protocol.
 
 **Small enough to read and hack.** A few thousand lines of Python across a
 handful of files, with no framework underneath. Read the whole agent in an
@@ -165,6 +166,8 @@ Full documentation is available at [swival.dev](https://swival.dev/).
   ChatGPT Plus/Pro, and generic OpenAI-compatible server configuration
 - [MCP](docs.md/mcp.md) -- connecting external tool servers via the Model Context
   Protocol
+- [A2A](docs.md/a2a.md) -- connecting to remote agents via the Agent-to-Agent
+  protocol
 - [Reports](docs.md/reports.md) -- JSON reports for benchmarking and evaluation
 - [Reviews](docs.md/reviews.md) -- external reviewer scripts for automated QA
   and LLM-as-judge evaluation

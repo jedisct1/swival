@@ -65,6 +65,11 @@ NAV = [
                 "Connecting external tool servers via Model Context Protocol",
             ),
             (
+                "a2a",
+                "A2A",
+                "Connecting to remote agents via the Agent-to-Agent protocol",
+            ),
+            (
                 "customization",
                 "Customization",
                 "Config files, project instructions, system prompt overrides, tuning parameters",

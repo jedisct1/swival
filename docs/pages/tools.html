@@ -46,6 +46,7 @@
 <li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
 <li><a href="skills.html">Skills</a></li>
 <li><a href="mcp.html">MCP</a></li>
+<li><a href="a2a.html">A2A</a></li>
 <li><a href="customization.html">Customization</a></li>
 <li><a href="providers.html">Providers</a></li>
 <li><a href="reports.html">Reports</a></li>
@@ -56,7 +57,7 @@
         </aside>
         <article class="docs-content">
             <h1 id="tools">Tools</h1>
-<p>Swival gives the model a fixed set of tools at runtime. Most tools are always available. <code>run_command</code> appears only when you enable command execution with <code>--allowed-commands</code> or <code>--yolo</code>, <code>use_skill</code> appears only when skills are discovered, and MCP tools appear when external MCP servers are configured.</p>
+<p>Swival gives the model a fixed set of tools at runtime. Most tools are always available. <code>run_command</code> appears only when you enable command execution with <code>--allowed-commands</code> or <code>--yolo</code>, <code>use_skill</code> appears only when skills are discovered, MCP tools appear when external MCP servers are configured, and A2A tools appear when remote A2A agents are configured.</p>
 <h2 id="read_file"><code>read_file</code></h2>
 <p><code>read_file</code> can read text files and directory listings inside allowed roots. File output is line-numbered, which makes later edits precise. The default window starts at <code>offset=1</code> with <code>limit=2000</code> lines.</p>
 <p>If output is truncated, Swival appends a continuation hint with the next offset. You can also request <code>tail=N</code> to start from the end of the file, which is useful for logs.</p>
@@ -113,7 +114,7 @@
 <h3 id="implicit-checkpoints">Implicit Checkpoints</h3>
 <p>Calling <code>save</code> before <code>restore</code> is not required. The system automatically creates implicit checkpoints at every user message, after each successful restore, and on conversation reset. When <code>restore</code> is called without a prior <code>save</code>, it collapses everything since the last implicit checkpoint, which is typically the most recent user message.</p>
 <h3 id="dirty-scopes">Dirty Scopes</h3>
-<p>Tools are classified as read-only or mutating. Read-only tools (<code>read_file</code>, <code>read_multiple_files</code>, <code>list_files</code>, <code>grep</code>, <code>fetch_url</code>, <code>think</code>, <code>todo</code>, <code>snapshot</code>) are safe to collapse because they don't change anything on disk. Mutating tools (<code>write_file</code>, <code>edit_file</code>, <code>delete_file</code>, <code>run_command</code>, and unknown MCP tools) dirty the scope.</p>
+<p>Tools are classified as read-only or mutating. Read-only tools (<code>read_file</code>, <code>read_multiple_files</code>, <code>list_files</code>, <code>grep</code>, <code>fetch_url</code>, <code>think</code>, <code>todo</code>, <code>snapshot</code>) are safe to collapse because they don't change anything on disk. Mutating tools (<code>write_file</code>, <code>edit_file</code>, <code>delete_file</code>, <code>run_command</code>, unknown MCP tools, and A2A tools) dirty the scope.</p>
 <p>If the scope contains mutating tool calls, <code>restore</code> fails with a list of the dirty tools. Pass <code>force=true</code> to override when you are confident the summary captures the mutations.</p>
 <h3 id="snapshot-history">Snapshot History</h3>
 <p>Completed snapshots are preserved across context compaction. Up to 10 past summaries are retained and injected into the system prompt so knowledge survives aggressive compaction.</p>
@@ -135,6 +136,9 @@
 <h2 id="mcp-tools">MCP Tools</h2>
 <p>Swival can connect to external tool servers via the <a href="https://modelcontextprotocol.io/">Model Context Protocol</a> (MCP). MCP tools are discovered at startup and exposed alongside built-in tools. MCP tool output is size-guarded: results up to 20 KB are returned inline, larger results are saved to <code>.swival/</code> for paginated reads via <code>read_file</code>, and output is hard-capped at 10 MB.</p>
 <p>See <a href="mcp.html">MCP</a> for configuration and details.</p>
+<h2 id="a2a-tools">A2A Tools</h2>
+<p>Swival can connect to remote agents via the <a href="https://google.github.io/A2A/">Agent-to-Agent (A2A) protocol</a>. A2A tools are discovered at startup and exposed alongside built-in tools. Unlike MCP tools, A2A tools always accept a natural-language <code>message</code> plus optional <code>context_id</code> and <code>task_id</code> for multi-turn conversations. A2A tool output is size-guarded the same way as MCP output, with continuation metadata preserved across size limits and context compaction.</p>
+<p>See <a href="a2a.html">A2A</a> for configuration and details.</p>
         </article>
     </div>
     <footer class="site-footer">
