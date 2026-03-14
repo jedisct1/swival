@@ -2,6 +2,19 @@
 
 All notable user-facing changes to Swival.
 
+## 0.1.25
+
+- Added native Google Gemini API support.
+- Added A2A streaming (`SendStreamingMessage`): real-time SSE delivery of
+  status updates, tool lifecycle events, and incremental text.
+- Added `CancelTask` support: per-task cancel flags checked between tool calls
+  and at each turn boundary.
+- Added A2A server hardening: sliding-window rate limiting, request size
+  validation, concurrency semaphore, and active-context protection against
+  LRU eviction.
+- Auto-grant read access to external skill directories and list supporting
+  files on skill activation.
+
 ## 0.1.24
 
 - Added A2A server mode (`--serve`): expose a swival Session as an A2A endpoint,
