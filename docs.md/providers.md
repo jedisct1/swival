@@ -152,30 +152,22 @@ There is no model auto-discovery and no context window reload. Set `--max-contex
 
 Internally, generic calls are routed through LiteLLM as `openai/<model_id>` with `api_base` pointing at your server's `/v1` path.
 
-## Google Gemini
+## Google Gemini API
 
-Swival includes `google` and `gemini` as first-class aliases for Gemini's OpenAI-compatible API.
+The `google` provider connects to Google Gemini API via its OpenAI-compatible API endpoint.
 
 `--model` is required. `--base-url` is optional and defaults to `https://generativelanguage.googleapis.com/v1beta/openai`.
 
 ```sh
 export GEMINI_API_KEY=...
-swival --provider gemini \
-    --model gemini-2.5-flash \
-    "task"
-```
-
-`--provider google` behaves the same way:
-
-```sh
 swival --provider google \
-    --model gemini-2.5-pro \
+    --model gemini-2.5-flash \
     "task"
 ```
 
 Authentication comes from `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `--api-key`.
 
-Internally, Gemini is normalized onto the same generic OpenAI-compatible path as other `openai/<model_id>` backends, but with Google's endpoint as the default `api_base` and without appending `/v1`.
+Internally, the google provider is normalized onto the same generic OpenAI-compatible path as other `openai/<model_id>` backends, but with Google's endpoint as the default `api_base` and without appending `/v1`.
 
 ## ChatGPT Plus/Pro
 

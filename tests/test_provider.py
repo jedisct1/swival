@@ -901,12 +901,12 @@ class TestGenericProviderValidation:
 
 
 # ---------------------------------------------------------------------------
-# Gemini provider
+# Google provider
 # ---------------------------------------------------------------------------
 
 
-class TestGeminiProviderRouting:
-    """Verify Gemini aliases normalize to the generic OpenAI-compatible path."""
+class TestGoogleProviderRouting:
+    """Verify google provider normalizes to the generic OpenAI-compatible path."""
 
     def _mock_response(self):
         choice = MagicMock()
@@ -943,17 +943,9 @@ class TestGeminiProviderRouting:
             )
             assert kwargs["api_key"] == "gemini-key"
 
-    def test_gemini_alias_sets_generic_llm_kwargs(self):
-        _, api_base, api_key, _, llm_kwargs = resolve_provider(
-            "gemini", "gemini-2.5-pro", "gemini-key", None, None, False
-        )
-        assert api_base == "https://generativelanguage.googleapis.com/v1beta/openai"
-        assert api_key == "gemini-key"
-        assert llm_kwargs["provider"] == "generic"
 
-
-class TestGeminiProviderValidation:
-    """CLI-level validation for Gemini provider aliases."""
+class TestGoogleProviderValidation:
+    """CLI-level validation for google provider."""
 
     def test_google_requires_model(self, monkeypatch):
         from swival import agent, config
@@ -1015,13 +1007,13 @@ class TestGeminiProviderValidation:
         assert captured["api_key"] == "gemini-env"
         assert captured["provider"] == "generic"
 
-    def test_gemini_uses_gemini_api_key_env(self):
+    def test_google_uses_gemini_api_key_env(self):
         monkeypatch = pytest.MonkeyPatch()
         monkeypatch.setenv("GEMINI_API_KEY", "gemini-env")
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         try:
             _, api_base, api_key, _, llm_kwargs = resolve_provider(
-                "gemini", "gemini-2.5-flash", None, None, None, False
+                "google", "gemini-2.5-flash", None, None, None, False
             )
         finally:
             monkeypatch.undo()

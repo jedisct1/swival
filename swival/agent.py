@@ -55,8 +55,8 @@ _encoder = tiktoken.get_encoding("cl100k_base")
 
 MAX_HISTORY_SIZE = 500 * 1024  # 500KB
 TODO_REMINDER_INTERVAL = 3  # remind after N turns of no todo usage
-_GEMINI_OPENAI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
-_GEMINI_PROVIDER_ALIASES = frozenset({"google", "gemini"})
+_GOOGLE_OPENAI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
+_GOOGLE_PROVIDER = "google"
 
 # Canonical prefixes for synthetic user messages injected by the agent loop.
 # Used by continue_here._find_last_user_task to skip interventions.
@@ -1613,7 +1613,6 @@ _PROVIDER_KEY_ENV: dict[str, str] = {
     "openrouter": "OPENROUTER_API_KEY",
     "generic": "OPENAI_API_KEY",
     "google": "GEMINI_API_KEY",
-    "gemini": "GEMINI_API_KEY",
     "chatgpt": "CHATGPT_API_KEY",
 }
 
@@ -1731,7 +1730,7 @@ def build_parser():
         type=str,
         default=_UNSET,
         help="API key for the provider (overrides env var: HF_TOKEN, "
-        "OPENROUTER_API_KEY, OPENAI_API_KEY/GEMINI_API_KEY, or CHATGPT_API_KEY).",
+        "OPENROUTER_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or CHATGPT_API_KEY).",
     )
     parser.add_argument(
         "--base-dir",
@@ -1951,11 +1950,10 @@ def build_parser():
             "openrouter",
             "generic",
             "google",
-            "gemini",
             "chatgpt",
         ],
         default=_UNSET,
-        help="LLM provider: lmstudio (local), huggingface (HF API), openrouter (multi-provider API), generic (any OpenAI-compatible server), google/gemini (Gemini's OpenAI-compatible API), chatgpt (ChatGPT Plus/Pro subscription via OAuth).",
+        help="LLM provider: lmstudio (local), huggingface (HF API), openrouter (multi-provider API), generic (any OpenAI-compatible server), google (Google's OpenAI-compatible API), chatgpt (ChatGPT Plus/Pro subscription via OAuth).",
     )
     parser.add_argument(
         "-q",
@@ -2443,10 +2441,10 @@ def resolve_provider(
     """
     provider_name = provider
     llm_provider = provider
-    if provider in _GEMINI_PROVIDER_ALIASES:
+    if provider == _GOOGLE_PROVIDER:
         provider = "generic"
         llm_provider = "generic"
-        base_url = base_url or _GEMINI_OPENAI_API_BASE
+        base_url = base_url or _GOOGLE_OPENAI_API_BASE
         api_key = (
             api_key
             or os.environ.get("GEMINI_API_KEY")
@@ -2514,14 +2512,14 @@ def resolve_provider(
                 f"--base-url is required when --provider is {provider_name}"
             )
         stripped = base_url.rstrip("/")
-        if provider_name not in _GEMINI_PROVIDER_ALIASES:
+        if provider_name != _GOOGLE_PROVIDER:
             api_base = stripped if stripped.endswith("/v1") else f"{stripped}/v1"
         else:
             api_base = stripped
         model_id = model
         context_length = max_context_tokens
         resolved_key = api_key or os.environ.get("OPENAI_API_KEY")
-        if provider_name in _GEMINI_PROVIDER_ALIASES and not resolved_key:
+        if provider_name == _GOOGLE_PROVIDER and not resolved_key:
             raise ConfigError(
                 f"--api-key, GEMINI_API_KEY, or OPENAI_API_KEY env var required for {provider_name} provider"
             )
