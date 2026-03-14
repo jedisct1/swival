@@ -122,6 +122,10 @@ class Session:
         self.cache = cache
         self.cache_dir = cache_dir
 
+        # Streaming hooks (set externally, e.g. by A2A server)
+        self.event_callback = None
+        self.cancel_flag = None
+
         # Setup state (cached after first _setup())
         self._setup_done = False
         self._model_id: str | None = None
@@ -361,6 +365,10 @@ class Session:
             kwargs["mcp_manager"] = self._mcp_manager
         if self._a2a_manager is not None:
             kwargs["a2a_manager"] = self._a2a_manager
+        if self.event_callback is not None:
+            kwargs["event_callback"] = self.event_callback
+        if self.cancel_flag is not None:
+            kwargs["cancel_flag"] = self.cancel_flag
         return kwargs
 
     def run(self, question: str, *, report: bool = False) -> Result:

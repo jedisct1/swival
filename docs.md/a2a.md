@@ -35,7 +35,7 @@ Agent names must match `[a-zA-Z0-9_-]+` and cannot contain double underscores (s
 | `card_url`   | No       | Override for the Agent Card URL (defaults to `<url>/.well-known/agent-card.json`) |
 | `auth_type`  | No       | Authentication type: `bearer` or `api_key`                                        |
 | `auth_token` | No       | Authentication token or key                                                       |
-| `timeout`    | No       | Request timeout in seconds (default: 120)                                         |
+| `timeout`    | No       | Request timeout in seconds (default: 300)                                         |
 
 Two authentication methods are supported. Bearer token sends `Authorization: Bearer <token>` on all requests:
 
@@ -156,17 +156,34 @@ Each incoming `SendMessage` request is routed to a Session instance keyed by `co
 
 Sessions are cleaned up after a configurable TTL (default: 1 hour). If the session limit is reached (default: 100), the least-recently-used session is evicted. Per-context locks ensure sequential processing of messages within the same context.
 
-The server supports three JSON-RPC methods:
+The server supports five JSON-RPC methods:
 
-- **SendMessage** — sends a message to a session and returns the task result
+- **SendMessage** — sends a message to a session and returns the task result (blocking)
+- **SendStreamingMessage** — sends a message and returns results as a Server-Sent Events (SSE) stream with real-time status updates, tool lifecycle events, and incremental text delivery
 - **GetTask** — retrieves the current state of a task by ID
 - **ListTasks** — lists tasks, optionally filtered by `contextId`
+- **CancelTask** — signals a running task to stop; the agent loop checks the cancellation flag between tool calls and at the start of each turn
 
-Task outcomes map from Session results: a successful `ask()` produces a `completed` task, an exhausted run with no answer produces `input-required` (needs more information), and an exhausted run with a partial answer or an exception produces `failed`.
+Task outcomes map from Session results: a successful `ask()` produces a `completed` task, an exhausted run with no answer produces `input-required` (needs more information), an exhausted run with a partial answer or an exception produces `failed`, and a cancelled task produces `canceled`.
+
+### Streaming
+
+When a client sends `SendStreamingMessage`, the server returns an SSE stream instead of a single JSON-RPC response. The stream emits:
+
+- **TaskStatusUpdateEvent** — state transitions (`working`, `completed`, `failed`, `canceled`), heartbeats (every 15 seconds during idle periods), and tool lifecycle metadata (`tool_start`, `tool_finish`, `tool_error`)
+- **TaskArtifactUpdateEvent** — incremental text chunks as the agent produces output, plus the final answer artifact
+
+Heartbeat events include an `idle` field showing how long since the last real event, so clients can distinguish silence from a dead connection. If the client disconnects while the agent is still running, the server signals cancellation and waits for the agent thread to finish before releasing resources.
+
+### Rate Limiting and Concurrency
+
+The server applies per-client rate limiting (default: 60 requests per minute) and a global concurrency limit on message-processing methods (default: 10 concurrent requests). Requests that exceed either limit receive a 429 response. Request bodies are also size-limited (default: 1 MB).
+
+Sessions with in-flight work are protected from both LRU eviction and TTL expiry. If the session limit is reached and all existing sessions are actively processing, new requests receive an error rather than evicting an active session.
 
 ### Agent Card
 
-The server auto-generates an Agent Card from the session configuration. The card includes the server name (derived from provider and model), capabilities, and endpoint URL. When `--serve-auth-token` is set, the card declares a bearer security scheme.
+The server auto-generates an Agent Card from the session configuration. The card includes the server name (derived from provider and model), capabilities (including streaming support), and endpoint URL. When `--serve-auth-token` is set, the card declares a bearer security scheme.
 
 Override the auto-generated name and description with `--serve-name` and `--serve-description`:
 
@@ -222,6 +239,8 @@ server = A2aServer(
 )
 server.serve()
 ```
+
+The constructor also accepts operational tuning parameters: `max_request_size` (default: 1 MB), `max_requests_per_minute` (default: 60), `max_concurrent` (default: 10), and `heartbeat_interval` (default: 15 seconds for SSE streams).
 
 The `A2aServer.app` property returns a Starlette ASGI application, which can be mounted in larger applications or used with any ASGI server.
 

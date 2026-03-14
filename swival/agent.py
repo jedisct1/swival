@@ -38,6 +38,13 @@ from .thinking import ThinkingState
 from .todo import TodoState
 from .tracker import FileAccessTracker
 from .a2a_client import A2aShutdownError
+from .a2a_types import (
+    EVENT_STATUS_UPDATE,
+    EVENT_TEXT_CHUNK,
+    EVENT_TOOL_ERROR,
+    EVENT_TOOL_FINISH,
+    EVENT_TOOL_START,
+)
 from .mcp_client import McpShutdownError
 from .tools import (
     TOOLS,
@@ -3231,6 +3238,8 @@ def run_agent_loop(
     a2a_manager=None,
     continue_here: bool = True,
     cache=None,
+    event_callback=None,
+    cancel_flag=None,
 ) -> tuple[str | None, bool]:
     """Run the tool-calling loop until a final answer or max turns.
 
@@ -3258,6 +3267,14 @@ def run_agent_loop(
     todo_last_used = 0
     snapshot_read_streak = 0
     snapshot_nudge_fired = False
+    loop_start = time.monotonic()
+
+    def _emit(kind: str, data: dict) -> None:
+        if event_callback is not None:
+            try:
+                event_callback(kind, data)
+            except Exception:
+                pass
 
     # Reset dirty state only if the last message is a user message
     # (new scope boundary). Skip on /continue where the last message
@@ -3331,6 +3348,22 @@ def run_agent_loop(
 
     while turns < max_turns:
         turns += 1
+
+        # Check cancellation flag
+        if cancel_flag is not None and cancel_flag.is_set():
+            if verbose:
+                fmt.info("Task cancelled by external request.")
+            _emit(EVENT_STATUS_UPDATE, {"turn": turns, "cancelled": True})
+            return None, True
+
+        _emit(
+            EVENT_STATUS_UPDATE,
+            {
+                "turn": turns,
+                "max_turns": max_turns,
+                "elapsed": time.monotonic() - loop_start,
+            },
+        )
 
         # Inject snapshot history into system message so the LLM
         # can see prior investigation summaries even after compaction.
@@ -3554,6 +3587,20 @@ def run_agent_loop(
             else vars(msg)
         )
 
+        # Emit events for streaming consumers: text_chunk for final answers only,
+        # status_update for intermediate reasoning (before tool calls).
+        if msg.content and not msg.tool_calls and finish_reason != "length":
+            _emit(EVENT_TEXT_CHUNK, {"text": msg.content, "turn": turns})
+        elif msg.content and msg.tool_calls:
+            _emit(
+                EVENT_STATUS_UPDATE,
+                {
+                    "turn": turns,
+                    "type": "reasoning",
+                    "text_length": len(msg.content),
+                },
+            )
+
         # Log intermediate assistant text (reasoning before tool calls, or truncated responses)
         if msg.content and (msg.tool_calls or finish_reason == "length") and verbose:
             fmt.assistant_text(msg.content)
@@ -3584,6 +3631,16 @@ def run_agent_loop(
         interventions: list[str] = []
         all_tools_readonly = True
         for tool_call in msg.tool_calls:
+            # Check cancellation before each tool call
+            if cancel_flag is not None and cancel_flag.is_set():
+                if verbose:
+                    fmt.info("Task cancelled by external request.")
+                _emit(EVENT_STATUS_UPDATE, {"turn": turns, "cancelled": True})
+                return None, True
+
+            _tc_name = tool_call.function.name
+            _emit(EVENT_TOOL_START, {"name": _tc_name, "turn": turns})
+
             tool_msg, tool_meta = handle_tool_call(
                 tool_call,
                 base_dir,
@@ -3602,6 +3659,25 @@ def run_agent_loop(
                 messages=messages,
             )
             messages.append(tool_msg)
+
+            if tool_meta["succeeded"]:
+                _emit(
+                    EVENT_TOOL_FINISH,
+                    {
+                        "name": tool_meta["name"],
+                        "turn": turns,
+                        "elapsed": tool_meta["elapsed"],
+                    },
+                )
+            else:
+                _emit(
+                    EVENT_TOOL_ERROR,
+                    {
+                        "name": tool_meta["name"],
+                        "turn": turns,
+                        "error": tool_msg["content"][:500],
+                    },
+                )
 
             if report:
                 report.record_tool_call(

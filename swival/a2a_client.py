@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 _POLL_INITIAL_DELAY = 0.5
 _POLL_MAX_DELAY = 5.0
 _POLL_BACKOFF_FACTOR = 1.5
-_DEFAULT_TIMEOUT = 120
+_DEFAULT_TIMEOUT = 300
 
 
 class A2aShutdownError(Exception):
@@ -159,6 +159,11 @@ class A2aManager:
             return result
         except A2aShutdownError:
             raise
+        except TimeoutError:
+            return (
+                f"error: A2A agent {agent_name!r} timed out after {timeout}s",
+                True,
+            )
         except Exception as e:
             self._degraded.add(agent_name)
             return (f"error: A2A agent {agent_name!r} failed: {e}", True)

@@ -353,3 +353,63 @@ def extract_task_text(task: Task) -> str:
         if text:
             texts.append(text)
     return "\n".join(texts) if texts else "(empty response)"
+
+
+# --- Agent loop event callback types ---
+
+# Event kinds emitted by run_agent_loop() via event_callback
+EVENT_TEXT_CHUNK = "text_chunk"
+EVENT_TOOL_START = "tool_start"
+EVENT_TOOL_FINISH = "tool_finish"
+EVENT_TOOL_ERROR = "tool_error"
+EVENT_STATUS_UPDATE = "status_update"
+
+
+@dataclass
+class AgentEvent:
+    """Event emitted by the agent loop for streaming consumers."""
+
+    kind: str
+    data: dict = field(default_factory=dict)
+
+
+# --- A2A SSE event types (server-side) ---
+
+
+@dataclass
+class TaskStatusUpdateEvent:
+    """SSE event for task status transitions and heartbeats."""
+
+    task_id: str
+    context_id: str
+    state: str
+    message: dict | None = None
+    metadata: dict | None = None
+
+    def to_wire(self) -> dict:
+        result: dict[str, Any] = {
+            "taskId": self.task_id,
+            "contextId": self.context_id,
+            "status": {"state": self.state},
+        }
+        if self.message is not None:
+            result["status"]["message"] = self.message
+        if self.metadata is not None:
+            result["metadata"] = self.metadata
+        return result
+
+
+@dataclass
+class TaskArtifactUpdateEvent:
+    """SSE event for incremental artifact delivery (text chunks, final answer)."""
+
+    task_id: str
+    context_id: str
+    artifact: dict = field(default_factory=dict)
+
+    def to_wire(self) -> dict:
+        return {
+            "taskId": self.task_id,
+            "contextId": self.context_id,
+            "artifact": self.artifact,
+        }
