@@ -906,7 +906,9 @@ class TestGenericProviderValidation:
 
 
 class TestGoogleProviderRouting:
-    """Verify google provider routes through LiteLLM's native gemini support."""
+    """Verify google provider routes through the OpenAI-compatible endpoint."""
+
+    _GOOGLE_OPENAI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
 
     def _mock_response(self):
         choice = MagicMock()
@@ -916,13 +918,14 @@ class TestGoogleProviderRouting:
         resp.choices = [choice]
         return resp
 
-    def test_google_routes_through_native_gemini(self):
+    def test_google_routes_through_openai_compat(self):
         with patch("litellm.completion") as mock_comp:
             mock_comp.return_value = self._mock_response()
             _, api_base, api_key, _, llm_kwargs = resolve_provider(
                 "google", "gemini-2.5-flash", "gemini-key", None, None, False
             )
-            assert llm_kwargs["provider"] == "gemini"
+            assert llm_kwargs["provider"] == "generic"
+            assert api_base == self._GOOGLE_OPENAI_BASE
             call_llm(
                 api_base,
                 "gemini-2.5-flash",
@@ -937,9 +940,16 @@ class TestGoogleProviderRouting:
                 api_key=api_key,
             )
             kwargs = mock_comp.call_args[1]
-            assert kwargs["model"] == "gemini/gemini-2.5-flash"
+            assert kwargs["model"] == "openai/gemini-2.5-flash"
             assert kwargs["api_key"] == "gemini-key"
-            assert "api_base" not in kwargs
+            assert kwargs["api_base"] == self._GOOGLE_OPENAI_BASE
+
+    def test_google_custom_base_url_overrides_default(self):
+        _, api_base, _, _, llm_kwargs = resolve_provider(
+            "google", "gemini-2.5-flash", "k", "https://custom.example.com", None, False
+        )
+        assert llm_kwargs["provider"] == "generic"
+        assert api_base == "https://custom.example.com"
 
 
 class TestGoogleProviderValidation:
@@ -998,9 +1008,12 @@ class TestGoogleProviderValidation:
 
         monkeypatch.setattr(agent, "call_llm", fake_call_llm)
         agent.main()
-        assert captured["base_url"] is None
+        assert (
+            captured["base_url"]
+            == "https://generativelanguage.googleapis.com/v1beta/openai"
+        )
         assert captured["api_key"] == "gemini-env"
-        assert captured["provider"] == "gemini"
+        assert captured["provider"] == "generic"
 
     def test_google_uses_gemini_api_key_env(self):
         monkeypatch = pytest.MonkeyPatch()
@@ -1012,9 +1025,9 @@ class TestGoogleProviderValidation:
             )
         finally:
             monkeypatch.undo()
-        assert api_base is None
+        assert api_base == "https://generativelanguage.googleapis.com/v1beta/openai"
         assert api_key == "gemini-env"
-        assert llm_kwargs["provider"] == "gemini"
+        assert llm_kwargs["provider"] == "generic"
 
     def test_google_never_calls_discover_or_configure(self, monkeypatch, tmp_path):
         from swival import agent
@@ -1426,3 +1439,9 @@ class TestPickBestChoice:
         c1 = self._make_choice(content="answer 1")
         c2 = self._make_choice(content="answer 2")
         assert _pick_best_choice([c1, c2]) is c1
+
+    def test_empty_choices_raises(self):
+        from swival.report import AgentError
+
+        with pytest.raises(AgentError, match="empty choices"):
+            _pick_best_choice([])

@@ -1435,7 +1435,9 @@ def _pick_best_choice(choices):
     take priority — the text is merged into the tool-call choice so it isn't
     lost.
     """
-    if len(choices) <= 1:
+    if not choices:
+        raise AgentError("LLM returned an empty choices list")
+    if len(choices) == 1:
         return choices[0]
 
     tool_choice = None
@@ -1504,12 +1506,6 @@ def call_llm(
     elif provider == "generic":
         model_str = f"openai/{model_id}"
         kwargs = {"api_base": base_url, "api_key": api_key or "none"}
-    elif provider == "gemini":
-        bare_id = model_id.removeprefix("gemini/")
-        model_str = f"gemini/{bare_id}"
-        kwargs = {"api_key": api_key}
-        if base_url:
-            kwargs["api_base"] = base_url
     elif provider == "chatgpt":
         bare_id = model_id.removeprefix("chatgpt/").removeprefix("chatgpt/")
         model_str = f"chatgpt/{bare_id}"
@@ -1965,7 +1961,7 @@ def build_parser():
             "chatgpt",
         ],
         default=_UNSET,
-        help="LLM provider: lmstudio (local), huggingface (HF API), openrouter (multi-provider API), generic (any OpenAI-compatible server), google (Gemini via LiteLLM native support), chatgpt (ChatGPT Plus/Pro subscription via OAuth).",
+        help="LLM provider: lmstudio (local), huggingface (HF API), openrouter (multi-provider API), generic (any OpenAI-compatible server), google (Gemini via OpenAI-compatible endpoint), chatgpt (ChatGPT Plus/Pro subscription via OAuth).",
     )
     parser.add_argument(
         "-q",
@@ -2521,8 +2517,12 @@ def resolve_provider(
     elif provider == _GOOGLE_PROVIDER:
         if not model:
             raise ConfigError("--model is required when --provider is google")
-        llm_provider = "gemini"
-        api_base = base_url
+        # Route through Google's OpenAI-compatible endpoint instead of
+        # LiteLLM's native gemini adapter, which is unstable with newer
+        # models (empty choices, 500s).  See GitHub issue #6.
+        _GOOGLE_OPENAI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
+        llm_provider = "generic"
+        api_base = base_url or _GOOGLE_OPENAI_BASE
         model_id = model
         resolved_key = (
             api_key
