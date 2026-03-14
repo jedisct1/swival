@@ -55,6 +55,8 @@ _encoder = tiktoken.get_encoding("cl100k_base")
 
 MAX_HISTORY_SIZE = 500 * 1024  # 500KB
 TODO_REMINDER_INTERVAL = 3  # remind after N turns of no todo usage
+_GEMINI_OPENAI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
+_GEMINI_PROVIDER_ALIASES = frozenset({"google", "gemini"})
 
 # Canonical prefixes for synthetic user messages injected by the agent loop.
 # Used by continue_here._find_last_user_task to skip interventions.
@@ -1462,6 +1464,7 @@ def call_llm(
     extra_body=None,
     reasoning_effort=None,
     cache=None,
+    append_v1_to_openai_base=True,
 ):
     """Call LiteLLM with the appropriate provider. Returns (message, finish_reason)."""
     import litellm
@@ -1495,8 +1498,9 @@ def call_llm(
             kwargs["api_base"] = base_url
     elif provider == "generic":
         model_str = f"openai/{model_id}"
-        stripped = base_url.rstrip("/")
-        api_base = stripped if stripped.endswith("/v1") else f"{stripped}/v1"
+        api_base = base_url.rstrip("/")
+        if append_v1_to_openai_base and not api_base.endswith("/v1"):
+            api_base = f"{api_base}/v1"
         kwargs = {"api_base": api_base, "api_key": api_key or "none"}
     elif provider == "chatgpt":
         bare_id = model_id.removeprefix("chatgpt/").removeprefix("chatgpt/")
@@ -1612,6 +1616,8 @@ _PROVIDER_KEY_ENV: dict[str, str] = {
     "huggingface": "HF_TOKEN",
     "openrouter": "OPENROUTER_API_KEY",
     "generic": "OPENAI_API_KEY",
+    "google": "OPENAI_API_KEY",
+    "gemini": "OPENAI_API_KEY",
     "chatgpt": "CHATGPT_API_KEY",
 }
 
@@ -1729,7 +1735,7 @@ def build_parser():
         type=str,
         default=_UNSET,
         help="API key for the provider (overrides env var: HF_TOKEN, "
-        "OPENROUTER_API_KEY, OPENAI_API_KEY, or CHATGPT_API_KEY).",
+        "OPENROUTER_API_KEY, OPENAI_API_KEY/GEMINI_API_KEY, or CHATGPT_API_KEY).",
     )
     parser.add_argument(
         "--base-dir",
@@ -1943,9 +1949,17 @@ def build_parser():
     )
     parser.add_argument(
         "--provider",
-        choices=["lmstudio", "huggingface", "openrouter", "generic", "chatgpt"],
+        choices=[
+            "lmstudio",
+            "huggingface",
+            "openrouter",
+            "generic",
+            "google",
+            "gemini",
+            "chatgpt",
+        ],
         default=_UNSET,
-        help="LLM provider: lmstudio (local), huggingface (HF API), openrouter (multi-provider API), generic (any OpenAI-compatible server), chatgpt (ChatGPT Plus/Pro subscription via OAuth).",
+        help="LLM provider: lmstudio (local), huggingface (HF API), openrouter (multi-provider API), generic (any OpenAI-compatible server), google/gemini (Gemini's OpenAI-compatible API), chatgpt (ChatGPT Plus/Pro subscription via OAuth).",
     )
     parser.add_argument(
         "-q",
@@ -2431,6 +2445,20 @@ def resolve_provider(
     Returns (model_id, api_base, api_key, context_length, llm_kwargs).
     Raises ConfigError for invalid configuration.
     """
+    provider_name = provider
+    llm_provider = provider
+    extra_llm_kwargs: dict[str, object] = {}
+    if provider in _GEMINI_PROVIDER_ALIASES:
+        provider = "generic"
+        llm_provider = "generic"
+        base_url = base_url or _GEMINI_OPENAI_API_BASE
+        api_key = (
+            api_key
+            or os.environ.get("GEMINI_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+        )
+        extra_llm_kwargs["append_v1_to_openai_base"] = False
+
     if provider == "lmstudio":
         api_base = base_url or "http://127.0.0.1:1234"
         if model:
@@ -2486,13 +2514,17 @@ def resolve_provider(
             )
     elif provider == "generic":
         if not model:
-            raise ConfigError("--model is required when --provider is generic")
+            raise ConfigError(f"--model is required when --provider is {provider_name}")
         if not base_url:
             raise ConfigError("--base-url is required when --provider is generic")
         api_base = base_url
         model_id = model
         context_length = max_context_tokens
         resolved_key = api_key or os.environ.get("OPENAI_API_KEY")
+        if provider_name in _GEMINI_PROVIDER_ALIASES and not resolved_key:
+            raise ConfigError(
+                f"--api-key, GEMINI_API_KEY, or OPENAI_API_KEY env var required for {provider_name} provider"
+            )
 
     elif provider == "chatgpt":
         if not model:
@@ -2520,9 +2552,11 @@ def resolve_provider(
         raise ConfigError(f"unknown provider: {provider!r}")
 
     llm_kwargs = {
-        "provider": provider,
+        "provider": llm_provider,
         "api_key": resolved_key,
     }
+    if extra_llm_kwargs:
+        llm_kwargs.update(extra_llm_kwargs)
     return model_id, api_base, resolved_key, context_length, llm_kwargs
 
 
