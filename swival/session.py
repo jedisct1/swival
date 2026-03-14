@@ -209,6 +209,12 @@ class Session:
             self._skills_catalog = discover_skills(
                 self.base_dir, self.skills_dir, self.verbose
             )
+            # Auto-grant read access to external skill directories so the LLM
+            # can read supporting files (references/, scripts/, etc.) without
+            # requiring an explicit --add-dir-ro.
+            for skill in self._skills_catalog.values():
+                if not skill.is_local and skill.path not in self._allowed_dir_ro_paths:
+                    self._allowed_dir_ro_paths.append(skill.path)
 
         # Build tools
         self._tools = build_tools(

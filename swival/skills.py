@@ -1,5 +1,6 @@
 """Skill discovery and activation for SKILL.md-based agent skills."""
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -313,6 +314,28 @@ def discover_skills(
     return catalog
 
 
+_MAX_LISTING_FILES = 50
+
+
+def _list_skill_files(skill_path: Path) -> list[str]:
+    """List non-SKILL.md files in a skill directory, returning absolute paths."""
+    files: list[str] = []
+    try:
+        for dirpath, dirs, filenames in os.walk(skill_path):
+            dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+            for fname in sorted(filenames):
+                if fname == "SKILL.md" and Path(dirpath) == skill_path:
+                    continue
+                if fname.startswith("."):
+                    continue
+                files.append(str(Path(dirpath) / fname))
+                if len(files) >= _MAX_LISTING_FILES:
+                    return files
+    except OSError:
+        pass
+    return files
+
+
 def activate_skill(
     name: str,
     catalog: dict[str, SkillInfo],
@@ -360,10 +383,23 @@ def activate_skill(
     parts.append("</skill-instructions>")
     parts.append("")
     parts.append(f"Skill directory: {skill.path}")
-    parts.append(
-        "To access supporting files, use read_file with absolute paths under this directory"
-        f' (e.g. "{skill.path}/scripts/example.py").'
-    )
+
+    # List supporting files so the LLM knows what references are available
+    file_listing = _list_skill_files(skill.path)
+    if file_listing:
+        parts.append("")
+        parts.append("Supporting files in this skill directory:")
+        for f in file_listing:
+            parts.append(f"  {f}")
+        parts.append("")
+        parts.append(
+            "To read these files, use read_file with the absolute paths shown above."
+        )
+    else:
+        parts.append(
+            "To access supporting files, use read_file with absolute paths under this directory"
+            f' (e.g. "{skill.path}/scripts/example.py").'
+        )
 
     return "\n".join(parts)
 

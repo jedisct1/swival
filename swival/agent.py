@@ -2901,6 +2901,10 @@ def _run_main(args, report, _write_report, parser):
     skill_read_roots: list[Path] = list(allowed_dirs_ro)
     if not args.no_skills:
         skills_catalog = discover_skills(base_dir, args.skills_dir, args.verbose)
+        # Auto-grant read access to external skill directories
+        for skill in skills_catalog.values():
+            if not skill.is_local and skill.path not in skill_read_roots:
+                skill_read_roots.append(skill.path)
     args._resolved_skills = skills_catalog
 
     tools = build_tools(resolved_commands, skills_catalog, yolo)

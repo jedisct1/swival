@@ -459,6 +459,31 @@ class TestActivateSkill:
             activate_skill("lint", catalog, read_roots)
             assert len(read_roots) == 1
 
+    def test_activation_lists_supporting_files(self, tmp_path):
+        skills_dir = tmp_path / ".swival" / "skills"
+        _make_skill(skills_dir, "vcl", "VCL skill.", "# VCL")
+        # Add reference files
+        refs = skills_dir / "vcl" / "references"
+        refs.mkdir()
+        (refs / "syntax.md").write_text("# Syntax")
+        (refs / "builtins.md").write_text("# Builtins")
+
+        catalog = discover_skills(str(tmp_path))
+        result = activate_skill("vcl", catalog, [])
+        assert "Supporting files in this skill directory:" in result
+        assert "references/syntax.md" in result
+        assert "references/builtins.md" in result
+        assert "read_file with the absolute paths" in result
+
+    def test_activation_no_listing_when_empty(self, tmp_path):
+        skills_dir = tmp_path / ".swival" / "skills"
+        _make_skill(skills_dir, "bare", "Bare skill.", "# Bare")
+
+        catalog = discover_skills(str(tmp_path))
+        result = activate_skill("bare", catalog, [])
+        assert "Supporting files" not in result
+        assert "read_file with absolute paths under this directory" in result
+
 
 # =========================================================================
 # safe_resolve with extra_read_roots
