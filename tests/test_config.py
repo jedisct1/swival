@@ -675,7 +675,9 @@ class TestCLIIntegration:
 
         assert "Examples:" in help_text
         assert "swival -q < task.md" in help_text
-        assert "--provider google --model gemini-2.5-flash" in help_text
+        assert "--provider huggingface --model zai-org/GLM-5" in help_text
+        assert "swival --yolo --repl" in help_text
+        assert "--self-review" in help_text
 
     def test_allowed_commands_list_flows_through(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))

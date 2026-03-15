@@ -1697,9 +1697,10 @@ def build_parser():
     """Build and return the argument parser."""
     help_examples = (
         "Examples:\n"
-        '  swival "Refactor the auth module"\n'
-        '  swival --repl "Explore the project structure"\n'
-        '  swival --provider google --model gemini-2.5-flash "Write parser tests"\n'
+        '  swival --yolo "Refactor the auth module"\n'
+        "  swival --yolo --repl\n"
+        '  swival --provider huggingface --model zai-org/GLM-5 "Write parser tests"\n'
+        '  swival --yolo --self-review "Add input validation"\n'
         "  swival -q < task.md"
     )
     parser = argparse.ArgumentParser(
