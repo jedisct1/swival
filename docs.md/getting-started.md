@@ -30,6 +30,19 @@ If you ever want to remove it, run `uv tool uninstall swival`.
 uv tool uninstall swival
 ```
 
+## Provider Quick Reference
+
+| Provider | Auth | Required flags |
+| --- | --- | --- |
+| `lmstudio` | none | none |
+| `huggingface` | `HF_TOKEN` or `--api-key` | `--provider huggingface --model ORG/MODEL` |
+| `openrouter` | `OPENROUTER_API_KEY` or `--api-key` | `--provider openrouter --model MODEL` |
+| `google` | `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `--api-key` | `--provider google --model MODEL` |
+| `chatgpt` | browser auth on first run or `CHATGPT_API_KEY` | `--provider chatgpt --model MODEL` |
+| `generic` | optional `OPENAI_API_KEY` | `--provider generic --base-url URL --model MODEL` |
+
+The sections below expand each provider with copy-paste commands.
+
 ## Running with LM Studio
 
 LM Studio is the default provider and usually the fastest way to get started. Install LM Studio from [lmstudio.ai](https://lmstudio.ai/), load a tool-calling model, and start the local server from the Local Server tab. If your machine can handle it, increase the context window, because larger context gives the agent more room to reason over your codebase.
@@ -47,6 +60,18 @@ By default, Swival connects to `http://127.0.0.1:1234`, queries LM Studio for th
 When you run a task against LM Studio, Swival first calls `/api/v1/models` to discover the loaded model and context size. It then builds a system prompt that includes tool definitions and workspace context, sends your task through LiteLLM, and enters the agent loop where the model can read files, edit files, search, and continue tool-calling until it finishes. When the model returns a final text answer with no more tool calls, Swival prints that answer to standard output and exits.
 
 Diagnostic logs such as turn headers, tool traces, and timing information are written to standard error, which keeps standard output clean for piping into other tools.
+
+## Passing The Task On Stdin
+
+If you omit the positional task and pipe stdin, Swival reads the task from stdin.
+
+```sh
+swival -q < objective.md
+
+cat prompts/review.md | swival --provider google --model gemini-2.5-flash
+```
+
+This is useful for longer prompts, reusable task files, and avoiding shell quoting.
 
 ## Running with HuggingFace
 
@@ -101,6 +126,19 @@ swival "Hello world" \
 
 For a deeper look at OpenRouter-specific options, see [Providers](providers.md).
 
+## Running with Google Gemini
+
+If you want to use Gemini through Google's API, use the `google` provider. Authentication comes from `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `--api-key`.
+
+```sh
+export GEMINI_API_KEY=...
+swival "Hello world" --provider google --model gemini-2.5-flash
+```
+
+Swival routes this through Google's OpenAI-compatible endpoint and will try to auto-detect the context window when `--max-context-tokens` is not set.
+
+For a deeper look at Google-specific options, see [Providers](providers.md).
+
 ## Running with Any OpenAI-Compatible Server
 
 If you're running ollama, llama.cpp, mlx_lm.server, vLLM, or any other server that exposes an OpenAI-compatible API, use the generic provider.
@@ -126,13 +164,11 @@ swival "Hello world" --provider chatgpt --model gpt-5.4
 
 On the first run, Swival will print a URL and a code. Open the URL in your browser, enter the code, and authorize. After that, tokens are cached at `~/.config/litellm/chatgpt/auth.json` and you won't be prompted again.
 
-`--model` is required -- there is no default. Currently available models are `gpt-5.4`, `gpt-5.3-codex`, and `gpt-5.3-codex-spark`.
+`--model` is required -- there is no default. Supported model names can change over time, so check [Providers](providers.md) or LiteLLM's ChatGPT provider docs if you need the current naming.
 
 For a deeper look at ChatGPT Plus/Pro-specific options, see [Providers](providers.md).
 
 ## Where To Go Next
-
-For Google Gemini API usage, see the [Providers](providers.md) page.
 
 If you want the full command surface and mode behavior, continue with [Usage](usage.md). If you want a deeper look at built-in capabilities, read [Tools](tools.md). If you need to understand trust boundaries before enabling stronger actions, read [Safety and Sandboxing](safety-and-sandboxing.md).
 

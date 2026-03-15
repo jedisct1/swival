@@ -63,6 +63,7 @@ _encoder = tiktoken.get_encoding("cl100k_base")
 MAX_HISTORY_SIZE = 500 * 1024  # 500KB
 TODO_REMINDER_INTERVAL = 3  # remind after N turns of no todo usage
 _GOOGLE_PROVIDER = "google"
+CHATGPT_PROVIDER_DOCS_URL = "https://docs.litellm.ai/docs/providers/chatgpt"
 
 # Canonical prefixes for synthetic user messages injected by the agent loop.
 # Used by continue_here._find_last_user_task to skip interventions.
@@ -1692,67 +1693,90 @@ def run_reviewer(
     return proc.returncode, stdout, stderr
 
 
-def _sort_parser_options(parser: argparse.ArgumentParser) -> None:
-    """Sort optional arguments lexicographically in help output."""
-
-    def key(action: argparse.Action) -> tuple[str, ...]:
-        return tuple(s.lstrip("-") for s in action.option_strings) or ("",)
-
-    parser._optionals._group_actions.sort(key=key)
-    for group in parser._mutually_exclusive_groups:
-        group._group_actions.sort(key=key)
-
-
 def build_parser():
     """Build and return the argument parser."""
+    help_examples = (
+        "Examples:\n"
+        '  swival "Refactor the auth module"\n'
+        '  swival --repl "Explore the project structure"\n'
+        '  swival --provider google --model gemini-2.5-flash "Write parser tests"\n'
+        "  swival -q < task.md"
+    )
     parser = argparse.ArgumentParser(
         prog="swival",
-        usage="%(prog)s [options] <question>\n       %(prog)s --repl [options] [question]",
-        description="A CLI coding agent with tool-calling, sandboxed file access, and multi-provider LLM support.",
+        usage=(
+            "%(prog)s [options] <task>\n"
+            "       %(prog)s [options] < task.md\n"
+            "       %(prog)s --repl [options] [task]"
+        ),
+        description=(
+            "A CLI coding agent with tool-calling, sandboxed file access, and "
+            "multi-provider LLM support.\n"
+            "Pass a task as a positional argument, or omit it and pipe the task on stdin."
+        ),
+        epilog=help_examples,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser._positionals.title = "Task input"
+    parser._optionals.title = "General"
     parser.add_argument(
-        "question", nargs="?", default=None, help="The question or task for the model."
+        "question",
+        nargs="?",
+        default=None,
+        metavar="TASK",
+        help="Task to run. If omitted and stdin is piped, Swival reads the task from stdin.",
     )
-    parser.add_argument(
+
+    modes = parser.add_argument_group("Modes")
+    provider_group = parser.add_argument_group("Provider and model")
+    behavior_group = parser.add_argument_group("Agent behavior")
+    access_group = parser.add_argument_group("Filesystem and command access")
+    prompt_group = parser.add_argument_group("Prompt, instructions, memory, and skills")
+    integrations_group = parser.add_argument_group("Integrations")
+    review_group = parser.add_argument_group("Review and reporting")
+    server_group = parser.add_argument_group("A2A server")
+    output_group = parser.add_argument_group("Output and setup")
+
+    access_group.add_argument(
         "--add-dir",
         type=str,
         action="append",
         default=None,
         help="Grant read/write access to an extra directory (repeatable).",
     )
-    parser.add_argument(
+    access_group.add_argument(
         "--add-dir-ro",
         type=str,
         action="append",
         default=None,
         help="Grant read-only access to an extra directory (repeatable).",
     )
-    parser.add_argument(
+    access_group.add_argument(
         "--allowed-commands",
         type=str,
         default=_UNSET,
         help='Comma-separated list of allowed command basenames (e.g. "ls,git,python3").',
     )
-    parser.add_argument(
+    provider_group.add_argument(
         "--api-key",
         type=str,
         default=_UNSET,
         help="API key for the provider (overrides env var: HF_TOKEN, "
         "OPENROUTER_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or CHATGPT_API_KEY).",
     )
-    parser.add_argument(
+    access_group.add_argument(
         "--base-dir",
         type=str,
         default=".",
         help="Base directory for file tools (default: current directory).",
     )
-    parser.add_argument(
+    provider_group.add_argument(
         "--base-url",
         default=_UNSET,
         help="Server base URL (default: http://127.0.0.1:1234 for lmstudio).",
     )
 
-    color_group = parser.add_mutually_exclusive_group()
+    color_group = output_group.add_mutually_exclusive_group()
     color_group.add_argument(
         "--color",
         action="store_true",
@@ -1772,7 +1796,7 @@ def build_parser():
             raise argparse.ArgumentTypeError("--extra-body must be a JSON object")
         return parsed
 
-    parser.add_argument(
+    provider_group.add_argument(
         "--extra-body",
         type=_parse_extra_body,
         default=_UNSET,
@@ -1781,7 +1805,7 @@ def build_parser():
     )
 
     _REASONING_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh", "default")
-    parser.add_argument(
+    provider_group.add_argument(
         "--reasoning-effort",
         choices=_REASONING_LEVELS,
         default=_UNSET,
@@ -1790,167 +1814,167 @@ def build_parser():
         f"One of: {', '.join(_REASONING_LEVELS)}.",
     )
 
-    parser.add_argument(
+    behavior_group.add_argument(
         "--cache",
         action="store_true",
         default=_UNSET,
         help="Enable LLM response caching (.swival/cache.db).",
     )
-    parser.add_argument(
+    behavior_group.add_argument(
         "--cache-dir",
         type=str,
         default=_UNSET,
         metavar="PATH",
         help="Custom cache database directory (default: .swival).",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--init-config",
         action="store_true",
         default=False,
         help="Generate a config file template and exit.",
     )
-    parser.add_argument(
+    provider_group.add_argument(
         "--max-context-tokens",
         type=int,
         default=_UNSET,
         help="Requested context length for the model (may trigger a reload).",
     )
-    parser.add_argument(
+    behavior_group.add_argument(
         "--max-output-tokens",
         type=int,
         default=_UNSET,
         help="Maximum output tokens (default: 32768).",
     )
-    parser.add_argument(
+    review_group.add_argument(
         "--max-review-rounds",
         type=int,
         default=_UNSET,
         help="Maximum number of reviewer retry rounds (default: 15). 0 disables retries.",
     )
-    parser.add_argument(
+    behavior_group.add_argument(
         "--max-turns",
         type=int,
         default=_UNSET,
         help="Maximum agent loop iterations (default: 100).",
     )
-    parser.add_argument(
+    integrations_group.add_argument(
         "--mcp-config",
         type=str,
         default=None,
         metavar="FILE",
         help="Path to an MCP JSON config file (replaces .mcp.json default lookup).",
     )
-    parser.add_argument(
+    provider_group.add_argument(
         "--model",
         type=str,
         default=_UNSET,
         help="Override auto-discovered model with a specific model identifier.",
     )
-    parser.add_argument(
+    prompt_group.add_argument(
         "--no-history",
         action="store_true",
         default=_UNSET,
         help="Don't write responses to .swival/HISTORY.md",
     )
-    parser.add_argument(
+    prompt_group.add_argument(
         "--no-memory",
         action="store_true",
         default=_UNSET,
         help="Don't load auto-memory from .swival/memory/.",
     )
-    parser.add_argument(
+    prompt_group.add_argument(
         "--memory-full",
         action="store_true",
         default=_UNSET,
         help="Inject all of MEMORY.md into the prompt (skip budgeted retrieval).",
     )
-    parser.add_argument(
+    prompt_group.add_argument(
         "--no-continue",
         action="store_true",
         default=_UNSET,
         help="Don't write or read .swival/continue.md on session interruption.",
     )
-    parser.add_argument(
+    prompt_group.add_argument(
         "--no-instructions",
         action="store_true",
         default=_UNSET,
         help="Don't load CLAUDE.md or AGENTS.md from the base directory or user config directory.",
     )
-    parser.add_argument(
+    integrations_group.add_argument(
         "--no-mcp",
         action="store_true",
         default=_UNSET,
         help="Disable MCP server connections entirely.",
     )
-    parser.add_argument(
+    integrations_group.add_argument(
         "--a2a-config",
         type=str,
         default=None,
         metavar="FILE",
         help="Path to an A2A TOML config file with [a2a_servers.*] tables.",
     )
-    parser.add_argument(
+    integrations_group.add_argument(
         "--no-a2a",
         action="store_true",
         default=_UNSET,
         help="Disable A2A agent connections entirely.",
     )
-    parser.add_argument(
+    access_group.add_argument(
         "--no-read-guard",
         action="store_true",
         default=_UNSET,
         help="Disable read-before-write guard (allow writing files without reading them first).",
     )
-    parser.add_argument(
+    access_group.add_argument(
         "--sandbox",
         choices=["builtin", "agentfs"],
         default=_UNSET,
         help='Sandbox backend: "builtin" (app-layer path guards) or "agentfs" (OS-enforced via AgentFS). Default: builtin.',
     )
-    parser.add_argument(
+    access_group.add_argument(
         "--sandbox-session",
         type=str,
         default=_UNSET,
         help="AgentFS session ID for persistent sandbox state across runs (only with --sandbox agentfs).",
     )
-    parser.add_argument(
+    access_group.add_argument(
         "--sandbox-strict-read",
         action="store_true",
         default=_UNSET,
         help="Enable strict read isolation in AgentFS sandbox (requires agentfs with strict read support).",
     )
-    parser.add_argument(
+    access_group.add_argument(
         "--no-sandbox-auto-session",
         action="store_true",
         default=_UNSET,
         help="Disable automatic session ID generation for AgentFS sandbox.",
     )
-    parser.add_argument(
+    prompt_group.add_argument(
         "--no-skills",
         action="store_true",
         default=_UNSET,
         help="Don't load or discover any skills.",
     )
-    parser.add_argument(
+    review_group.add_argument(
         "--objective",
         type=str,
         default=_UNSET,
         metavar="FILE",
         help="Read the task description from FILE instead of SWIVAL_TASK env var (reviewer mode).",
     )
-    parser.add_argument(
+    behavior_group.add_argument(
         "--proactive-summaries",
         action="store_true",
         default=_UNSET,
         help="Periodically summarize conversation to preserve context across compaction events.",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--project",
         action="store_true",
         default=False,
         help="With --init-config, write to <base-dir>/swival.toml instead of global config.",
     )
-    parser.add_argument(
+    provider_group.add_argument(
         "--provider",
         choices=[
             "lmstudio",
@@ -1963,147 +1987,146 @@ def build_parser():
         default=_UNSET,
         help="LLM provider: lmstudio (local), huggingface (HF API), openrouter (multi-provider API), generic (any OpenAI-compatible server), google (Gemini via OpenAI-compatible endpoint), chatgpt (ChatGPT Plus/Pro subscription via OAuth).",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "-q",
         "--quiet",
         action="store_true",
         default=_UNSET,
         help="Suppress all diagnostics; only print the final result.",
     )
-    parser.add_argument(
+    modes.add_argument(
         "--repl",
         action="store_true",
         help="Start an interactive session instead of answering a single question.",
     )
-    parser.add_argument(
+    review_group.add_argument(
         "--report",
         type=str,
         default=None,
         metavar="FILE",
         help="Write a JSON evaluation report to FILE. Incompatible with --repl.",
     )
-    parser.add_argument(
+    review_group.add_argument(
         "--review-prompt",
         type=str,
         default=_UNSET,
         help="Custom instructions appended to the built-in review prompt (reviewer mode).",
     )
-    parser.add_argument(
+    review_group.add_argument(
         "--reviewer",
         metavar="COMMAND",
         default=_UNSET,
         help="Reviewer command (shell-split). Called after each answer with base_dir as argument "
         "and answer on stdin. Exit 0=accept, 1=retry with stdout as feedback, 2=reviewer error.",
     )
-    parser.add_argument(
+    review_group.add_argument(
         "--reviewer-mode",
         action="store_true",
         default=False,
         help="Run as a reviewer: read base_dir from positional arg, answer from stdin, "
         "call LLM to judge, exit 0/1/2.",
     )
-    parser.add_argument(
+    review_group.add_argument(
         "--self-review",
         action="store_true",
         default=_UNSET,
         help="Use a second swival instance as reviewer, inheriting provider, model, "
         "skills-dir, and yolo settings from the current invocation.",
     )
-    parser.add_argument(
+    provider_group.add_argument(
         "--seed",
         type=int,
         default=_UNSET,
         help="Random seed for reproducible outputs (optional, model support varies).",
     )
-    parser.add_argument(
+    prompt_group.add_argument(
         "--skills-dir",
         action="append",
         default=None,
         help="Additional directory to scan for skills (can be repeated).",
     )
 
-    prompt_group = parser.add_mutually_exclusive_group()
-    prompt_group.add_argument(
+    system_prompt_group = prompt_group.add_mutually_exclusive_group()
+    system_prompt_group.add_argument(
         "--system-prompt",
         type=str,
         default=_UNSET,
         help="System prompt to include.",
     )
-    prompt_group.add_argument(
+    system_prompt_group.add_argument(
         "--no-system-prompt",
         action="store_true",
         default=_UNSET,
         help="Omit the system message entirely.",
     )
 
-    parser.add_argument(
+    provider_group.add_argument(
         "--temperature",
         type=float,
         default=_UNSET,
         help="Sampling temperature (default: provider default).",
     )
-    parser.add_argument(
+    provider_group.add_argument(
         "--top-p",
         type=float,
         default=_UNSET,
         help="Top-p (nucleus) sampling (default: 1.0).",
     )
-    parser.add_argument(
+    server_group.add_argument(
         "--serve",
         action="store_true",
         default=False,
         help="Start an A2A server exposing this agent as an endpoint.",
     )
-    parser.add_argument(
+    server_group.add_argument(
         "--serve-host",
         type=str,
         default="0.0.0.0",
         help="Host for the A2A server (default: 0.0.0.0). Only used with --serve.",
     )
-    parser.add_argument(
+    server_group.add_argument(
         "--serve-port",
         type=int,
         default=8080,
         help="Port for the A2A server (default: 8080). Only used with --serve.",
     )
-    parser.add_argument(
+    server_group.add_argument(
         "--serve-auth-token",
         type=str,
         default=None,
         help="Bearer token for A2A server auth. Only used with --serve.",
     )
-    parser.add_argument(
+    server_group.add_argument(
         "--serve-name",
         type=str,
         default=_UNSET,
         help="Custom agent name for the A2A agent card. Only used with --serve.",
     )
-    parser.add_argument(
+    server_group.add_argument(
         "--serve-description",
         type=str,
         default=_UNSET,
         help="Custom agent description for the A2A agent card. Only used with --serve.",
     )
-    parser.add_argument(
+    review_group.add_argument(
         "--verify",
         type=str,
         default=_UNSET,
         metavar="FILE",
         help="Read verification/acceptance criteria from FILE (reviewer mode).",
     )
-    parser.add_argument(
+    output_group.add_argument(
         "--version",
         action="store_true",
         help="Print the version and exit.",
     )
-    parser.add_argument(
+    access_group.add_argument(
         "--yolo",
         action="store_true",
         default=_UNSET,
         help="Disable filesystem sandbox and command whitelist (unrestricted mode).",
     )
 
-    _sort_parser_options(parser)
     return parser
 
 
@@ -2549,8 +2572,7 @@ def resolve_provider(
         if not model:
             raise ConfigError(
                 "--model is required when --provider is chatgpt. "
-                "Available models: gpt-5.4, gpt-5.3-codex, gpt-5.3-codex-spark. "
-                "See https://docs.litellm.ai/docs/providers/chatgpt"
+                f"See {CHATGPT_PROVIDER_DOCS_URL} for the current supported model names."
             )
         api_base = base_url
         model_id = model

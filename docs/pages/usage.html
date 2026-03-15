@@ -62,6 +62,11 @@
 <p>In one-shot mode, you pass one task on the command line and Swival keeps looping through tool calls until it reaches a final answer or hits the turn limit.</p>
 <pre><code class="language-sh">swival &quot;Review this codebase for security issues&quot;
 </code></pre>
+<p>If you omit the positional task and pipe stdin, Swival reads the task from stdin instead.</p>
+<pre><code class="language-sh">swival -q &lt; objective.md
+
+cat prompts/review.md | swival --provider google --model gemini-2.5-flash
+</code></pre>
 <p>The final answer is written to standard output. Diagnostics such as turn logs, timing, and tool traces are written to standard error.</p>
 <p>If you want a clean output stream for scripting, use <code>--quiet</code> or <code>-q</code>.</p>
 <pre><code class="language-sh">swival -q &quot;Summarize the API surface of src/&quot; &gt; api-summary.txt
@@ -97,6 +102,7 @@
 <p><code>/init</code> runs a three-pass workflow that scans your project and generates an <code>AGENTS.md</code> file.</p>
 <p><code>/exit</code> and <code>/quit</code> leave the REPL. Pressing <code>Ctrl-D</code> exits as well.</p>
 <h2 id="cli-flags">CLI Flags</h2>
+<p><code>swival --help</code> uses the same grouping below and ends with copy-paste examples.</p>
 <h3 id="model-and-provider-flags">Model And Provider Flags</h3>
 <p><code>--provider</code> chooses the backend provider and defaults to <code>lmstudio</code>. Valid values are <code>lmstudio</code>, <code>huggingface</code>, <code>openrouter</code>, <code>generic</code>, <code>google</code>, and <code>chatgpt</code> (for ChatGPT Plus/Pro subscriptions).</p>
 <p><code>--model</code> overrides auto-discovery with a fixed model identifier.</p>
@@ -171,7 +177,7 @@
 <p><code>--cache</code> enables LLM response caching. When an identical request is seen again, the cached response is returned without contacting the LLM. The cache is stored in a SQLite database at <code>.swival/cache.db</code> by default. Off by default.</p>
 <p><code>--cache-dir PATH</code> overrides the default cache database directory. Useful for sharing a cache across projects.</p>
 <h3 id="configuration-flags">Configuration Flags</h3>
-<p><code>--init-config</code> generates a global config file at <code>~/.config/swival/config.toml</code> and exits. The file is a fully commented template showing all available settings.</p>
+<p><code>--init-config</code> generates a global config file at <code>~/.config/swival/config.toml</code> and exits. The file is a commented starter template covering the main settings and integrations.</p>
 <p><code>--init-config --project</code> generates a project-local config file at <code>swival.toml</code> in the current base directory instead.</p>
 <p>Neither flag requires a question argument. Both refuse to overwrite an existing config file.</p>
 <h3 id="other-flags">Other Flags</h3>

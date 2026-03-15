@@ -1353,8 +1353,11 @@ class TestResolveProviderChatGPT:
     def test_no_model_raises(self):
         from swival.config import ConfigError
 
-        with pytest.raises(ConfigError, match="--model is required"):
+        with pytest.raises(ConfigError, match="--model is required") as excinfo:
             resolve_provider("chatgpt", None, None, None, None, False)
+
+        assert "Available models:" not in str(excinfo.value)
+        assert "docs.litellm.ai/docs/providers/chatgpt" in str(excinfo.value)
 
     def test_resolved_key_none_when_no_key(self):
         _, _, resolved_key, _, _ = resolve_provider(

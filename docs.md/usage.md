@@ -10,6 +10,14 @@ In one-shot mode, you pass one task on the command line and Swival keeps looping
 swival "Review this codebase for security issues"
 ```
 
+If you omit the positional task and pipe stdin, Swival reads the task from stdin instead.
+
+```sh
+swival -q < objective.md
+
+cat prompts/review.md | swival --provider google --model gemini-2.5-flash
+```
+
 The final answer is written to standard output. Diagnostics such as turn logs, timing, and tool traces are written to standard error.
 
 If you want a clean output stream for scripting, use `--quiet` or `-q`.
@@ -78,6 +86,8 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 `/exit` and `/quit` leave the REPL. Pressing `Ctrl-D` exits as well.
 
 ## CLI Flags
+
+`swival --help` uses the same grouping below and ends with copy-paste examples.
 
 ### Model And Provider Flags
 
@@ -227,7 +237,7 @@ See [A2A](a2a.md) for full server documentation.
 
 ### Configuration Flags
 
-`--init-config` generates a global config file at `~/.config/swival/config.toml` and exits. The file is a fully commented template showing all available settings.
+`--init-config` generates a global config file at `~/.config/swival/config.toml` and exits. The file is a commented starter template covering the main settings and integrations.
 
 `--init-config --project` generates a project-local config file at `swival.toml` in the current base directory instead.
 

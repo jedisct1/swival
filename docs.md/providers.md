@@ -183,11 +183,7 @@ swival --provider chatgpt --model gpt-5.4 "task"
 
 On the first run, you will see a device-code prompt with a URL and a code to enter in your browser. Once you complete the flow, the OAuth tokens are stored at `~/.config/litellm/chatgpt/auth.json` and refreshed automatically.
 
-Currently available models are `gpt-5.4`, `gpt-5.3-codex`, and `gpt-5.3-codex-spark`. Use whichever your ChatGPT Plus or Pro plan has access to.
-
-```sh
-swival --provider chatgpt --model gpt-5.4 "task"
-```
+Supported model names come from LiteLLM's ChatGPT provider and may change over time. See the [LiteLLM ChatGPT provider docs](https://docs.litellm.ai/docs/providers/chatgpt) for the current model list and naming conventions.
 
 Two environment variables are available for advanced use. `CHATGPT_TOKEN_DIR` overrides the default token storage directory. `CHATGPT_API_BASE` overrides the API base URL.
 

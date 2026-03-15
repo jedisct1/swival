@@ -650,18 +650,32 @@ class TestCLIIntegration:
         missing = [option for option in option_strings if option not in help_text]
         assert missing == []
 
-    def test_help_sorts_cli_flags_lexicographically(self):
+    def test_help_uses_grouped_sections(self):
         from swival.agent import build_parser
 
         parser = build_parser()
-        optional_actions = [
-            action
-            for action in parser._optionals._group_actions
-            if action.option_strings and action.dest != "help"
-        ]
+        help_text = parser.format_help()
 
-        rendered = [action.option_strings[-1] for action in optional_actions]
-        assert rendered == sorted(rendered)
+        for heading in (
+            "Task input:",
+            "Modes:",
+            "Provider and model:",
+            "Filesystem and command access:",
+            "Prompt, instructions, memory, and skills:",
+            "Review and reporting:",
+            "Output and setup:",
+        ):
+            assert heading in help_text
+
+    def test_help_includes_examples(self):
+        from swival.agent import build_parser
+
+        parser = build_parser()
+        help_text = parser.format_help()
+
+        assert "Examples:" in help_text
+        assert "swival -q < task.md" in help_text
+        assert "--provider google --model gemini-2.5-flash" in help_text
 
     def test_allowed_commands_list_flows_through(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
