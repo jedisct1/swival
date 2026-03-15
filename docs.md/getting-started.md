@@ -132,7 +132,7 @@ If you want to use Gemini through Google's API, use the `google` provider. Authe
 
 ```sh
 export GEMINI_API_KEY=...
-swival "Hello world" --provider google --model gemini-2.5-pro
+swival "Hello world" --provider google --model gemini-2.5-flash
 ```
 
 Swival routes this through Google's OpenAI-compatible endpoint and will try to auto-detect the context window when `--max-context-tokens` is not set.
