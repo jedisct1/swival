@@ -2,205 +2,221 @@
 
 All notable user-facing changes to Swival.
 
+## 0.1.26
+
+- Google Gemini provider has been switched to use the OpenAI-compatible endpoint.
+- Built-in help output has been grouped by purpose.
+- Documentation and examples have been improved.
+
 ## 0.1.25
 
-- Added native Google Gemini API support.
-- Added A2A streaming (`SendStreamingMessage`): real-time SSE delivery of
+- Native Google Gemini API support has been added.
+- A2A streaming (`SendStreamingMessage`) has been added: real-time SSE delivery of
   status updates, tool lifecycle events, and incremental text.
-- Added `CancelTask` support: per-task cancel flags checked between tool calls
-  and at each turn boundary.
-- Added A2A server hardening: sliding-window rate limiting, request size
+- `CancelTask` support has been added: per-task cancel flags are checked between
+  tool calls and at each turn boundary.
+- A2A server hardening has been added: sliding-window rate limiting, request size
   validation, concurrency semaphore, and active-context protection against
   LRU eviction.
-- Auto-grant read access to external skill directories and list supporting
-  files on skill activation.
+- Read access to external skill directories has been auto-granted and supporting
+  files are now listed on skill activation.
 
 ## 0.1.24
 
-- Added A2A server mode (`--serve`): expose a swival Session as an A2A endpoint,
-  with context-keyed multi-turn sessions, bearer auth, and TTL-based cleanup.
-- Added customizable A2A server agent card: `--serve-name`, `--serve-description`,
-  and `[[serve_skills]]` in `swival.toml` let you control how the agent advertises
-  itself.
-- Added `/tools` REPL command to list available tools.
+- A2A server mode (`--serve`) has been added: a swival Session can be exposed as
+  an A2A endpoint, with context-keyed multi-turn sessions, bearer auth, and
+  TTL-based cleanup.
+- Customizable A2A server agent card has been added: `--serve-name`,
+  `--serve-description`, and `[[serve_skills]]` in `swival.toml` control how the
+  agent advertises itself.
+- `/tools` REPL command has been added to list available tools.
 
 ## 0.1.23
 
-- Added A2A (Agent-to-Agent) support: connect to remote agents via
+- A2A (Agent-to-Agent) support has been added: remote agents can be connected via
   `[a2a_servers.*]` in `swival.toml` or `--a2a-config`, with tools exposed as
   `a2a__<agent>__<skill>`.
-- Added budgeted memory injection. Use `--memory-full` for legacy full injection.
-- Added support for reading questions from stdin when piped.
+- Budgeted memory injection has been added. `--memory-full` can be used for legacy
+  full injection.
+- Support for reading questions from stdin when piped has been added.
 
 ## 0.1.22
 
-- Added `--self-review` option: the agent reviews its own work before finishing.
-- Improved reviewer feedback visibility and made expected actions more explicit.
-- Reviewer now shows informational stderr as warnings instead of silently
-  discarding it.
-- Bumped up the default number of review rounds to 15.
-- Fixed cache miss cascade caused by dropped `tool_call` fields in cached
-  responses.
+- `--self-review` option has been added: the agent reviews its own work before
+  finishing.
+- Reviewer feedback visibility has been improved and expected actions have been
+  made more explicit.
+- Informational stderr from the reviewer is now shown as warnings instead of being
+  silently discarded.
+- The default number of review rounds has been bumped up to 15.
+- A cache miss cascade caused by dropped `tool_call` fields in cached responses
+  has been fixed.
 
 ## 0.1.21
 
-- Added optional SQLite LLM response cache (`--cache`) for faster repeated
-  queries, with system-prompt-independent cache keys.
-- Fixed deadlock when a shell command backgrounds a child process.
-- Fixed `todo` tool accepting JSON-encoded array strings instead of proper lists.
+- Optional SQLite LLM response cache (`--cache`) has been added for faster
+  repeated queries, with system-prompt-independent cache keys.
+- A deadlock when a shell command backgrounds a child process has been fixed.
+- The `todo` tool accepting JSON-encoded array strings instead of proper lists
+  has been fixed.
 
 ## 0.1.20
 
-- Moved project-local skills directory from `skills/` to `.swival/skills/`.
-- Fixed spurious "shadowed by itself" warnings when `--skills-dir` pointed to
-  the same directory as the project-local skills location.
-- Added `$skill-name` mention syntax: users can type `$deploy` in their message
+- The project-local skills directory has been moved from `skills/` to
+  `.swival/skills/`.
+- Spurious "shadowed by itself" warnings when `--skills-dir` pointed to the same
+  directory as the project-local skills location have been fixed.
+- `$skill-name` mention syntax has been added: `$deploy` can be typed in a message
   to automatically activate a skill without the model needing to call `use_skill`.
-- Reworked the skill catalog in the system prompt with file paths, trigger rules,
-  and progressive disclosure guidance.
-- Auto-injected skills use assistant+tool message pairs so compaction can shrink
-  or drop them under context pressure.
+- The skill catalog in the system prompt has been reworked with file paths, trigger
+  rules, and progressive disclosure guidance.
+- Auto-injected skills now use assistant+tool message pairs so compaction can
+  shrink or drop them under context pressure.
 - Auto-activated skills are now recorded in JSON reports.
 
 ## 0.1.19
 
-- Added `/learn` command for interactive skill discovery.
+- `/learn` command has been added for interactive skill discovery.
 
 ## 0.1.18
 
-- Added `read_multiple_files` tool for reading several files in a single call.
-- Added continue-here feature: session state is saved on interruption (Ctrl+C,
-  max turns, compaction failure) and resumed on next start.
-- Made the `todo` tool accept multiple tasks in one call.
-- Extended `grep` tool with additional options.
-- Fixed context overflow detection for non-standard exception types.
+- `read_multiple_files` tool has been added for reading several files in a single
+  call.
+- Continue-here feature has been added: session state is saved on interruption
+  (Ctrl+C, max turns, compaction failure) and resumed on next start.
+- The `todo` tool has been made to accept multiple tasks in one call.
+- The `grep` tool has been extended with additional options.
+- Context overflow detection for non-standard exception types has been fixed.
 
 ## 0.1.17
 
-- Added `--reasoning-effort` option.
-- Added session memories that persist across runs.
-- Added GPT-5.4 to the built-in model list.
-- Added markdown formatting for agent responses.
-- Improved spinner and progress display.
-- Improved todo list UI.
-- Listed all CLI options in `--help` and sorted them alphabetically.
+- `--reasoning-effort` option has been added.
+- Session memories that persist across runs have been added.
+- GPT-5.4 has been added to the built-in model list.
+- Markdown formatting for agent responses has been added.
+- Spinner and progress display have been improved.
+- Todo list UI has been improved.
+- All CLI options have been listed in `--help` and sorted alphabetically.
 
 ## 0.1.16
 
-- Added colored diff output in the `edit_file` tool.
+- Colored diff output has been added to the `edit_file` tool.
 
 ## 0.1.15
 
-- Made `write_file` coerce JSON content into a string instead of erroring.
+- `write_file` has been made to coerce JSON content into a string instead of
+  erroring.
 
 ## 0.1.14
 
-- Added ChatGPT as a provider (direct OpenAI API).
+- ChatGPT has been added as a provider (direct OpenAI API).
 
 ## 0.1.13
 
-- Integrated AgentFS sandbox support with auto-session IDs, diff hints, and
-  strict read mode.
-- Added "Did you mean?" suggestions for mistyped tool command names.
-- Made MCP servers inherit the parent process environment variables.
+- AgentFS sandbox support has been integrated with auto-session IDs, diff hints,
+  and strict read mode.
+- "Did you mean?" suggestions for mistyped tool command names have been added.
+- MCP servers have been made to inherit the parent process environment variables.
 
 ## 0.1.12
 
-- Added generic OpenAI-compatible provider for any server that speaks the
+- Generic OpenAI-compatible provider has been added for any server that speaks the
   OpenAI API.
-- Added snapshot tool for proactive context collapse, with `/snapshot` and
+- Snapshot tool has been added for proactive context collapse, with `/snapshot` and
   `/restore` REPL commands.
-- Added `--extra-body` option to pass arbitrary JSON to the LLM request
+- `--extra-body` option has been added to pass arbitrary JSON to the LLM request
   (useful for disabling thinking, etc.).
-- Added OpenRouter documentation and setup instructions.
+- OpenRouter documentation and setup instructions have been added.
 
 ## 0.1.11
 
-- Added MCP (Model Context Protocol) server support. Servers configured in
-  `swival.toml` or `.mcp.json`; tools exposed as `mcp__<server>__<tool>`.
-- Added configurable size limits for MCP tool output (`MCP_INLINE_LIMIT`,
-  `MCP_FILE_LIMIT`).
+- MCP (Model Context Protocol) server support has been added. Servers are
+  configured in `swival.toml` or `.mcp.json`; tools are exposed as
+  `mcp__<server>__<tool>`.
+- Configurable size limits for MCP tool output (`MCP_INLINE_LIMIT`,
+  `MCP_FILE_LIMIT`) have been added.
 
 ## 0.1.10
 
-- Added reviewer mode (`--reviewer-mode`): an LLM-as-judge loop that
+- Reviewer mode (`--reviewer-mode`) has been added: an LLM-as-judge loop that
   automatically evaluates agent output, with `--objective`, `--verify`,
   and `--review-prompt` options.
-- Added `--max-review-rounds` to cap review iterations.
+- `--max-review-rounds` has been added to cap review iterations.
 
 ## 0.1.9
 
-- Graduated context compaction: `compact_messages` -> `drop_middle_turns` ->
-  `aggressive_drop_turns`, replacing the previous all-or-nothing approach.
-- Suggested `/continue` when the agent hits the max turn limit.
-- Improved clamping and retry messages.
+- Graduated context compaction has been introduced: `compact_messages` ->
+  `drop_middle_turns` -> `aggressive_drop_turns`, replacing the previous
+  all-or-nothing approach.
+- `/continue` is now suggested when the agent hits the max turn limit.
+- Clamping and retry messages have been improved.
 
 ## 0.1.8
 
-- Made `grep` and `list_files` tools accept file paths in addition to
+- `grep` and `list_files` tools have been made to accept file paths in addition to
   directories.
-- Improved `grep` tool output.
-- Reported whether the model supports vision.
-- Added global instructions via `~/.config/swival/AGENTS.md`.
-- Clarified `--no-instructions` behavior.
+- `grep` tool output has been improved.
+- Whether the model supports vision is now reported.
+- Global instructions via `~/.config/swival/AGENTS.md` have been added.
+- `--no-instructions` behavior has been clarified.
 
 ## 0.1.7
 
-- Added configuration file support (`swival.toml` and
-  `~/.config/swival/config.toml`).
-- Added `--add-dir-ro` for read-only additional directories (renamed from
+- Configuration file support (`swival.toml` and `~/.config/swival/config.toml`)
+  has been added.
+- `--add-dir-ro` has been added for read-only additional directories (renamed from
   `--allow-dir`).
-- Auto-corrected common command syntax mistakes in yolo mode.
-- Switched instructions file from `ZOK.md` to `AGENT.md`.
+- Common command syntax mistakes in yolo mode are now auto-corrected.
+- Instructions file has been switched from `ZOK.md` to `AGENT.md`.
 
 ## 0.1.6
 
-- Redesigned `think` tool with numbered thoughts, revisions, and branches.
-- Added CI pipeline.
-- Added `Makefile` with common development commands.
-- Fixed trash/undo handling.
-- Improved error when the model sends a file size with units.
+- `think` tool has been redesigned with numbered thoughts, revisions, and branches.
+- CI pipeline has been added.
+- `Makefile` with common development commands has been added.
+- Trash/undo handling has been fixed.
+- Error when the model sends a file size with units has been improved.
 
 ## 0.1.5
 
-- Added `todo` tool: persistent checklist in `.swival/todo.md` that survives
-  context compaction, with periodic reminders and duplicate detection.
-- Added `/init` command for bootstrapping `AGENT.md`.
-- Exposed a public Python API (`swival.Session`, `swival.run()`).
-- Added loading spinner during LLM calls.
-- Removed the unused `notes` tool.
+- `todo` tool has been added: a persistent checklist in `.swival/todo.md` that
+  survives context compaction, with periodic reminders and duplicate detection.
+- `/init` command has been added for bootstrapping `AGENT.md`.
+- A public Python API (`swival.Session`, `swival.run()`) has been exposed.
+- A loading spinner during LLM calls has been added.
+- The unused `notes` tool has been removed.
 
 ## 0.1.4
 
-- Added OpenRouter as a provider.
-- Added `delete_file` tool.
-- Added `move_file` / `rename_file` tools.
-- Added external reviewer support for automated evaluation.
-- Required read-before-write: the agent must read a file before editing or
-  overwriting it (disable with `--no-read-guard`).
-- Printed final output even when `--report` is enabled.
-- Removed default values for `temperature` and `top_p` (let the provider
-  decide).
+- OpenRouter has been added as a provider.
+- `delete_file` tool has been added.
+- `move_file` / `rename_file` tools have been added.
+- External reviewer support for automated evaluation has been added.
+- Read-before-write is now required: the agent must read a file before editing or
+  overwriting it (can be disabled with `--no-read-guard`).
+- Final output is now printed even when `--report` is enabled.
+- Default values for `temperature` and `top_p` have been removed (the provider
+  decides).
 
 ## 0.1.3
 
-- Renamed package from `swival-agent` to `swival`.
-- Added `--version` flag.
-- Deepened recursive skill discovery.
-- Included skill activation events in reports.
+- Package has been renamed from `swival-agent` to `swival`.
+- `--version` flag has been added.
+- Recursive skill discovery has been deepened.
+- Skill activation events have been included in reports.
 
 ## 0.1.2
 
-- Added `--report` for JSON session reports.
-- Added `--history` to replay previous sessions.
-- Revamped thinking tool.
-- Allowed absolute paths in yolo mode.
-- Added full shell expansion in yolo mode.
-- Increased default max turn limit.
+- `--report` has been added for JSON session reports.
+- `--history` has been added to replay previous sessions.
+- Thinking tool has been revamped.
+- Absolute paths in yolo mode have been allowed.
+- Full shell expansion in yolo mode has been added.
+- Default max turn limit has been increased.
 
 ## 0.1.1
 
-- Added `--seed` option for deterministic output.
+- `--seed` option has been added for deterministic output.
 
 ## 0.1.0
 
