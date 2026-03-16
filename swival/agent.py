@@ -1577,10 +1577,16 @@ def _model_supports_vision(model_str: str) -> bool | None:
     """Check if the resolved model supports vision via litellm.
 
     Returns True, False, or None (unknown / not in registry).
+    litellm.supports_vision() returns False for models not in its registry,
+    so we first check if the model is known at all via get_model_info().
     """
     try:
         import litellm
 
+        try:
+            litellm.get_model_info(model=model_str)
+        except Exception:
+            return None  # model not in registry — try optimistically
         return litellm.supports_vision(model=model_str)
     except Exception:
         return None

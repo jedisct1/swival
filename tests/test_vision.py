@@ -3,7 +3,7 @@
 import base64
 import struct
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -25,7 +25,6 @@ from swival._msg import _has_image_content
 from swival.report import AgentError
 from swival.tools import (
     IMAGE_EXTENSIONS,
-    IMAGE_MIME,
     MAX_IMAGE_BYTES,
     _view_image,
     dispatch,
@@ -534,17 +533,31 @@ class TestHasImageContent:
 
 
 class TestModelSupportsVision:
-    def test_returns_true(self):
-        with patch("litellm.supports_vision", return_value=True):
+    def test_returns_true_for_known_model(self):
+        with (
+            patch("litellm.get_model_info", return_value={"supports_vision": True}),
+            patch("litellm.supports_vision", return_value=True),
+        ):
             assert _model_supports_vision("gpt-4o") is True
 
-    def test_returns_false(self):
-        with patch("litellm.supports_vision", return_value=False):
+    def test_returns_false_for_known_no_vision(self):
+        with (
+            patch("litellm.get_model_info", return_value={"supports_vision": False}),
+            patch("litellm.supports_vision", return_value=False),
+        ):
             assert _model_supports_vision("gpt-3.5-turbo") is False
 
-    def test_returns_none_on_exception(self):
-        with patch("litellm.supports_vision", side_effect=Exception("unknown model")):
-            assert _model_supports_vision("custom/local-model") is None
+    def test_returns_none_for_unknown_model(self):
+        """Models not in litellm's registry should return None (try optimistically)."""
+        with patch("litellm.get_model_info", side_effect=Exception("not mapped")):
+            assert _model_supports_vision("openai/local-model") is None
+
+    def test_returns_none_on_supports_vision_exception(self):
+        with (
+            patch("litellm.get_model_info", return_value={}),
+            patch("litellm.supports_vision", side_effect=Exception("error")),
+        ):
+            assert _model_supports_vision("some-model") is None
 
 
 # ---------------------------------------------------------------------------
