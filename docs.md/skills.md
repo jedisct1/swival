@@ -81,4 +81,4 @@ The catalog includes guidance telling the model that if a task clearly matches a
 
 ## File Access For External Skills
 
-Project-local skills are already inside normal sandbox roots, so they use standard file access rules. External skills are added as read-only roots when activated. That means the model can read helper files under those skill directories with absolute paths, but cannot write into those external skill directories.
+Project-local skills are already inside normal sandbox roots, so they use standard file access rules. External skills (including global skills) are automatically added as read-only roots at session setup time. That means the model can read helper files under those skill directories with absolute paths, but cannot write into those external skill directories.
