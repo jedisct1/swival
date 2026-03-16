@@ -9,12 +9,15 @@ from __future__ import annotations
 import asyncio
 import collections
 import contextlib
+import hashlib
 import hmac
 import json
 import logging
+import shutil
 import threading
 import time
 import uuid
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -333,7 +336,20 @@ class A2aServer:
                 f"Session limit reached ({self.max_sessions}): "
                 "all contexts are actively processing"
             )
-        session = Session(**self.session_kwargs)
+        # Per-context scratch directory for race-free temp files (todo, cmd_output).
+        # Use a hash of the contextId to avoid path traversal from client-supplied
+        # values (contextId can be arbitrary strings like "../../tmp/pwn").
+        safe_id = hashlib.sha256(context_id.encode()).hexdigest()[:16]
+        base_dir = self.session_kwargs.get("base_dir", ".")
+        scratch_dir = str(Path(base_dir) / ".swival" / "contexts" / safe_id)
+        # Disable continue-here: it exists for humans resuming interrupted CLI
+        # sessions; A2A clients retry via the protocol.
+        kwargs = {
+            **self.session_kwargs,
+            "scratch_dir": scratch_dir,
+            "continue_here": False,
+        }
+        session = Session(**kwargs)
         self._sessions[context_id] = session
         self._session_access[context_id] = time.monotonic()
         logger.info("Created session for context %s", context_id)
@@ -411,6 +427,9 @@ class A2aServer:
         """Remove a context and all its associated state."""
         session = self._sessions.pop(context_id, None)
         if session is not None:
+            # Clean up per-context scratch directory (todo, cmd_output, etc.)
+            if session.scratch_dir:
+                shutil.rmtree(session.scratch_dir, ignore_errors=True)
             # Best-effort cleanup
             try:
                 session.__exit__(None, None, None)

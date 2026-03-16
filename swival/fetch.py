@@ -170,7 +170,11 @@ def _decode_response(data: bytes, content_type: str | None) -> str:
 
 
 def fetch_url(
-    url: str, format: str = "markdown", timeout: int = 30, base_dir: str | None = None
+    url: str,
+    format: str = "markdown",
+    timeout: int = 30,
+    base_dir: str | None = None,
+    scratch_dir: str | None = None,
 ) -> str:
     """Fetch a URL and return its content as markdown, text, or raw HTML.
 
@@ -286,7 +290,7 @@ def fetch_url(
     if len(encoded) > MAX_OUTPUT_BYTES and base_dir:
         from .tools import _save_large_output
 
-        return _save_large_output(output, base_dir)
+        return _save_large_output(output, base_dir, scratch_dir=scratch_dir)
     elif len(encoded) > MAX_OUTPUT_BYTES:
         total = len(encoded)
         truncated = encoded[:MAX_OUTPUT_BYTES].decode("utf-8", errors="ignore")

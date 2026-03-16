@@ -18,10 +18,17 @@ class TodoItem:
     done: bool = False
 
 
-def _safe_todo_path(notes_dir: str) -> Path:
-    """Build the todo file path and verify it resolves inside notes_dir."""
+def _safe_todo_path(notes_dir: str, todo_dir: str | None = None) -> Path:
+    """Build the todo file path and verify it resolves inside notes_dir.
+
+    When *todo_dir* is set (A2A serve mode), use ``todo_dir/todo.md``
+    directly instead of deriving ``notes_dir/.swival/todo.md``.
+    """
     base = Path(notes_dir).resolve()
-    todo_path = (Path(notes_dir) / ".swival" / "todo.md").resolve()
+    if todo_dir is not None:
+        todo_path = (Path(todo_dir) / "todo.md").resolve()
+    else:
+        todo_path = (Path(notes_dir) / ".swival" / "todo.md").resolve()
     if not todo_path.is_relative_to(base):
         raise ValueError(f"todo path {todo_path} escapes base directory {base}")
     return todo_path
@@ -72,9 +79,15 @@ def _normalize_tasks(args: dict) -> list[str] | str:
 
 
 class TodoState:
-    def __init__(self, notes_dir: str | None = None, verbose: bool = False):
+    def __init__(
+        self,
+        notes_dir: str | None = None,
+        verbose: bool = False,
+        todo_dir: str | None = None,
+    ):
         self.items: list[TodoItem] = []
         self.notes_dir = notes_dir
+        self.todo_dir = todo_dir
         self.verbose = verbose
         self.add_count = 0
         self.done_count = 0
@@ -83,7 +96,7 @@ class TodoState:
         # Session isolation: delete stale todo file from a prior run.
         if notes_dir is not None:
             try:
-                todo_path = _safe_todo_path(notes_dir)
+                todo_path = _safe_todo_path(notes_dir, todo_dir)
                 todo_path.unlink()
             except FileNotFoundError:
                 pass
@@ -303,7 +316,7 @@ class TodoState:
         if self.notes_dir is None:
             return
         try:
-            todo_path = _safe_todo_path(self.notes_dir)
+            todo_path = _safe_todo_path(self.notes_dir, self.todo_dir)
         except ValueError:
             return
         try:
@@ -326,7 +339,7 @@ class TodoState:
         self._total_actions = 0
         if self.notes_dir is not None:
             try:
-                todo_path = _safe_todo_path(self.notes_dir)
+                todo_path = _safe_todo_path(self.notes_dir, self.todo_dir)
                 todo_path.unlink(missing_ok=True)
             except ValueError:
                 pass

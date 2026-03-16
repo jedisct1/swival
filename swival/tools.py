@@ -1,6 +1,7 @@
 """Tool definitions and implementations for an LLM agent."""
 
 import base64
+import contextlib
 import fnmatch
 import json
 import os
@@ -337,9 +338,9 @@ TOOLS = [
         "function": {
             "name": "todo",
             "description": (
-                "Manage a task list. Use this to track work items as you discover them "
-                "and mark them done as you complete them. Every action returns the current "
-                "list. The list is saved to .swival/todo.md and survives context compaction."
+                "Manage a persistent checklist. Use this to track work items as you "
+                "discover them and mark them done as you complete them. Every action "
+                "returns the current list. The list survives context compaction."
             ),
             "parameters": {
                 "type": "object",
@@ -1067,6 +1068,8 @@ def _read_file(
     try:
         with open(resolved, "rb") as f:
             chunk = f.read(BINARY_CHECK_BYTES)
+    except FileNotFoundError:
+        return f"error: file not found (removed after check): {file_path}"
     except PermissionError as exc:
         return f"error: {exc}"
 
@@ -1079,6 +1082,8 @@ def _read_file(
     # Read as UTF-8 text
     try:
         text = resolved.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return f"error: file not found (removed after check): {file_path}"
     except UnicodeDecodeError as exc:
         return f"error: failed to decode {file_path} as UTF-8: {exc}"
     except PermissionError as exc:
@@ -1585,6 +1590,46 @@ def _dir_size(p: Path) -> int:
     return total
 
 
+@contextlib.contextmanager
+def _trash_lock(base_dir: str):
+    """Acquire an advisory file lock on .swival/trash/.lock.
+
+    Serializes the entire trash critical section (cleanup + move + index
+    append) so concurrent contexts don't race.  Falls back to a no-op on
+    platforms without fcntl (Windows) or when the lock file cannot be opened.
+    """
+    try:
+        import fcntl
+    except ImportError:
+        yield
+        return
+
+    lock_dir = Path(base_dir) / SWIVAL_DIR / "trash"
+    try:
+        lock_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        yield
+        return
+    lock_path = lock_dir / ".lock"
+
+    try:
+        fd = os.open(str(lock_path), os.O_WRONLY | os.O_CREAT, 0o644)
+    except OSError:
+        # Can't create lock file — proceed without lock.
+        yield
+        return
+
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        os.close(fd)
+
+
 def _cleanup_trash(base_dir: str, exclude: str | None = None) -> None:
     """Enforce retention limits on .swival/trash/.
 
@@ -1685,53 +1730,56 @@ def _delete_file(
     # Capture before move (original is gone after rename).
     original_was_symlink = original.is_symlink()
 
-    # 6. Pre-move cleanup.
-    _cleanup_trash(base_dir)
+    # 6–10 are serialized via file lock to prevent concurrent contexts
+    # from racing on cleanup / move / index-append.
+    with _trash_lock(base_dir):
+        # 6. Pre-move cleanup.
+        _cleanup_trash(base_dir)
 
-    # 7. Generate trash ID.
-    trash_id = uuid.uuid4().hex
+        # 7. Generate trash ID.
+        trash_id = uuid.uuid4().hex
 
-    # 8. Move to trash.
-    trash_root = Path(base_dir) / SWIVAL_DIR / "trash"
-    trash_dir = trash_root / trash_id
-    trash_dir.mkdir(parents=True, exist_ok=True)
-    dest = trash_dir / original.name
+        # 8. Move to trash.
+        trash_root = Path(base_dir) / SWIVAL_DIR / "trash"
+        trash_dir = trash_root / trash_id
+        trash_dir.mkdir(parents=True, exist_ok=True)
+        dest = trash_dir / original.name
 
-    try:
-        original.rename(dest)
-    except OSError:
-        # Cross-filesystem fallback.
-        shutil.move(str(original), str(dest))
-
-    # Record in tracker so recreating the same path is allowed.
-    # For symlinks, record the link path (not the resolved target) to avoid
-    # leaking write authorization to the target file.
-    if tracker is not None and not original_was_symlink:
-        tracker.record_write(str(resolved))
-
-    # 9. Post-move cleanup (enforce cap including new entry).
-    _cleanup_trash(base_dir, exclude=trash_id)
-
-    # 10. Append to index.jsonl.
-    from datetime import datetime, timezone
-
-    index_path = trash_root / "index.jsonl"
-    entry = json.dumps(
-        {
-            "trash_id": trash_id,
-            "original_path": file_path,
-            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "tool_call_id": tool_call_id,
-        }
-    )
-    try:
-        fd = os.open(str(index_path), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
         try:
-            os.write(fd, (entry + "\n").encode("utf-8"))
-        finally:
-            os.close(fd)
-    except OSError:
-        _fmt.warning(f"failed to append to trash index: {index_path}")
+            original.rename(dest)
+        except OSError:
+            # Cross-filesystem fallback.
+            shutil.move(str(original), str(dest))
+
+        # Record in tracker so recreating the same path is allowed.
+        # For symlinks, record the link path (not the resolved target) to avoid
+        # leaking write authorization to the target file.
+        if tracker is not None and not original_was_symlink:
+            tracker.record_write(str(resolved))
+
+        # 9. Post-move cleanup (enforce cap including new entry).
+        _cleanup_trash(base_dir, exclude=trash_id)
+
+        # 10. Append to index.jsonl.
+        from datetime import datetime, timezone
+
+        index_path = trash_root / "index.jsonl"
+        entry = json.dumps(
+            {
+                "trash_id": trash_id,
+                "original_path": file_path,
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "tool_call_id": tool_call_id,
+            }
+        )
+        try:
+            fd = os.open(str(index_path), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o644)
+            try:
+                os.write(fd, (entry + "\n").encode("utf-8"))
+            finally:
+                os.close(fd)
+        except OSError:
+            _fmt.warning(f"failed to append to trash index: {index_path}")
 
     # 11. Success.
     return f"Trashed {file_path} -> .swival/trash/{trash_id}"
@@ -1811,17 +1859,18 @@ def _save_large_output(
     *,
     tool_name: str | None = None,
     was_truncated: bool = False,
+    scratch_dir: str | None = None,
 ) -> str:
     """Save large output to a temp file and return a summary message.
 
-    Creates .swival/ inside base_dir, writes output there, and schedules
-    cleanup after OUTPUT_FILE_TTL seconds.  Falls back to inline-truncated
-    output on disk write failure.
+    When *scratch_dir* is set (A2A serve mode), files are written there
+    instead of base_dir/.swival/ so each context gets its own temp space.
+    Falls back to inline-truncated output on disk write failure.
     """
     size_bytes = len(output.encode("utf-8"))
     size_kb = size_bytes / 1024
 
-    scratch = Path(base_dir) / SWIVAL_DIR
+    scratch = Path(scratch_dir) if scratch_dir else Path(base_dir) / SWIVAL_DIR
     try:
         scratch.mkdir(parents=True, exist_ok=True)
     except OSError:
@@ -1834,7 +1883,14 @@ def _save_large_output(
 
     filename = f"cmd_output_{uuid.uuid4().hex[:12]}.txt"
     filepath = scratch / filename
-    rel_path = f"{SWIVAL_DIR}/{filename}"
+    # Compute the path the LLM should use with read_file.  When scratch_dir
+    # is set it may be outside .swival/, so we need the path relative to
+    # base_dir (which is what read_file resolves against).
+    try:
+        rel_path = str(filepath.resolve().relative_to(Path(base_dir).resolve()))
+    except ValueError:
+        # scratch_dir is outside base_dir — use absolute path as fallback
+        rel_path = str(filepath.resolve())
 
     try:
         filepath.write_text(output, encoding="utf-8")
@@ -1869,7 +1925,9 @@ def _save_large_output(
     )
 
 
-def _guard_mcp_output(result: str, base_dir: str, tool_name: str) -> str:
+def _guard_mcp_output(
+    result: str, base_dir: str, tool_name: str, scratch_dir: str | None = None
+) -> str:
     """Truncate and/or save MCP tool output that exceeds the inline limit.
 
     Two-tier approach:
@@ -1888,11 +1946,17 @@ def _guard_mcp_output(result: str, base_dir: str, tool_name: str) -> str:
         was_truncated = True
 
     return _save_large_output(
-        result, base_dir, tool_name=tool_name, was_truncated=was_truncated
+        result,
+        base_dir,
+        tool_name=tool_name,
+        was_truncated=was_truncated,
+        scratch_dir=scratch_dir,
     )
 
 
-def _guard_a2a_output(result: str, base_dir: str, tool_name: str) -> str:
+def _guard_a2a_output(
+    result: str, base_dir: str, tool_name: str, scratch_dir: str | None = None
+) -> str:
     """Size-guard A2A tool output, preserving continuation metadata.
 
     A2A results encode contextId/taskId in the first line as
@@ -1922,7 +1986,11 @@ def _guard_a2a_output(result: str, base_dir: str, tool_name: str) -> str:
         was_truncated = True
 
     saved_notice = _save_large_output(
-        body, base_dir, tool_name=tool_name, was_truncated=was_truncated
+        body,
+        base_dir,
+        tool_name=tool_name,
+        was_truncated=was_truncated,
+        scratch_dir=scratch_dir,
     )
 
     if meta_header:
@@ -1930,7 +1998,9 @@ def _guard_a2a_output(result: str, base_dir: str, tool_name: str) -> str:
     return saved_notice
 
 
-def _capture_process(proc: subprocess.Popen, timeout: int, base_dir: str) -> str:
+def _capture_process(
+    proc: subprocess.Popen, timeout: int, base_dir: str, scratch_dir: str | None = None
+) -> str:
     """Capture output from a running subprocess with timeout enforcement."""
     output_chunks: list[bytes] = []
     output_total = 0
@@ -1996,7 +2066,9 @@ def _capture_process(proc: subprocess.Popen, timeout: int, base_dir: str) -> str
             exit_info = f"\nerror: command timed out after {timeout}s"
         elif proc.returncode != 0:
             exit_info = f"\nExit code: {proc.returncode}"
-        saved = _save_large_output(result, base_dir, was_truncated=output_truncated)
+        saved = _save_large_output(
+            result, base_dir, was_truncated=output_truncated, scratch_dir=scratch_dir
+        )
         result = saved + exit_info
 
     return result
@@ -2010,7 +2082,9 @@ def _safe_truncate(text: str, limit: int, suffix: str) -> str:
     return text.encode("utf-8")[:limit].decode("utf-8", errors="replace") + suffix
 
 
-def _run_shell_command(command: str, base_dir: str, timeout: int) -> str:
+def _run_shell_command(
+    command: str, base_dir: str, timeout: int, scratch_dir: str | None = None
+) -> str:
     """Execute a shell string via sh -c (Unix) or cmd.exe /c (Windows)."""
     base_path = Path(base_dir)
     if not base_path.exists():
@@ -2039,7 +2113,7 @@ def _run_shell_command(command: str, base_dir: str, timeout: int) -> str:
     except OSError as e:
         return f"error: failed to start shell command: {e}"
 
-    return _capture_process(proc, timeout, base_dir)
+    return _capture_process(proc, timeout, base_dir, scratch_dir=scratch_dir)
 
 
 def _run_command(
@@ -2048,6 +2122,7 @@ def _run_command(
     resolved_commands: dict[str, str],
     timeout: int = 30,
     unrestricted: bool = False,
+    scratch_dir: str | None = None,
 ) -> str:
     """Execute a command and return its output.
 
@@ -2075,7 +2150,9 @@ def _run_command(
 
         if repaired_command is None:
             if unrestricted:
-                return _run_shell_command(command, base_dir, timeout)
+                return _run_shell_command(
+                    command, base_dir, timeout, scratch_dir=scratch_dir
+                )
             # No shell metacharacters — safe to split on whitespace.
             if not (_SHELL_CHARS & set(command)):
                 repaired_command = command.split()
@@ -2169,7 +2246,9 @@ def _run_command(
     except OSError as e:
         return _finalize(f"error: failed to start command: {e}", was_repaired)
 
-    return _finalize(_capture_process(proc, timeout, base_dir), was_repaired)
+    return _finalize(
+        _capture_process(proc, timeout, base_dir, scratch_dir=scratch_dir), was_repaired
+    )
 
 
 def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
@@ -2191,6 +2270,7 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
     extra_write_roots = kwargs.get("extra_write_roots", ())
     skill_read_roots = kwargs.get("skill_read_roots", ())
     file_tracker = kwargs.get("file_tracker")
+    scratch_dir = kwargs.get("scratch_dir")
 
     # MCP / A2A tool dispatch
     for prefix, manager_key, guard_fn in (
@@ -2209,7 +2289,7 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
                         result, MCP_INLINE_LIMIT, "\n[error output truncated]"
                     )
                 return result
-            return guard_fn(result, base_dir, name)
+            return guard_fn(result, base_dir, name, scratch_dir=scratch_dir)
 
     if name == "think":
         thinking_state = kwargs.get("thinking_state")
@@ -2328,6 +2408,7 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
             format=args.get("format", "markdown"),
             timeout=args.get("timeout", 30),
             base_dir=base_dir,
+            scratch_dir=scratch_dir,
         )
     elif name == "use_skill":
         from .skills import activate_skill
@@ -2343,6 +2424,7 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
             resolved_commands=resolved,
             timeout=args.get("timeout", 30),
             unrestricted=yolo,
+            scratch_dir=scratch_dir,
         )
     elif name == "view_image":
         image_stash = kwargs.get("image_stash")

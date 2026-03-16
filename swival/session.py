@@ -82,8 +82,10 @@ class Session:
         continue_here: bool = True,
         cache: bool = False,
         cache_dir: str | None = None,
+        scratch_dir: str | None = None,
     ):
         self.base_dir = base_dir
+        self.scratch_dir = scratch_dir
         self.config_dir = config_dir
         self.proactive_summaries = proactive_summaries
         self.provider = provider
@@ -330,7 +332,9 @@ class Session:
 
         state = {
             "thinking_state": ThinkingState(verbose=self.verbose),
-            "todo_state": TodoState(notes_dir=self.base_dir, verbose=self.verbose),
+            "todo_state": TodoState(
+                notes_dir=self.base_dir, verbose=self.verbose, todo_dir=self.scratch_dir
+            ),
             "snapshot_state": SnapshotState(verbose=self.verbose),
             "file_tracker": FileAccessTracker() if self.read_guard else None,
             "skill_read_roots": list(self._allowed_dir_ro_paths),
@@ -351,6 +355,7 @@ class Session:
             seed=self.seed,
             context_length=self._context_length,
             base_dir=self.base_dir,
+            scratch_dir=self.scratch_dir,
             thinking_state=state["thinking_state"],
             todo_state=state["todo_state"],
             snapshot_state=state["snapshot_state"],

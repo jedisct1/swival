@@ -214,19 +214,40 @@ def append_history(
     try:
         history_path.parent.mkdir(parents=True, exist_ok=True)
 
-        current_size = history_path.stat().st_size if history_path.exists() else 0
-        if current_size >= MAX_HISTORY_SIZE:
-            if diagnostics:
-                fmt.warning("history file at capacity, skipping write")
-            return
+        # File lock makes the size check + append atomic across contexts.
+        try:
+            import fcntl
+        except ImportError:
+            fcntl = None  # type: ignore[assignment]  # Windows
 
-        # Truncate question for the header
-        q_display = question[:200] + "..." if len(question) > 200 else question
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        entry = f"---\n\n**{timestamp}** — *{q_display}*\n\n{answer}\n\n"
+        lock_fd = None
+        if fcntl is not None:
+            lock_path = history_path.parent / "HISTORY.md.lock"
+            lock_fd = os.open(str(lock_path), os.O_WRONLY | os.O_CREAT, 0o644)
+        try:
+            if fcntl is not None and lock_fd is not None:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
 
-        with history_path.open("a", encoding="utf-8") as f:
-            f.write(entry)
+            current_size = history_path.stat().st_size if history_path.exists() else 0
+            if current_size >= MAX_HISTORY_SIZE:
+                if diagnostics:
+                    fmt.warning("history file at capacity, skipping write")
+                return
+
+            # Truncate question for the header
+            q_display = question[:200] + "..." if len(question) > 200 else question
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            entry = f"---\n\n**{timestamp}** — *{q_display}*\n\n{answer}\n\n"
+
+            with history_path.open("a", encoding="utf-8") as f:
+                f.write(entry)
+        finally:
+            if fcntl is not None and lock_fd is not None:
+                try:
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                except OSError:
+                    pass
+                os.close(lock_fd)
     except OSError:
         if diagnostics:
             fmt.warning("failed to write history entry")
@@ -1361,6 +1382,7 @@ def handle_tool_call(
     a2a_manager=None,
     messages=None,
     image_stash=None,
+    scratch_dir=None,
 ):
     """Execute a single tool call and return (tool_msg, metadata).
 
@@ -1415,6 +1437,7 @@ def handle_tool_call(
             messages=messages,
             verbose=verbose,
             image_stash=image_stash,
+            scratch_dir=scratch_dir,
         )
     except McpShutdownError:
         result = "error: MCP server is shutting down"
@@ -3377,6 +3400,7 @@ def run_agent_loop(
     seed: int | None,
     context_length: int | None,
     base_dir: str,
+    scratch_dir: str | None = None,
     thinking_state: ThinkingState,
     todo_state: TodoState,
     snapshot_state: SnapshotState | None = None,
@@ -3849,6 +3873,7 @@ def run_agent_loop(
                 a2a_manager=a2a_manager,
                 messages=messages,
                 image_stash=image_stash,
+                scratch_dir=scratch_dir,
             )
             messages.append(tool_msg)
 
