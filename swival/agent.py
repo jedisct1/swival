@@ -3444,6 +3444,12 @@ def run_agent_loop(
 
     _snapshot_strip_marker = "\n\n" + SNAPSHOT_HISTORY_SENTINEL
 
+    # Strip view_image from tools if the model is known to lack vision support
+    provider = llm_kwargs.get("provider", "lmstudio")
+    model_str = _resolve_model_str(provider, model_id)
+    if _model_supports_vision(model_str) is False:
+        tools = [t for t in tools if t.get("function", {}).get("name") != "view_image"]
+
     # Auto-inject skills when user mentions $skill-name.
     # Injected as a synthetic assistant tool_call + tool result pair so that
     # compaction can trim the skill body like any other tool output.
