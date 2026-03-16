@@ -492,6 +492,143 @@ class TestAgentsSkillsDir:
 
 
 # =========================================================================
+# Global skills (~/.config/swival/skills/)
+# =========================================================================
+
+
+class TestGlobalSkills:
+    """Tests for automatic global skills directory discovery."""
+
+    def _set_global_dirs(self, monkeypatch, *dirs):
+        """Override _global_skill_dirs to return the given paths."""
+        monkeypatch.setattr("swival.skills._global_skill_dirs", lambda: list(dirs))
+
+    def test_global_skills_discovered(self, tmp_path, monkeypatch):
+        """Skills in the global config skills/ dir are discovered."""
+        global_skills = tmp_path / "global-config" / "skills"
+        _make_skill(global_skills, "my-global", "A global skill.")
+        self._set_global_dirs(monkeypatch, global_skills)
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        catalog = discover_skills(str(repo))
+        assert "my-global" in catalog
+        assert catalog["my-global"].description == "A global skill."
+
+    def test_global_skills_precedence_vs_project(self, tmp_path, monkeypatch, capsys):
+        """Project .swival/skills/ wins over global for same name."""
+        global_skills = tmp_path / "global-config" / "skills"
+        _make_skill(global_skills, "lint", "Global lint.")
+        self._set_global_dirs(monkeypatch, global_skills)
+
+        repo = tmp_path / "repo"
+        _make_skill(repo / ".swival" / "skills", "lint", "Project lint.")
+
+        catalog = discover_skills(str(repo), verbose=True)
+        assert catalog["lint"].description == "Project lint."
+        captured = capsys.readouterr()
+        assert "ignored; already loaded" in " ".join(captured.err.split())
+
+    def test_global_skills_precedence_vs_agents(self, tmp_path, monkeypatch, capsys):
+        """.agents/skills/ wins over global for same name."""
+        global_skills = tmp_path / "global-config" / "skills"
+        _make_skill(global_skills, "lint", "Global lint.")
+        self._set_global_dirs(monkeypatch, global_skills)
+
+        repo = tmp_path / "repo"
+        _make_skill(repo / ".agents" / "skills", "lint", "Agents lint.")
+
+        catalog = discover_skills(str(repo), verbose=True)
+        assert catalog["lint"].description == "Agents lint."
+
+    def test_global_skills_precedence_vs_skills_dir(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Explicit --skills-dir wins over global for same name."""
+        global_skills = tmp_path / "global-config" / "skills"
+        _make_skill(global_skills, "lint", "Global lint.")
+        self._set_global_dirs(monkeypatch, global_skills)
+
+        extra = tmp_path / "extra-skills"
+        _make_skill(extra, "lint", "Extra lint.")
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        catalog = discover_skills(str(repo), extra_dirs=[str(extra)], verbose=True)
+        assert catalog["lint"].description == "Extra lint."
+
+    def test_global_skills_dir_missing(self, tmp_path, monkeypatch):
+        """No error when global dirs don't exist."""
+        self._set_global_dirs(monkeypatch, tmp_path / "no-such-dir" / "skills")
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        catalog = discover_skills(str(repo))
+        assert catalog == {}
+
+    def test_global_skills_dedup_with_skills_dir(self, tmp_path, monkeypatch, capsys):
+        """Same path in both global and --skills-dir is only scanned once."""
+        global_skills = tmp_path / "global-config" / "skills"
+        _make_skill(global_skills, "lint", "Global lint.")
+        self._set_global_dirs(monkeypatch, global_skills)
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        # Pass the same global skills dir as an explicit extra dir
+        catalog = discover_skills(
+            str(repo),
+            extra_dirs=[str(global_skills)],
+            verbose=True,
+        )
+        assert len(catalog) == 1
+        assert catalog["lint"].description == "Global lint."
+        # Should NOT see "ignored; already loaded" — the scanned set prevents rescanning
+        captured = capsys.readouterr()
+        assert "ignored; already loaded" not in captured.err
+
+    def test_home_agents_skills_discovered(self, tmp_path, monkeypatch):
+        """Skills in ~/.agents/skills/ are discovered."""
+        agents_skills = tmp_path / "fakehome" / ".agents" / "skills"
+        _make_skill(agents_skills, "shared", "A shared skill.")
+        self._set_global_dirs(monkeypatch, agents_skills)
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        catalog = discover_skills(str(repo))
+        assert "shared" in catalog
+        assert catalog["shared"].description == "A shared skill."
+
+    def test_swival_global_wins_over_home_agents(self, tmp_path, monkeypatch, capsys):
+        """~/.config/swival/skills/ wins over ~/.agents/skills/ for same name."""
+        swival_skills = tmp_path / "global-config" / "skills"
+        _make_skill(swival_skills, "lint", "Swival global lint.")
+
+        agents_skills = tmp_path / "fakehome" / ".agents" / "skills"
+        _make_skill(agents_skills, "lint", "Home agents lint.")
+
+        # swival global listed first = higher precedence
+        self._set_global_dirs(monkeypatch, swival_skills, agents_skills)
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        catalog = discover_skills(str(repo), verbose=True)
+        assert catalog["lint"].description == "Swival global lint."
+
+    def test_home_agents_precedence_vs_skills_dir(self, tmp_path, monkeypatch, capsys):
+        """Explicit --skills-dir wins over ~/.agents/skills/ for same name."""
+        agents_skills = tmp_path / "fakehome" / ".agents" / "skills"
+        _make_skill(agents_skills, "lint", "Home agents lint.")
+        self._set_global_dirs(monkeypatch, agents_skills)
+
+        extra = tmp_path / "extra-skills"
+        _make_skill(extra, "lint", "Extra lint.")
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        catalog = discover_skills(str(repo), extra_dirs=[str(extra)], verbose=True)
+        assert catalog["lint"].description == "Extra lint."
+
+
+# =========================================================================
 # Activation (use_skill handler)
 # =========================================================================
 

@@ -35,20 +35,29 @@ The instruction body after frontmatter can be up to 20,000 characters, and longe
 
 ## Skill Discovery Locations
 
-Swival checks two project-local directories for skills, in order:
+Swival checks these locations for skills, in precedence order:
 
-1. `.swival/skills/` — Swival-specific skills (highest precedence)
+1. `.swival/skills/` — Swival-specific project skills (highest precedence)
 2. `.agents/skills/` — common cross-agent standard ([OpenCode](https://opencode.ai/docs/skills), [OpenHands](https://docs.openhands.dev/overview/skills), etc.)
+3. `--skills-dir` paths — explicit extra directories
+4. `~/.config/swival/skills/` (or `$XDG_CONFIG_HOME/swival/skills/`) — global Swival skills
+5. `~/.agents/skills/` — global cross-agent skills (lowest precedence)
 
-Every immediate subdirectory that contains `SKILL.md` is treated as a skill. If the same skill name exists in both directories, `.swival/skills/` wins. Skills in both locations are normally project-local (file paths shown in the catalog, no allowlist entries needed). The exception is symlinks: if `.agents` or a skill directory symlinks to a path outside the project root, those skills resolve as external and follow external-skill access rules instead.
+Every immediate subdirectory that contains `SKILL.md` is treated as a skill. If the same skill name exists in multiple locations, the first one in the precedence order wins. Skills in project-local locations are normally shown with file paths in the catalog and need no allowlist entries. The exception is symlinks: if `.agents` or a skill directory symlinks to a path outside the project root, those skills resolve as external and follow external-skill access rules instead.
 
-You can also add external skill locations with `--skills-dir`.
+### Global skills
+
+Place skill directories in `~/.config/swival/skills/` (or `$XDG_CONFIG_HOME/swival/skills/`) for Swival-specific global skills, or in `~/.agents/skills/` for skills shared across agents. Both are scanned automatically. Global skills have the lowest precedence, so any project-local skill or `--skills-dir` skill with the same name takes priority. Global skills are typically outside the project, so they resolve as non-local: they don't show file paths in the catalog and are auto-added to the read-only allowlist at setup time. In the unusual case where a global path resolves inside the project (e.g. via symlinks), they behave as local skills instead.
+
+### Extra skill directories
+
+You can add additional skill locations with `--skills-dir` or `skills_dir` in config.
 
 ```sh
 swival --skills-dir ~/my-skills "task"
 ```
 
-Each `--skills-dir` path can point directly at one skill directory that contains `SKILL.md`, or at a parent directory where nested subdirectories contain skill files. If duplicate skill names exist across external directories, first discovery wins. If both local and external skills define the same name, the local definition wins.
+Each `--skills-dir` path can point directly at one skill directory that contains `SKILL.md`, or at a parent directory where nested subdirectories contain skill files. If duplicate skill names exist across extra directories, first discovery wins. Extra directories override global skills of the same name.
 
 If you do not want skill loading at all, use `--no-skills`.
 

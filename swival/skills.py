@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import fmt
+from . import config, fmt
 
 MAX_SKILL_BODY_CHARS = 20_000
 MAX_SKILL_DESCRIPTION_CHARS = 1024
@@ -252,6 +252,14 @@ def _scan_skills_dir(
                 _scan_skills_dir(entry, base_resolved, catalog, verbose, _depth + 1)
 
 
+def _global_skill_dirs() -> list[Path]:
+    """Return global skill directories to scan (testable seam)."""
+    return [
+        config.global_config_dir() / "skills",  # ~/.config/swival/skills/
+        Path.home() / ".agents" / "skills",  # ~/.agents/skills/
+    ]
+
+
 def discover_skills(
     base_dir: str,
     extra_dirs: list[str] | None = None,
@@ -315,6 +323,14 @@ def discover_skills(
         else:
             # Otherwise scan its subdirectories (and recurse into skills/ subdirs)
             _scan_skills_dir(p, base_resolved, catalog, verbose)
+
+    # Scan global skills directories (lowest precedence)
+    for global_skills in _global_skill_dirs():
+        if global_skills.is_dir():
+            resolved = global_skills.resolve()
+            if resolved not in scanned:
+                _scan_skills_dir(resolved, base_resolved, catalog, verbose)
+                scanned.add(resolved)
 
     if verbose and catalog:
         names = ", ".join(sorted(catalog))
