@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Web Browsing — Swival</title>
+    <meta name="description" content="Web Browsing — Swival documentation">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Web Browsing — Swival">
+    <meta property="og:description" content="Web Browsing — Swival documentation">
+    <meta property="og:image" content="https://swival.dev/img/logo.png">
+    <meta property="og:url" content="https://swival.dev/pages/web-browsing.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Web Browsing — Swival">
+    <meta name="twitter:description" content="Web Browsing — Swival documentation">
+    <meta name="twitter:image" content="https://swival.dev/img/logo.png">
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="../" class="header-logo">
+                <img src="../img/logo.png" alt="Swival">
+            </a>
+            <nav class="header-nav">
+                <a href="./">Docs</a>
+                <a href="https://github.com/swival/swival">GitHub</a>
+            </nav>
+        </div>
+    </header>
+    <div class="docs-layout">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+<h4>Basics</h4>
+<ul>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="usage.html">Usage</a></li>
+<li><a href="tools.html">Tools</a></li>
+<li><a href="context-management.html">Context Management</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Configuration & Deployment</h4>
+<ul>
+<li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
+<li><a href="skills.html">Skills</a></li>
+<li><a href="web-browsing.html" class="active">Web Browsing</a></li>
+<li><a href="mcp.html">MCP</a></li>
+<li><a href="a2a.html">A2A</a></li>
+<li><a href="customization.html">Customization</a></li>
+<li><a href="providers.html">Providers</a></li>
+<li><a href="reports.html">Reports</a></li>
+<li><a href="reviews.html">Reviews</a></li>
+<li><a href="agentfs.html">AgentFS</a></li>
+</ul>
+</div>
+        </aside>
+        <article class="docs-content">
+            <h1 id="web-browsing">Web Browsing</h1>
+<p>Swival can browse the web, interact with pages, fill forms, take screenshots, and extract content. There are three ways to set this up, each with different tradeoffs.</p>
+<table>
+<thead>
+<tr>
+<th>Approach</th>
+<th>How it works</th>
+<th>Best for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#chrome-devtools-mcp">Chrome DevTools MCP</a></td>
+<td>MCP server controlling Chrome via Puppeteer</td>
+<td>Full browser fidelity, debugging, performance profiling</td>
+</tr>
+<tr>
+<td><a href="#agent-browser">agent-browser</a></td>
+<td>CLI tool called via <code>run_command</code></td>
+<td>Fast snapshots, low token usage, headless automation</td>
+</tr>
+<tr>
+<td><a href="#lightpanda">agent-browser + Lightpanda</a></td>
+<td>Same CLI, different engine</td>
+<td>Speed, low memory, CI/CD pipelines</td>
+</tr>
+</tbody>
+</table>
+<h2 id="chrome-devtools-mcp">Chrome DevTools MCP</h2>
+<p><a href="https://github.com/ChromeDevTools/chrome-devtools-mcp">Chrome DevTools MCP</a> is Google's official MCP server for browser automation. It gives Swival access to the full Chrome DevTools feature set, including navigation, clicking, form filling, screenshots, console messages, network inspection, and performance tracing.</p>
+<h3 id="setup">Setup</h3>
+<p>Add it to your <code>swival.toml</code>:</p>
+<pre><code class="language-toml">[mcp_servers.chrome]
+command = &quot;npx&quot;
+args = [&quot;-y&quot;, &quot;chrome-devtools-mcp@latest&quot;]
+</code></pre>
+<p>This launches Chrome with a visible window. For headless operation (no UI), add <code>--headless</code>:</p>
+<pre><code class="language-toml">[mcp_servers.chrome]
+command = &quot;npx&quot;
+args = [&quot;-y&quot;, &quot;chrome-devtools-mcp@latest&quot;, &quot;--headless&quot;]
+</code></pre>
+<p>Requires Node.js v20.19+ and Chrome (stable channel).</p>
+<h3 id="what-it-gives-swival">What it gives Swival</h3>
+<p>Once configured, Swival gets MCP tools like <code>mcp__chrome__navigate_page</code>, <code>mcp__chrome__click</code>, <code>mcp__chrome__fill</code>, <code>mcp__chrome__take_screenshot</code>, <code>mcp__chrome__list_console_messages</code>, and more. The model calls them like any other tool.</p>
+<h3 id="example">Example</h3>
+<pre><code class="language-sh">swival --repl
+&gt; Navigate to https://news.ycombinator.com, find the top story, and summarize it
+</code></pre>
+<p>Swival will call <code>navigate_page</code>, then <code>snapshot</code> or <code>get_page_content</code> to read the page, and return a summary.</p>
+<h3 id="headless-with-isolation">Headless with isolation</h3>
+<p>For throwaway sessions that leave no browser state behind:</p>
+<pre><code class="language-toml">[mcp_servers.chrome]
+command = &quot;npx&quot;
+args = [&quot;-y&quot;, &quot;chrome-devtools-mcp@latest&quot;, &quot;--headless&quot;, &quot;--isolated&quot;]
+</code></pre>
+<p>The <code>--isolated</code> flag creates a temporary profile that gets cleaned up when the session ends.</p>
+<h3 id="slim-mode">Slim mode</h3>
+<p>If you only need basic navigation and don't want the full DevTools toolset (performance, emulation, etc.), use <code>--slim</code>:</p>
+<pre><code class="language-toml">[mcp_servers.chrome]
+command = &quot;npx&quot;
+args = [&quot;-y&quot;, &quot;chrome-devtools-mcp@latest&quot;, &quot;--headless&quot;, &quot;--slim&quot;]
+</code></pre>
+<p>This reduces the number of tools exposed to the model, which saves context window space.</p>
+<h2 id="agent-browser">agent-browser</h2>
+<p><a href="https://github.com/vercel-labs/agent-browser">agent-browser</a> is a CLI by Vercel Labs that controls a browser from the command line. It produces compact text output optimized for AI agents and uses reference-based element selection that burns fewer tokens than DOM selectors.</p>
+<p>Instead of connecting via MCP, agent-browser works through Swival's <code>run_command</code> tool. You whitelist the <code>agent-browser</code> command and the model calls it directly.</p>
+<h3 id="install">Install</h3>
+<pre><code class="language-sh">npm install -g agent-browser
+agent-browser install        # downloads Chrome for Testing (first time only)
+</code></pre>
+<p>Or with Homebrew on macOS:</p>
+<pre><code class="language-sh">brew install agent-browser
+agent-browser install
+</code></pre>
+<h3 id="configure-swival">Configure Swival</h3>
+<p>Allow the <code>agent-browser</code> command in <code>swival.toml</code>:</p>
+<pre><code class="language-toml">allowed_commands = [&quot;agent-browser&quot;]
+</code></pre>
+<p>Or pass it on the command line:</p>
+<pre><code class="language-sh">swival --allowed-commands agent-browser &quot;Open example.com and tell me what's on the page&quot;
+</code></pre>
+<h3 id="how-the-model-uses-it">How the model uses it</h3>
+<p>The model calls <code>run_command</code> with agent-browser subcommands. First it opens a URL, then takes a snapshot to get an accessibility tree with element refs like <code>@e1</code> and <code>@e2</code>, then interacts with those elements, and finally closes the browser when it's done:</p>
+<pre><code class="language-sh">agent-browser open &lt;url&gt;
+agent-browser snapshot -i
+agent-browser click @e1
+agent-browser fill @e2 &quot;search query&quot;
+agent-browser screenshot page.png
+agent-browser close
+</code></pre>
+<p>The snapshot output looks like this:</p>
+<pre><code>- none
+  - heading &quot;Example Domain&quot; [ref=e1]
+    - StaticText &quot;Example Domain&quot;
+  - paragraph
+    - StaticText &quot;This domain is for use in...&quot;
+  - paragraph
+    - link &quot;Learn more&quot; [ref=e2]
+      - StaticText &quot;Learn more&quot;
+</code></pre>
+<p>This is 200-400 tokens compared to 3,000-5,000 for a full DOM dump, which matters when you're browsing multiple pages in a single session.</p>
+<h3 id="example-session">Example session</h3>
+<pre><code class="language-sh">swival --allowed-commands agent-browser --repl
+&gt; Go to https://news.ycombinator.com, click on the top story, and summarize the article
+</code></pre>
+<p>The model will run <code>agent-browser open</code>, <code>agent-browser snapshot -i</code>, <code>agent-browser click @e1</code>, and so on, chaining commands until it has the information it needs.</p>
+<h3 id="more-commands">More commands</h3>
+<p>agent-browser has 50+ commands. Some useful ones:</p>
+<pre><code class="language-sh">agent-browser get text @e1          # get text content of an element
+agent-browser get title             # page title
+agent-browser get url               # current URL
+agent-browser tab new https://...   # open a new tab
+agent-browser tab 2                 # switch tabs
+agent-browser scroll down 500       # scroll the page
+agent-browser eval &quot;document.title&quot; # run JavaScript
+agent-browser pdf report.pdf        # save page as PDF
+</code></pre>
+<h2 id="lightpanda">Lightpanda</h2>
+<p><a href="https://lightpanda.io/">Lightpanda</a> is a headless browser written from scratch in Zig. It skips pixel rendering entirely and focuses on DOM processing and JavaScript execution via V8. The result is roughly 10x faster execution and 10x less memory than headless Chrome.</p>
+<p>Lightpanda works with agent-browser as a drop-in engine replacement. Same commands, same output format, different browser underneath.</p>
+<h3 id="why-use-lightpanda-instead-of-chrome">Why use Lightpanda instead of Chrome</h3>
+<p>Lightpanda starts instantly and loads pages faster because there's no rendering pipeline. Each instance uses about 24 MB of memory compared to Chrome's 207 MB, which makes it lightweight enough to run in constrained CI/CD environments or to spin up many instances in parallel for concurrent scraping.</p>
+<p>The tradeoff is that Lightpanda is still in beta. Most websites work, but you may hit gaps in Web API coverage. It doesn't support screenshots, extensions, or persistent browser profiles either. Use Chrome when you need full fidelity.</p>
+<h3 id="install-lightpanda">Install Lightpanda</h3>
+<p>Download the binary for your platform:</p>
+<p><strong>macOS (Apple Silicon):</strong></p>
+<pre><code class="language-sh">curl -L -o lightpanda https://github.com/lightpanda-io/browser/releases/download/nightly/lightpanda-aarch64-macos
+chmod a+x ./lightpanda
+sudo mv ./lightpanda /usr/local/bin/
+</code></pre>
+<p><strong>Linux (x86_64):</strong></p>
+<pre><code class="language-sh">curl -L -o lightpanda https://github.com/lightpanda-io/browser/releases/download/nightly/lightpanda-x86_64-linux
+chmod a+x ./lightpanda
+sudo mv ./lightpanda /usr/local/bin/
+</code></pre>
+<p>Verify it works:</p>
+<pre><code class="language-sh">lightpanda fetch --dump html https://example.com
+</code></pre>
+<h3 id="use-with-agent-browser">Use with agent-browser</h3>
+<p>Set the <code>AGENT_BROWSER_ENGINE</code> environment variable so agent-browser uses Lightpanda instead of Chrome:</p>
+<pre><code class="language-sh">export AGENT_BROWSER_ENGINE=lightpanda
+</code></pre>
+<p>That's it. All agent-browser commands work the same way and the engine swap is transparent:</p>
+<pre><code class="language-sh">agent-browser open https://example.com
+agent-browser snapshot -i
+agent-browser close
+</code></pre>
+<p>You can also pass the engine per-command if you don't want to set it globally:</p>
+<pre><code class="language-sh">agent-browser --engine lightpanda open https://example.com
+</code></pre>
+<p>Or put it in an <code>agent-browser.json</code> config file in your project directory:</p>
+<pre><code class="language-json">{
+  &quot;engine&quot;: &quot;lightpanda&quot;
+}
+</code></pre>
+<h3 id="configure-swival-with-lightpanda">Configure Swival with Lightpanda</h3>
+<p>Add the environment variable to your shell profile (<code>.zshrc</code>, <code>.bashrc</code>, etc.) and configure Swival the same way as regular agent-browser:</p>
+<pre><code class="language-toml">allowed_commands = [&quot;agent-browser&quot;]
+</code></pre>
+<p>Then run:</p>
+<pre><code class="language-sh">export AGENT_BROWSER_ENGINE=lightpanda
+swival --allowed-commands agent-browser &quot;Open example.com and describe the page&quot;
+</code></pre>
+<h3 id="lightpanda-as-an-mcp-server">Lightpanda as an MCP server</h3>
+<p>Lightpanda also has a built-in MCP server mode that you can connect to Swival directly, without agent-browser:</p>
+<pre><code class="language-toml">[mcp_servers.lightpanda]
+command = &quot;lightpanda&quot;
+args = [&quot;mcp&quot;]
+</code></pre>
+<p>This exposes Lightpanda's browsing tools through MCP. It has fewer tools than Chrome DevTools MCP, but starts faster and uses far less resources.</p>
+<h3 id="disabling-telemetry">Disabling telemetry</h3>
+<p>Lightpanda collects usage telemetry by default. To disable it:</p>
+<pre><code class="language-sh">export LIGHTPANDA_DISABLE_TELEMETRY=true
+</code></pre>
+<h2 id="which-approach-should-i-use">Which approach should I use?</h2>
+<p>Pick <strong>Chrome DevTools MCP</strong> if you need the full browser, including screenshots, network inspection, performance profiling, extensions, or sites that require complete rendering fidelity.</p>
+<p>Pick <strong>agent-browser with Chrome</strong> if you want a simpler setup with lower token usage and don't need MCP-level tool integration. It works well for straightforward browsing, form filling, and content extraction.</p>
+<p>Pick <strong>agent-browser with Lightpanda</strong> if speed and resource efficiency matter more than full browser compatibility. It's the best option for scraping, CI pipelines, and tasks where you're hitting many pages in sequence.</p>
+<p>You can also combine approaches. For example, use Chrome DevTools MCP for debugging your web app and agent-browser with Lightpanda for bulk research tasks.</p>
+        </article>
+    </div>
+    <footer class="site-footer">
+        MIT License &middot;
+        <a href="https://github.com/swival/swival">GitHub</a>
+    </footer>
+</body>
+</html>

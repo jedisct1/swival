@@ -60,6 +60,11 @@ NAV = [
             ),
             ("skills", "Skills", "Creating and using SKILL.md-based agent skills"),
             (
+                "web-browsing",
+                "Web Browsing",
+                "Chrome DevTools MCP, agent-browser, and Lightpanda",
+            ),
+            (
                 "mcp",
                 "MCP",
                 "Connecting external tool servers via Model Context Protocol",

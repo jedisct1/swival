@@ -45,6 +45,7 @@
 <ul>
 <li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
 <li><a href="skills.html">Skills</a></li>
+<li><a href="web-browsing.html">Web Browsing</a></li>
 <li><a href="mcp.html" class="active">MCP</a></li>
 <li><a href="a2a.html">A2A</a></li>
 <li><a href="customization.html">Customization</a></li>
@@ -81,11 +82,7 @@ command = &quot;node&quot;
 args = [&quot;server.js&quot;]
 env = { API_KEY = &quot;secret&quot; }
 </code></pre>
-<p>For example, the <a href="https://github.com/ChromeDevTools/chrome-devtools-mcp">Chrome DevTools MCP</a> server lets Swival control a web browser — navigating pages, clicking elements, reading console messages, and taking screenshots:</p>
-<pre><code class="language-toml">[mcp_servers.chrome]
-command = &quot;npx&quot;
-args = [&quot;-y&quot;, &quot;chrome-devtools-mcp@latest&quot;]
-</code></pre>
+<p>For example, you can connect Swival to a browser automation server. See <a href="web-browsing.html">Web Browsing</a> for Chrome DevTools MCP, agent-browser, and Lightpanda setup guides.</p>
 <p>For SSE servers, <code>url</code> is the endpoint and <code>headers</code> is an optional dictionary of HTTP headers.</p>
 <h2 id="json-configuration">JSON Configuration</h2>
 <p>Swival also reads <code>.mcp.json</code> from the project root directory. This uses the same format as other MCP-compatible tools:</p>
