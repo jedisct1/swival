@@ -35,7 +35,12 @@ The instruction body after frontmatter can be up to 20,000 characters, and longe
 
 ## Skill Discovery Locations
 
-Swival checks project-local skills first under `.swival/skills/` inside the base directory. Every immediate subdirectory that contains `SKILL.md` is treated as a local skill. Local skills take precedence if a name collision happens.
+Swival checks two project-local directories for skills, in order:
+
+1. `.swival/skills/` — Swival-specific skills (highest precedence)
+2. `.agents/skills/` — common cross-agent standard ([OpenCode](https://opencode.ai/docs/skills), [OpenHands](https://docs.openhands.dev/overview/skills), etc.)
+
+Every immediate subdirectory that contains `SKILL.md` is treated as a skill. If the same skill name exists in both directories, `.swival/skills/` wins. Skills in both locations are normally project-local (file paths shown in the catalog, no allowlist entries needed). The exception is symlinks: if `.agents` or a skill directory symlinks to a path outside the project root, those skills resolve as external and follow external-skill access rules instead.
 
 You can also add external skill locations with `--skills-dir`.
 

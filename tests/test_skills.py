@@ -390,6 +390,108 @@ class TestDiscoverSkills:
 
 
 # =========================================================================
+# .agents/skills/ discovery
+# =========================================================================
+
+
+class TestAgentsSkillsDir:
+    def test_discover_from_agents_skills_dir(self, tmp_path):
+        """Skills in .agents/skills/ are discovered."""
+        agents_skills = tmp_path / ".agents" / "skills"
+        _make_skill(agents_skills, "lint", "Lint code.")
+
+        catalog = discover_skills(str(tmp_path))
+        assert "lint" in catalog
+        assert catalog["lint"].description == "Lint code."
+
+    def test_agents_skills_are_local(self, tmp_path):
+        """Skills from .agents/skills/ inside the repo are is_local=True."""
+        agents_skills = tmp_path / ".agents" / "skills"
+        _make_skill(agents_skills, "lint", "Lint code.")
+
+        catalog = discover_skills(str(tmp_path))
+        assert catalog["lint"].is_local is True
+
+    def test_agents_skills_symlinked_outside(self, tmp_path):
+        """.agents symlinked outside repo yields is_local=False."""
+        external = tmp_path / "external-skills"
+        _make_skill(external, "lint", "Lint code.")
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".agents" / "skills").mkdir(parents=True)
+        # Symlink the skill dir itself so resolved path is outside repo
+        (repo / ".agents" / "skills" / "lint").symlink_to(external / "lint")
+
+        catalog = discover_skills(str(repo))
+        assert "lint" in catalog
+        assert catalog["lint"].is_local is False
+
+    def test_swival_skills_take_precedence(self, tmp_path, capsys):
+        """.swival/skills/ wins over .agents/skills/ for same name."""
+        swival_skills = tmp_path / ".swival" / "skills"
+        _make_skill(swival_skills, "lint", "Swival lint.")
+
+        agents_skills = tmp_path / ".agents" / "skills"
+        _make_skill(agents_skills, "lint", "Agents lint.")
+
+        catalog = discover_skills(str(tmp_path), verbose=True)
+        assert len(catalog) == 1
+        assert catalog["lint"].description == "Swival lint."
+        captured = capsys.readouterr()
+        assert "ignored; already loaded" in " ".join(captured.err.split())
+
+    def test_both_dirs_combined(self, tmp_path):
+        """Different skills from both dirs are all discovered."""
+        swival_skills = tmp_path / ".swival" / "skills"
+        _make_skill(swival_skills, "deploy", "Deploy app.")
+
+        agents_skills = tmp_path / ".agents" / "skills"
+        _make_skill(agents_skills, "lint", "Lint code.")
+
+        catalog = discover_skills(str(tmp_path))
+        assert len(catalog) == 2
+        assert "deploy" in catalog
+        assert "lint" in catalog
+
+    def test_agents_skills_dir_missing(self, tmp_path):
+        """No error when .agents/skills/ doesn't exist."""
+        catalog = discover_skills(str(tmp_path))
+        assert catalog == {}
+
+    def test_agents_skills_take_precedence_over_extra(self, tmp_path, capsys):
+        """.agents/skills/ wins over --skills-dir for same name."""
+        import tempfile
+
+        agents_skills = tmp_path / ".agents" / "skills"
+        _make_skill(agents_skills, "lint", "Agents lint.")
+
+        with tempfile.TemporaryDirectory() as ext_tmp:
+            extra = Path(ext_tmp) / "extra-skills"
+            _make_skill(extra, "lint", "Extra lint.")
+
+            catalog = discover_skills(
+                str(tmp_path), extra_dirs=[str(extra)], verbose=True
+            )
+            assert catalog["lint"].description == "Agents lint."
+            captured = capsys.readouterr()
+            assert "ignored; already loaded" in " ".join(captured.err.split())
+
+    def test_agents_skills_not_rescanned_via_extra_dirs(self, tmp_path, capsys):
+        """Passing .agents/skills/ as extra_dirs skips the path, not just dedupes."""
+        agents_skills = tmp_path / ".agents" / "skills"
+        _make_skill(agents_skills, "lint", "Agents lint.")
+
+        catalog = discover_skills(
+            str(tmp_path), extra_dirs=[str(agents_skills)], verbose=True
+        )
+        assert len(catalog) == 1
+        assert catalog["lint"].description == "Agents lint."
+        captured = capsys.readouterr()
+        assert "ignored; already loaded" not in captured.err
+
+
+# =========================================================================
 # Activation (use_skill handler)
 # =========================================================================
 

@@ -268,8 +268,9 @@ def discover_skills(
     """
     catalog: dict[str, SkillInfo] = {}
     base_resolved = Path(base_dir).resolve()
+    scanned: set[Path] = set()
 
-    # Scan project-local skills first
+    # Scan project-local skills first (.swival/skills/)
     local_skills = base_resolved / ".swival" / "skills"
     if local_skills.is_dir():
         try:
@@ -279,11 +280,19 @@ def discover_skills(
         for entry in entries:
             if entry.is_dir():
                 _try_load_skill(entry, base_resolved, catalog, verbose)
-
-    # Track already-scanned directories to avoid duplicate warnings
-    scanned: set[Path] = set()
-    if local_skills.is_dir():
         scanned.add(local_skills.resolve())
+
+    # Scan .agents/skills/ (common agent standard, lower precedence than .swival/skills/)
+    agents_skills = base_resolved / ".agents" / "skills"
+    if agents_skills.is_dir():
+        try:
+            entries = sorted(agents_skills.iterdir())
+        except OSError:
+            entries = []
+        for entry in entries:
+            if entry.is_dir():
+                _try_load_skill(entry, base_resolved, catalog, verbose)
+        scanned.add(agents_skills.resolve())
 
     # Process each --skills-dir path
     for extra in extra_dirs or []:
