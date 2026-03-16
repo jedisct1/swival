@@ -208,6 +208,8 @@ Full documentation is available at [swival.dev](https://swival.dev/).
 - [A2A](docs.md/a2a.md) -- connecting to remote agents via the Agent-to-Agent
   protocol
 - [Reports](docs.md/reports.md) -- JSON reports for benchmarking and evaluation
+- [Web Browsing](docs.md/web-browsing.md) -- Chrome DevTools MCP, Lightpanda
+  MCP, and agent-browser for web interaction
 - [Reviews](docs.md/reviews.md) -- external reviewer scripts for automated QA
   and LLM-as-judge evaluation
 - [Using Swival with AgentFS](docs.md/agentfs.md) -- copy-on-write filesystem
