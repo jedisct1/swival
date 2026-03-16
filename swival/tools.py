@@ -381,9 +381,7 @@ TOOLS = [
                 "View an image file from the filesystem. "
                 "You cannot see images without this tool — "
                 "read_file does not work on image files. "
-                "Supports PNG, JPEG, GIF, WebP, and BMP. "
-                "Not all models support vision; if the image "
-                "cannot be displayed, you will be told."
+                "Supports PNG, JPEG, GIF, WebP, and BMP."
             ),
             "parameters": {
                 "type": "object",
