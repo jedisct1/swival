@@ -2,6 +2,12 @@
 
 All notable user-facing changes to Swival.
 
+## 0.1.28
+
+- Support for vision has been added: a new `view_image` tool allows the
+agent use vision-enabled models to examine images.
+- Skill scanning now skips dot directories.
+
 ## 0.1.27
 
 - Skills can now be loaded from `.agents/skills/` and `~/.agents/skills/` directories.
