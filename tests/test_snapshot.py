@@ -725,6 +725,7 @@ class TestReadOnlyAllowlist:
             "think",
             "todo",
             "snapshot",
+            "view_image",
         }
         assert expected == READ_ONLY_TOOLS
 
