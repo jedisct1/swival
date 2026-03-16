@@ -76,7 +76,7 @@ The JSON below is from a verified local run using `--model dummy-model --max-tur
 
 ### `sandbox`
 
-`mode` is always present and is `builtin` (application-layer path guards) or `agentfs` (OS-enforced write isolation). `session` appears when an AgentFS session ID is active. When `mode` is `agentfs`, additional fields may appear: `strict_read` (whether strict read isolation is enabled), `agentfs_version` (the AgentFS binary version), and `diff_hint` (a hint for reviewing changes).
+`mode` is always present and is `builtin` (application-layer path guards) or `agentfs` (OS-enforced write isolation). `session` appears when an AgentFS session ID is active. When `mode` is `agentfs`, `strict_read` is always present (whether strict read isolation is enabled). Additional fields may also appear: `agentfs_version` (the AgentFS binary version) and `diff_hint` (a hint for reviewing changes).
 
 ### `result`
 

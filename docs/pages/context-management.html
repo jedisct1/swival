@@ -95,7 +95,7 @@
 </ul>
 <p>If the agent calls <code>restore</code> without a prior <code>save</code>, it automatically finds the right starting point — usually the most recent user message or the boundary of a previous restore.</p>
 <h3 id="dirty-scope-protection">Dirty Scope Protection</h3>
-<p>If the agent made changes (wrote files, ran commands) between save and restore, the scope is considered "dirty" and the agent must explicitly acknowledge this with <code>force=true</code>. Read-only operations like reading files, grepping, and thinking don't dirty the scope. This prevents the agent from accidentally summarizing away records of mutations it made.</p>
+<p>If the agent made changes (wrote files, ran commands) between save and restore, the scope is considered "dirty" and the agent must explicitly acknowledge this with <code>force=true</code>. Read-only operations like reading files, grepping, viewing images, and thinking don't dirty the scope. This prevents the agent from accidentally summarizing away records of mutations it made.</p>
 <h3 id="history-injection">History Injection</h3>
 <p>Completed snapshot summaries are injected into the system prompt at the start of every turn. Even if compaction later drops the summary message from the middle of the conversation, the knowledge survives in the system prompt. This is the bridge between proactive collapse and knowledge survival — snapshots persist through all compaction levels.</p>
 <h3 id="nudges">Nudges</h3>

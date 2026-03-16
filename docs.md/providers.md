@@ -104,7 +104,7 @@ swival --provider openrouter --model z-ai/glm-5 \
     --max-context-tokens 131072 "task"
 ```
 
-Internally, Swival normalizes OpenRouter models to LiteLLM's `openrouter/...` format. If the model identifier already starts with `openrouter/`, Swival treats the rest as the model path and prepends `openrouter/` again, so you should always pass bare identifiers like `z-ai/glm-5` rather than `openrouter/z-ai/glm-5`.
+Internally, Swival normalizes OpenRouter models to LiteLLM's `openrouter/...` format. Always pass bare model identifiers like `z-ai/glm-5`. If you mistakenly pass `openrouter/z-ai/glm-5`, it will be double-prefixed to `openrouter/openrouter/z-ai/glm-5`. A double prefix (`openrouter/openrouter/...`) is corrected back to a single prefix.
 
 ## Generic (OpenAI-compatible)
 

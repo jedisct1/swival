@@ -68,6 +68,14 @@ Matching for `done` and `remove` is fuzzy in a controlled way, so exact wording 
 
 Every final answer is appended to `.swival/HISTORY.md` with a timestamp and the originating question. This file is capped at 500 KB. Once full, new entries are skipped instead of rotating older content. Use `--no-history` if you do not want history writes.
 
+## `view_image`
+
+`view_image` reads an image file from the filesystem and presents it to the model for visual analysis. It supports PNG, JPEG, GIF, WebP, and BMP formats. The tool takes a required `image_path` parameter and an optional `question` to focus the model's description.
+
+This tool is only available when the model supports vision. Swival checks vision support via LiteLLM's model registry at startup and removes the tool if the model is known not to support image input. For models not in the registry, the tool is included optimistically.
+
+`read_file` does not work on image files — `view_image` is the only way to inspect images.
+
 ## `fetch_url`
 
 `fetch_url` downloads HTTP or HTTPS content and returns it as markdown, plain text, or raw HTML. It is designed for documentation lookup and API reference pulls. Binary content types are rejected.
@@ -114,7 +122,7 @@ Calling `save` before `restore` is not required. The system automatically create
 
 ### Dirty Scopes
 
-Tools are classified as read-only or mutating. Read-only tools (`read_file`, `read_multiple_files`, `list_files`, `grep`, `fetch_url`, `think`, `todo`, `snapshot`) are safe to collapse because they don't change anything on disk. Mutating tools (`write_file`, `edit_file`, `delete_file`, `run_command`, unknown MCP tools, and A2A tools) dirty the scope.
+Tools are classified as read-only or mutating. Read-only tools (`read_file`, `read_multiple_files`, `list_files`, `grep`, `fetch_url`, `view_image`, `think`, `todo`, `snapshot`) are safe to collapse because they don't change anything on disk. Mutating tools (`write_file`, `edit_file`, `delete_file`, `run_command`, unknown MCP tools, and A2A tools) dirty the scope.
 
 If the scope contains mutating tool calls, `restore` fails with a list of the dirty tools. Pass `force=true` to override when you are confident the summary captures the mutations.
 

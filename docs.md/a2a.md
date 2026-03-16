@@ -61,7 +61,7 @@ You can also put A2A configuration in a separate TOML file and pass it with `--a
 swival --a2a-config agents.toml "task"
 ```
 
-The file uses the same `[a2a_servers.*]` format as `swival.toml`. When both `--a2a-config` and `swival.toml` define agents, the standalone file takes precedence by agent name. When the project and global config both define agents, project-level agents win by name, and global-only agents are merged in.
+The file uses the same `[a2a_servers.*]` format as `swival.toml`. When both `--a2a-config` and `swival.toml` define agents, `swival.toml` takes precedence by agent name. When the project and global config both define agents, project-level agents win by name, and global-only agents are merged in.
 
 `--no-a2a` disables A2A agent connections entirely, even if agents are configured.
 
@@ -83,7 +83,7 @@ During context compaction, Swival preserves these IDs so the model can continue 
 
 A2A tool outputs are size-guarded the same way as MCP tools. Results up to 20 KB are returned inline. Larger results are saved to `.swival/cmd_output_*.txt` and the model receives a pointer message to use `read_file` for paginated access.
 
-When saving large A2A output to file, Swival preserves continuation metadata (the `[contextId=...]` or `[input-required]` header line) so the model can still continue multi-turn conversations even when the response body is too large for inline display.
+When saving large A2A output to file, Swival preserves continuation metadata (the `[input-required] contextId=... taskId=...` header line) so the model can still continue multi-turn conversations even when the response body is too large for inline display.
 
 Error outputs are kept inline but truncated at 20 KB.
 

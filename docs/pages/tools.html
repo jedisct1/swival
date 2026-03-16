@@ -92,6 +92,10 @@
 <p>Matching for <code>done</code> and <code>remove</code> is fuzzy in a controlled way, so exact wording is not required every time. Swival tries exact matching first, then prefix matching, then substring matching. The list allows up to 50 items, and each item can be up to 500 characters.</p>
 <h2 id="history-logging">History Logging</h2>
 <p>Every final answer is appended to <code>.swival/HISTORY.md</code> with a timestamp and the originating question. This file is capped at 500 KB. Once full, new entries are skipped instead of rotating older content. Use <code>--no-history</code> if you do not want history writes.</p>
+<h2 id="view_image"><code>view_image</code></h2>
+<p><code>view_image</code> reads an image file from the filesystem and presents it to the model for visual analysis. It supports PNG, JPEG, GIF, WebP, and BMP formats. The tool takes a required <code>image_path</code> parameter and an optional <code>question</code> to focus the model's description.</p>
+<p>This tool is only available when the model supports vision. Swival checks vision support via LiteLLM's model registry at startup and removes the tool if the model is known not to support image input. For models not in the registry, the tool is included optimistically.</p>
+<p><code>read_file</code> does not work on image files — <code>view_image</code> is the only way to inspect images.</p>
 <h2 id="fetch_url"><code>fetch_url</code></h2>
 <p><code>fetch_url</code> downloads HTTP or HTTPS content and returns it as markdown, plain text, or raw HTML. It is designed for documentation lookup and API reference pulls. Binary content types are rejected.</p>
 <p>Raw response bodies are capped at 5 MB, and inline output is capped at 50 KB. Larger converted outputs are saved under <code>.swival/</code> so the agent can page through them with <code>read_file</code>.</p>
@@ -115,7 +119,7 @@
 <h3 id="implicit-checkpoints">Implicit Checkpoints</h3>
 <p>Calling <code>save</code> before <code>restore</code> is not required. The system automatically creates implicit checkpoints at every user message, after each successful restore, and on conversation reset. When <code>restore</code> is called without a prior <code>save</code>, it collapses everything since the last implicit checkpoint, which is typically the most recent user message.</p>
 <h3 id="dirty-scopes">Dirty Scopes</h3>
-<p>Tools are classified as read-only or mutating. Read-only tools (<code>read_file</code>, <code>read_multiple_files</code>, <code>list_files</code>, <code>grep</code>, <code>fetch_url</code>, <code>think</code>, <code>todo</code>, <code>snapshot</code>) are safe to collapse because they don't change anything on disk. Mutating tools (<code>write_file</code>, <code>edit_file</code>, <code>delete_file</code>, <code>run_command</code>, unknown MCP tools, and A2A tools) dirty the scope.</p>
+<p>Tools are classified as read-only or mutating. Read-only tools (<code>read_file</code>, <code>read_multiple_files</code>, <code>list_files</code>, <code>grep</code>, <code>fetch_url</code>, <code>view_image</code>, <code>think</code>, <code>todo</code>, <code>snapshot</code>) are safe to collapse because they don't change anything on disk. Mutating tools (<code>write_file</code>, <code>edit_file</code>, <code>delete_file</code>, <code>run_command</code>, unknown MCP tools, and A2A tools) dirty the scope.</p>
 <p>If the scope contains mutating tool calls, <code>restore</code> fails with a list of the dirty tools. Pass <code>force=true</code> to override when you are confident the summary captures the mutations.</p>
 <h3 id="snapshot-history">Snapshot History</h3>
 <p>Completed snapshots are preserved across context compaction. Up to 10 past summaries are retained and injected into the system prompt so knowledge survives aggressive compaction.</p>

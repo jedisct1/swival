@@ -807,7 +807,7 @@ def generate_config(project: bool = False) -> str:
         "# CLI flags override these values. Only uncomment what you need.",
         "",
         "# --- Provider / model ---",
-        '# provider = "lmstudio"          # "lmstudio" | "huggingface" | "openrouter" | "generic" | "chatgpt"',
+        '# provider = "lmstudio"          # "lmstudio" | "huggingface" | "openrouter" | "google" | "generic" | "chatgpt"',
         '# model = "qwen/qwen3-coder-next"',
         '# api_key = "sk-or-..."            # prefer env vars; this is a fallback',
         '# base_url = "https://..."',

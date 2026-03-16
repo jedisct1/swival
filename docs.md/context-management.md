@@ -56,7 +56,7 @@ If the agent calls `restore` without a prior `save`, it automatically finds the 
 
 ### Dirty Scope Protection
 
-If the agent made changes (wrote files, ran commands) between save and restore, the scope is considered "dirty" and the agent must explicitly acknowledge this with `force=true`. Read-only operations like reading files, grepping, and thinking don't dirty the scope. This prevents the agent from accidentally summarizing away records of mutations it made.
+If the agent made changes (wrote files, ran commands) between save and restore, the scope is considered "dirty" and the agent must explicitly acknowledge this with `force=true`. Read-only operations like reading files, grepping, viewing images, and thinking don't dirty the scope. This prevents the agent from accidentally summarizing away records of mutations it made.
 
 ### History Injection
 

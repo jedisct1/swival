@@ -127,7 +127,7 @@ auth_token = &quot;key-...&quot;
 <p>You can also put A2A configuration in a separate TOML file and pass it with <code>--a2a-config</code>:</p>
 <pre><code class="language-sh">swival --a2a-config agents.toml &quot;task&quot;
 </code></pre>
-<p>The file uses the same <code>[a2a_servers.*]</code> format as <code>swival.toml</code>. When both <code>--a2a-config</code> and <code>swival.toml</code> define agents, the standalone file takes precedence by agent name. When the project and global config both define agents, project-level agents win by name, and global-only agents are merged in.</p>
+<p>The file uses the same <code>[a2a_servers.*]</code> format as <code>swival.toml</code>. When both <code>--a2a-config</code> and <code>swival.toml</code> define agents, <code>swival.toml</code> takes precedence by agent name. When the project and global config both define agents, project-level agents win by name, and global-only agents are merged in.</p>
 <p><code>--no-a2a</code> disables A2A agent connections entirely, even if agents are configured.</p>
 <h3 id="agent-card-discovery">Agent Card Discovery</h3>
 <p>At startup, Swival fetches each agent's Agent Card from <code>&lt;url&gt;/.well-known/agent-card.json</code> (or a custom <code>card_url</code> if configured). The card declares the agent's name, description, skills, and endpoint URL.</p>
@@ -138,7 +138,7 @@ auth_token = &quot;key-...&quot;
 <p>During context compaction, Swival preserves these IDs so the model can continue multi-turn interactions even after older messages are dropped.</p>
 <h3 id="output-handling">Output Handling</h3>
 <p>A2A tool outputs are size-guarded the same way as MCP tools. Results up to 20 KB are returned inline. Larger results are saved to <code>.swival/cmd_output_*.txt</code> and the model receives a pointer message to use <code>read_file</code> for paginated access.</p>
-<p>When saving large A2A output to file, Swival preserves continuation metadata (the <code>[contextId=...]</code> or <code>[input-required]</code> header line) so the model can still continue multi-turn conversations even when the response body is too large for inline display.</p>
+<p>When saving large A2A output to file, Swival preserves continuation metadata (the <code>[input-required] contextId=... taskId=...</code> header line) so the model can still continue multi-turn conversations even when the response body is too large for inline display.</p>
 <p>Error outputs are kept inline but truncated at 20 KB.</p>
 <p>During context compaction, A2A tool results receive structured summaries that preserve <code>input-required</code> headers with their <code>contextId</code> and <code>taskId</code>, so multi-turn state survives compaction.</p>
 <h3 id="client-library-api">Client Library API</h3>
