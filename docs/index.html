@@ -4,19 +4,19 @@
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>Swival — A coding agent for any model</title>
-		<meta name="description" content="Swival is a CLI coding agent built to be reliable with smaller models, including local ones. Designed from the ground up for tight context windows and limited resources. Works with LM Studio, HuggingFace, and OpenRouter.">
+		<meta name="description" content="Swival is a CLI coding agent built to be reliable with smaller models, including local ones. Designed from the ground up for tight context windows and limited resources. Works with LM Studio, HuggingFace, OpenRouter, ChatGPT Plus/Pro, and any OpenAI-compatible server.">
 
 		<!-- Open Graph -->
 		<meta property="og:type" content="website">
 		<meta property="og:title" content="Swival — A coding agent for any model">
-		<meta property="og:description" content="A CLI coding agent built to be reliable with smaller models, including local ones. Designed for tight context windows and limited resources.">
+		<meta property="og:description" content="A CLI coding agent built to be reliable with smaller models, including local ones. Designed for tight context windows and limited resources. Works with LM Studio, HuggingFace, OpenRouter, ChatGPT Plus/Pro, and any OpenAI-compatible server.">
 		<meta property="og:image" content="https://swival.dev/img/logo.png">
 		<meta property="og:url" content="https://swival.dev/">
 
 		<!-- Twitter Card -->
 		<meta name="twitter:card" content="summary">
 		<meta name="twitter:title" content="Swival — A coding agent for any model">
-		<meta name="twitter:description" content="A CLI coding agent built to be reliable with smaller models, including local ones. Designed for tight context windows and limited resources.">
+		<meta name="twitter:description" content="A CLI coding agent built to be reliable with smaller models, including local ones. Designed for tight context windows and limited resources. Works with LM Studio, HuggingFace, OpenRouter, ChatGPT Plus/Pro, and any OpenAI-compatible server.">
 		<meta name="twitter:image" content="https://swival.dev/img/logo.png">
 
 		<link rel="icon" href="favicon.ico">
@@ -75,7 +75,8 @@
 						<div class="feature-card">
 							<h3>Your models, your way</h3>
 							<p>Auto-discovers your LM Studio model, or point it at
-								any HuggingFace or OpenRouter model. You pick
+								HuggingFace, OpenRouter, ChatGPT Plus/Pro,
+								or any OpenAI-compatible server. You pick
 								the model and the infrastructure.</p>
 						</div>
 						<div class="feature-card">
@@ -87,11 +88,11 @@
 								tasks.</p>
 						</div>
 						<div class="feature-card">
-							<h3>Skills, MCP, and more</h3>
-							<p>Extend the agent with SKILL.md-based skills
-								and MCP servers. Small and hackable: a few thousand
-								lines of Python, no framework. Read the whole thing
-								in an afternoon.</p>
+							<h3>Skills, MCP, A2A, and more</h3>
+							<p>Extend the agent with SKILL.md-based skills,
+								MCP servers, and A2A agents. Small and hackable:
+								a few thousand lines of Python, no framework.
+								Read the whole thing in an afternoon.</p>
 						</div>
 					</div>
 				</div>
@@ -156,6 +157,15 @@
     --provider openrouter --model z-ai/glm-5</code></pre>
 					</li>
 				</ol>
+				<h3>Other providers</h3>
+				<p>
+					Swival also works with
+					<a href="pages/providers.html#chatgpt-pluspro">ChatGPT Plus/Pro</a> (uses your existing subscription via OAuth),
+					<a href="pages/providers.html#google-gemini-api">Google Gemini</a>,
+					and any <a href="pages/providers.html#generic-openai-compatible">OpenAI-compatible server</a>
+					(ollama, llama.cpp, vLLM, etc.). See the
+					<a href="pages/providers.html">Providers</a> page for setup details.
+				</p>
 				<h2>Interactive mode</h2>
 				<p>
 					For back-and-forth sessions, start the REPL with
