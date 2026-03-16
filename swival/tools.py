@@ -378,11 +378,12 @@ TOOLS = [
         "function": {
             "name": "view_image",
             "description": (
-                "Load an image file so you can see and analyze it. "
-                "Supports PNG, JPEG, GIF, and WebP. "
-                "BMP is accepted but may not work with all providers. "
-                "After calling this tool, the image will be visible "
-                "in your next response."
+                "View an image file from the filesystem. "
+                "You cannot see images without this tool — "
+                "read_file does not work on image files. "
+                "Supports PNG, JPEG, GIF, WebP, and BMP. "
+                "Not all models support vision; if the image "
+                "cannot be displayed, you will be told."
             ),
             "parameters": {
                 "type": "object",
