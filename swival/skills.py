@@ -245,7 +245,7 @@ def _scan_skills_dir(
     except OSError:
         return
     for entry in entries:
-        if entry.is_dir():
+        if entry.is_dir() and not entry.name.startswith("."):
             if (entry / "SKILL.md").is_file():
                 _try_load_skill(entry, base_resolved, catalog, verbose)
             else:
