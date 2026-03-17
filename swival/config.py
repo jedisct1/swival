@@ -68,6 +68,7 @@ CONFIG_KEYS: dict[str, type | tuple[type, ...]] = {
     "extra_body": dict,
     "reasoning_effort": str,
     "cache": bool,
+    "sanitize_thinking": bool,
     "cache_dir": str,
     "serve_name": str,
     "serve_description": str,
@@ -720,6 +721,7 @@ def args_to_session_kwargs(args, base_dir: str) -> dict:
         "proactive_summaries",
         "extra_body",
         "reasoning_effort",
+        "sanitize_thinking",
         "cache",
         "cache_dir",
     ]
@@ -820,6 +822,7 @@ def generate_config(project: bool = False) -> str:
         "# seed = 42",
         "# extra_body = { chat_template_kwargs = { enable_thinking = false } }",
         '# reasoning_effort = "medium"     # "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "default"',
+        "# sanitize_thinking = true        # strip leaked <think> tags; default: on for generic/lmstudio, off for others",
         "",
         "# --- Agent behaviour ---",
         "# max_turns = 50",

@@ -6,7 +6,12 @@ import types
 import pytest
 from unittest.mock import patch, MagicMock
 
-from swival.agent import call_llm, resolve_provider, _pick_best_choice
+from swival.agent import (
+    call_llm,
+    resolve_provider,
+    _pick_best_choice,
+    _sanitize_assistant_content,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +135,196 @@ class TestCallLlmRouting:
             mock_comp.assert_called_once()
             kwargs = mock_comp.call_args
             assert kwargs[1]["api_base"] == "https://custom.openrouter.endpoint"
+
+
+class TestAssistantContentSanitization:
+    """Verify call_llm strips leaked hidden-reasoning markers."""
+
+    def test_sanitize_assistant_content_strips_special_tokens_and_think_prefix(self):
+        text = "<|start_header_id|><think>Plan</think>\n\nAnswer"
+        assert _sanitize_assistant_content(text) == "Answer"
+
+    def test_sanitize_assistant_content_handles_repeated_think_blocks(self):
+        text = "<think>one</think>\n<think>two</think>\nFinal"
+        assert _sanitize_assistant_content(text) == "Final"
+
+    def test_sanitize_assistant_content_returns_empty_for_all_think_content(self):
+        text = "<think>Plan only</think>"
+        assert _sanitize_assistant_content(text) == ""
+
+    def test_sanitize_assistant_content_preserves_empty_string(self):
+        assert _sanitize_assistant_content("") == ""
+
+    def test_call_llm_strips_think_prefix_before_final_answer(self):
+        message = types.SimpleNamespace(
+            role="assistant",
+            content="Plan...\n</think>\n\nHello! How can I help?",
+            tool_calls=None,
+        )
+        response = types.SimpleNamespace(
+            choices=[types.SimpleNamespace(message=message, finish_reason="stop")]
+        )
+
+        with patch("litellm.completion", return_value=response):
+            msg, finish_reason = call_llm(
+                "http://localhost:8080/v1",
+                "my-model",
+                [{"role": "user", "content": "hi"}],
+                100,
+                0.5,
+                1.0,
+                None,
+                None,
+                False,
+                provider="generic",
+                api_key="sk-test",
+            )
+
+        assert finish_reason == "stop"
+        assert msg.content == "Hello! How can I help?"
+
+    def test_call_llm_clears_think_prefix_on_tool_call_messages(self):
+        tool_call = types.SimpleNamespace(
+            id="call_1",
+            function=types.SimpleNamespace(name="get_time", arguments="{}"),
+        )
+        message = types.SimpleNamespace(
+            role="assistant",
+            content="Need the UTC clock.\n</think>",
+            tool_calls=[tool_call],
+        )
+        response = types.SimpleNamespace(
+            choices=[types.SimpleNamespace(message=message, finish_reason="tool_calls")]
+        )
+
+        with patch("litellm.completion", return_value=response):
+            msg, finish_reason = call_llm(
+                "http://localhost:8080/v1",
+                "my-model",
+                [{"role": "user", "content": "What time is it in UTC?"}],
+                100,
+                0.5,
+                1.0,
+                None,
+                [],
+                False,
+                provider="generic",
+                api_key="sk-test",
+            )
+
+        assert finish_reason == "tool_calls"
+        assert msg.content == ""
+        assert msg.tool_calls == [tool_call]
+
+    def test_call_llm_skips_sanitize_for_openrouter_by_default(self):
+        message = types.SimpleNamespace(
+            role="assistant",
+            content="<think>Plan</think>\n\nAnswer",
+            tool_calls=None,
+        )
+        response = types.SimpleNamespace(
+            choices=[types.SimpleNamespace(message=message, finish_reason="stop")]
+        )
+
+        with patch("litellm.completion", return_value=response):
+            msg, _ = call_llm(
+                "https://openrouter.ai/api/v1",
+                "my-model",
+                [{"role": "user", "content": "hi"}],
+                100,
+                0.5,
+                1.0,
+                None,
+                None,
+                False,
+                provider="openrouter",
+                api_key="sk-test",
+            )
+
+        assert msg.content == "<think>Plan</think>\n\nAnswer"
+
+    def test_call_llm_explicit_sanitize_thinking_overrides_provider_default(self):
+        message = types.SimpleNamespace(
+            role="assistant",
+            content="<think>Plan</think>\n\nAnswer",
+            tool_calls=None,
+        )
+        response = types.SimpleNamespace(
+            choices=[types.SimpleNamespace(message=message, finish_reason="stop")]
+        )
+
+        with patch("litellm.completion", return_value=response):
+            msg, _ = call_llm(
+                "https://openrouter.ai/api/v1",
+                "my-model",
+                [{"role": "user", "content": "hi"}],
+                100,
+                0.5,
+                1.0,
+                None,
+                None,
+                False,
+                provider="openrouter",
+                api_key="sk-test",
+                sanitize_thinking=True,
+            )
+
+        assert msg.content == "Answer"
+
+    def test_call_llm_sanitize_thinking_false_disables_for_generic(self):
+        message = types.SimpleNamespace(
+            role="assistant",
+            content="<think>Plan</think>\n\nAnswer",
+            tool_calls=None,
+        )
+        response = types.SimpleNamespace(
+            choices=[types.SimpleNamespace(message=message, finish_reason="stop")]
+        )
+
+        with patch("litellm.completion", return_value=response):
+            msg, _ = call_llm(
+                "http://localhost:8080/v1",
+                "my-model",
+                [{"role": "user", "content": "hi"}],
+                100,
+                0.5,
+                1.0,
+                None,
+                None,
+                False,
+                provider="generic",
+                api_key="sk-test",
+                sanitize_thinking=False,
+            )
+
+        assert msg.content == "<think>Plan</think>\n\nAnswer"
+
+    def test_call_llm_preserves_inline_literal_think_tag(self):
+        message = types.SimpleNamespace(
+            role="assistant",
+            content="Use `</think>` to close the example tag.",
+            tool_calls=None,
+        )
+        response = types.SimpleNamespace(
+            choices=[types.SimpleNamespace(message=message, finish_reason="stop")]
+        )
+
+        with patch("litellm.completion", return_value=response):
+            msg, _ = call_llm(
+                "http://localhost:8080/v1",
+                "my-model",
+                [{"role": "user", "content": "Show the literal tag"}],
+                100,
+                0.5,
+                1.0,
+                None,
+                None,
+                False,
+                provider="generic",
+                api_key="sk-test",
+            )
+
+        assert msg.content == "Use `</think>` to close the example tag."
 
 
 # ---------------------------------------------------------------------------

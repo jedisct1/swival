@@ -151,6 +151,19 @@ _EMPTY_ASSISTANT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Heuristics for open-weight backends that leak hidden-reasoning or tokenizer
+# control markers into assistant content. These patterns intentionally prefer
+# stripping standalone think markers over preserving literal tag discussions,
+# because leaked reasoning is far more common in practice.
+_SPECIAL_TOKEN_RE = re.compile(r"<\|[^|]+\|>")
+_THINK_BLOCK_PREFIX_RE = re.compile(
+    r"^\s*<think>.*?</think>\s*", re.IGNORECASE | re.DOTALL
+)
+_THINK_LINE_PREFIX_RE = re.compile(
+    r"^.*?\n\s*</think>\s*\n*", re.IGNORECASE | re.DOTALL
+)
+_THINK_TAG_LINE_RE = re.compile(r"(?mi)^\s*</?think>\s*$\n?")
+
 
 class ContextOverflowError(Exception):
     """Raised when the LLM call fails due to context window overflow."""
@@ -177,6 +190,30 @@ def _sanitize_assistant_messages(messages: list) -> bool:
             _set_msg_content(msg, "")
             fixed = True
     return fixed
+
+
+def _sanitize_assistant_content(text: str) -> str:
+    """Strip leaked hidden-reasoning markers from assistant content."""
+    if not text:
+        return text
+
+    cleaned = _SPECIAL_TOKEN_RE.sub("", text)
+    while True:
+        updated = _THINK_BLOCK_PREFIX_RE.sub("", cleaned, count=1)
+        if "</think>" in updated.lower():
+            updated = _THINK_LINE_PREFIX_RE.sub("", updated, count=1)
+        if updated == cleaned:
+            break
+        cleaned = updated
+    cleaned = _THINK_TAG_LINE_RE.sub("", cleaned)
+    return cleaned.strip()
+
+
+def _sanitize_assistant_message(msg) -> None:
+    """Normalize assistant content in-place for dict-or-namespace messages."""
+    content = _msg_get(msg, "content")
+    if isinstance(content, str):
+        _set_msg_content(msg, _sanitize_assistant_content(content))
 
 
 def _safe_history_path(base_dir: str) -> Path:
@@ -1636,12 +1673,17 @@ def call_llm(
     api_key=None,
     extra_body=None,
     reasoning_effort=None,
+    sanitize_thinking=None,
     cache=None,
 ):
     """Call LiteLLM with the appropriate provider. Returns (message, finish_reason)."""
     import litellm
 
     litellm.suppress_debug_info = True
+
+    # Resolve sanitize_thinking: explicit config wins, otherwise provider default.
+    if sanitize_thinking is None:
+        sanitize_thinking = provider in ("generic", "lmstudio")
 
     _skip_params: set[str] = set()
     _skip_tool_choice = False
@@ -1723,7 +1765,10 @@ def call_llm(
             msg_dict, finish_reason = hit
             if verbose:
                 fmt.info("Cache hit")
-            return _reconstruct_message(msg_dict), finish_reason
+            msg = _reconstruct_message(msg_dict)
+            if sanitize_thinking:
+                _sanitize_assistant_message(msg)
+            return msg, finish_reason
 
     def _cache_store(choice):
         if cache is not None:
@@ -1756,6 +1801,8 @@ def call_llm(
                         f"LLM call failed after message sanitization: {e2}"
                     )
                 choice = _pick_best_choice(response.choices)
+                if sanitize_thinking:
+                    _sanitize_assistant_message(choice.message)
                 _cache_store(choice)
                 return choice.message, choice.finish_reason
         raise AgentError(f"LLM call failed: {e}")
@@ -1766,6 +1813,8 @@ def call_llm(
         raise AgentError(f"LLM call failed: {e}")
 
     choice = _pick_best_choice(response.choices)
+    if sanitize_thinking:
+        _sanitize_assistant_message(choice.message)
     _cache_store(choice)
     return choice.message, choice.finish_reason
 

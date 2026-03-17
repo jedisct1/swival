@@ -80,6 +80,7 @@ class Session:
         extra_body: dict | None = None,
         reasoning_effort: str | None = None,
         continue_here: bool = True,
+        sanitize_thinking: bool | None = None,
         cache: bool = False,
         cache_dir: str | None = None,
         scratch_dir: str | None = None,
@@ -120,6 +121,7 @@ class Session:
         self.a2a_servers = a2a_servers
         self.extra_body = extra_body
         self.reasoning_effort = reasoning_effort
+        self.sanitize_thinking = sanitize_thinking
         self.continue_here = continue_here
         self.cache = cache
         self.cache_dir = cache_dir
@@ -193,6 +195,8 @@ class Session:
             self._llm_kwargs["extra_body"] = self.extra_body
         if self.reasoning_effort is not None:
             self._llm_kwargs["reasoning_effort"] = self.reasoning_effort
+        if self.sanitize_thinking is not None:
+            self._llm_kwargs["sanitize_thinking"] = self.sanitize_thinking
 
         # Resolve --add-dir and --add-dir-ro paths
         self._allowed_dir_paths = _resolve_dir_list(self.allowed_dirs, "allowed_dirs")
