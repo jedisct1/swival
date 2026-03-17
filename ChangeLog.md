@@ -2,6 +2,19 @@
 
 All notable user-facing changes to Swival.
 
+## 0.1.29
+
+- Command provider has been added for shelling out to external programs as the
+  LLM backend: the conversation is passed as a plain-text transcript on stdin,
+  and the response is read from stdout.
+- Leaked reasoning tags (`<think>`, `</think>`) from models with bogus
+  templates can now be stripped. This can be controlled with `sanitize_thinking`
+  in config or `--sanitize-thinking`.
+- Race conditions when multiple A2A contexts run concurrently have been fixed by
+  isolating per-context temporary files (todo, cmd_output) and adding file locks.
+- SQLite cross-thread error when `--serve` and `--cache` are combined has been
+  fixed.
+
 ## 0.1.28
 
 - Support for vision has been added: a new `view_image` tool allows the
