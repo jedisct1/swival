@@ -175,6 +175,26 @@ success/failure counts, context compaction events, and guardrail interventions.
 Useful for comparing models, settings, skills, and MCP servers systematically
 on real coding tasks.
 
+**Secrets stay on your machine.** Swival automatically detects API keys and
+credential tokens in LLM messages and encrypts them before they leave your
+machine. The LLM never sees the real values. Decryption happens locally when
+the response comes back, so tools still work normally. No configuration needed.
+
+**Cross-session memory.** The agent remembers things across sessions. It stores
+notes in a local memory file and retrieves the most relevant entries for each
+new conversation using BM25 ranking, so context from past work carries forward
+without bloating the prompt. Use `/learn` in the REPL to teach it something
+on the spot.
+
+**Pick up where you left off.** When a session is interrupted — Ctrl+C, max
+turns, context overflow — Swival saves its state to disk. Next time you run it
+in the same directory, it picks up where it left off: what it was doing, what
+it had figured out, and what was left.
+
+**A2A server mode.** Run `swival --serve` and your agent becomes an A2A
+endpoint that other agents can call over HTTP. Multi-turn context, streaming,
+rate limiting, and bearer auth are built in.
+
 **Skills, MCP, and A2A.** Extend the agent with SKILL.md-based skills for
 reusable workflows, connect to external tools via the Model Context Protocol,
 and talk to remote agents via the Agent-to-Agent (A2A) protocol.

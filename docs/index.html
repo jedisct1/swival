@@ -88,6 +88,36 @@
 								tasks.</p>
 						</div>
 						<div class="feature-card">
+							<h3>Secrets stay on your machine</h3>
+							<p>API keys and credentials in LLM messages are
+								automatically encrypted before they leave your
+								machine. The model never sees the real values.
+								Decryption happens locally when the response
+								comes back, so tools still work normally.</p>
+						</div>
+						<div class="feature-card">
+							<h3>Cross-session memory</h3>
+							<p>The agent remembers things across sessions.
+								Relevant past notes are retrieved via BM25
+								ranking, so context from earlier work carries
+								forward without bloating the prompt. Use
+								<code>/learn</code> to teach it on the spot.</p>
+						</div>
+						<div class="feature-card">
+							<h3>Pick up where you left off</h3>
+							<p>When a session is interrupted &mdash; Ctrl+C,
+								max turns, context overflow &mdash; Swival saves
+								its state to disk and resumes automatically
+								next time you run it in the same directory.</p>
+						</div>
+						<div class="feature-card">
+							<h3>A2A server mode</h3>
+							<p>Run <code>swival --serve</code> and your agent
+								becomes an A2A endpoint that other agents can
+								call over HTTP. Multi-turn context, streaming,
+								and bearer auth are built in.</p>
+						</div>
+						<div class="feature-card">
 							<h3>Skills, MCP, A2A, and more</h3>
 							<p>Extend the agent with SKILL.md-based skills,
 								MCP servers, and A2A agents. Small and hackable:
