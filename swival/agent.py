@@ -1793,10 +1793,18 @@ def call_llm(
     reasoning_effort=None,
     sanitize_thinking=None,
     cache=None,
+    secret_shield=None,
 ):
     """Call LiteLLM with the appropriate provider. Returns (message, finish_reason)."""
     if provider == "command":
         return _call_command(model_id, messages, verbose, max_output_tokens)
+
+    # --- Outbound: encrypt secrets ---
+    if secret_shield is not None:
+        # Sanitize on canonical list before making the encryption copy
+        _sanitize_assistant_messages(messages)
+        messages = secret_shield.encrypt_messages(messages)
+        cache = None  # disable cache when encryption is active
 
     import litellm
 
@@ -1889,6 +1897,9 @@ def call_llm(
             msg = _reconstruct_message(msg_dict)
             if sanitize_thinking:
                 _sanitize_assistant_message(msg)
+            # Note: cache is disabled when secret_shield is active, so no
+            # decrypt needed here.  But guard defensively in case the logic
+            # changes.
             return msg, finish_reason
 
     def _cache_store(choice):
@@ -1899,6 +1910,18 @@ def call_llm(
                 else dict(vars(choice.message))
             )
             cache.put(cache_kwargs, msg_d, choice.finish_reason)
+
+    def _decrypt_msg(msg):
+        """Reverse known encrypted tokens in response content and tool args."""
+        if secret_shield is None:
+            return msg
+        if msg.content:
+            msg.content = secret_shield.reverse_known(msg.content)
+        if getattr(msg, "tool_calls", None):
+            for tc in msg.tool_calls:
+                args_str = tc.function.arguments
+                tc.function.arguments = secret_shield.reverse_known(args_str)
+        return msg
 
     try:
         response = litellm.completion(**completion_kwargs)
@@ -1925,7 +1948,7 @@ def call_llm(
                 if sanitize_thinking:
                     _sanitize_assistant_message(choice.message)
                 _cache_store(choice)
-                return choice.message, choice.finish_reason
+                return _decrypt_msg(choice.message), choice.finish_reason
         raise AgentError(f"LLM call failed: {e}")
     except Exception as e:
         msg_text = str(e)
@@ -1937,7 +1960,7 @@ def call_llm(
     if sanitize_thinking:
         _sanitize_assistant_message(choice.message)
     _cache_store(choice)
-    return choice.message, choice.finish_reason
+    return _decrypt_msg(choice.message), choice.finish_reason
 
 
 # Provider → env var that resolve_provider() checks for that provider
@@ -1971,6 +1994,8 @@ def _build_self_review_cmd(args: argparse.Namespace) -> str:
         parts.extend(["--max-context-tokens", str(args.max_context_tokens)])
     if args.max_output_tokens and args.max_output_tokens != 32768:
         parts.extend(["--max-output-tokens", str(args.max_output_tokens)])
+    if getattr(args, "encrypt_secrets", False):
+        parts.append("--encrypt-secrets")
 
     return shlex.join(parts)
 
@@ -2158,6 +2183,27 @@ def build_parser():
         default=_UNSET,
         metavar="PATH",
         help="Custom cache database directory (default: .swival).",
+    )
+
+    encrypt_group = behavior_group.add_mutually_exclusive_group()
+    encrypt_group.add_argument(
+        "--encrypt-secrets",
+        action="store_true",
+        default=_UNSET,
+        help="Encrypt recognized credential tokens before sending to LLM provider.",
+    )
+    encrypt_group.add_argument(
+        "--no-encrypt-secrets",
+        action="store_true",
+        default=_UNSET,
+        help="Disable secret encryption (default).",
+    )
+    behavior_group.add_argument(
+        "--encrypt-secrets-key",
+        type=str,
+        default=_UNSET,
+        metavar="HEX",
+        help="Hex-encoded 32-byte key for secret encryption (default: random per session).",
     )
     output_group.add_argument(
         "--init-config",
@@ -2787,6 +2833,9 @@ def main():
         _cache = getattr(args, "_llm_cache", None)
         if _cache is not None:
             _cache.close()
+        _shield = getattr(args, "_secret_shield", None)
+        if _shield is not None:
+            _shield.destroy()
 
 
 def resolve_provider(
@@ -3332,6 +3381,18 @@ def _run_main(args, report, _write_report, parser):
                 tools.extend(a2a_tools)
             a2a_tool_info = a2a_manager.get_tool_info()
 
+    # --- Secret encryption lifecycle ---
+    secret_shield = None
+    if getattr(args, "encrypt_secrets", False):
+        from .secrets import SecretShield
+
+        secret_shield = SecretShield.from_config(
+            key_hex=getattr(args, "encrypt_secrets_key", None),
+            tweak_str=getattr(args, "encrypt_secrets_tweak", None),
+            extra_patterns=getattr(args, "encrypt_secrets_patterns", None),
+        )
+        args._secret_shield = secret_shield  # stash for cleanup
+
     # --- Cache lifecycle ---
     llm_cache = None
     if getattr(args, "cache", False):
@@ -3408,6 +3469,7 @@ def _run_main(args, report, _write_report, parser):
         mcp_manager=mcp_manager,
         a2a_manager=a2a_manager,
         cache=llm_cache,
+        secret_shield=secret_shield,
     )
 
     if getattr(args, "proactive_summaries", False):
@@ -3460,6 +3522,13 @@ def _run_main(args, report, _write_report, parser):
                 env_var = _PROVIDER_KEY_ENV.get(args.provider)
                 if env_var:
                     reviewer_env[env_var] = args.api_key
+            # Pass encryption key via env var (avoid ps exposure)
+            if getattr(args, "encrypt_secrets", False):
+                key_hex = getattr(args, "encrypt_secrets_key", None)
+                if key_hex:
+                    from .secrets import ENCRYPT_KEY_ENV
+
+                    reviewer_env[ENCRYPT_KEY_ENV] = key_hex
 
         while True:
             try:
@@ -3627,6 +3696,7 @@ def run_agent_loop(
     a2a_manager=None,
     continue_here: bool = True,
     cache=None,
+    secret_shield=None,
     event_callback=None,
     cancel_flag=None,
 ) -> tuple[str | None, bool]:
@@ -3637,16 +3707,23 @@ def run_agent_loop(
     Returns (final_answer, exhausted). final_answer is the last
     assistant text (may be None). exhausted is True if max_turns hit.
     """
-    # Thread cache into llm_kwargs (for main loop calls via **llm_kwargs)
-    # and create a wrapper for secondary call sites that pass call_llm as a
-    # function reference (compaction summaries, proactive checkpoints,
-    # continue-file enrichment).
+    # Thread cache and secret_shield into llm_kwargs (for main loop calls
+    # via **llm_kwargs) and create a wrapper for secondary call sites that
+    # pass call_llm as a function reference (compaction summaries, proactive
+    # checkpoints, continue-file enrichment).
     _call_llm_for_secondary = call_llm
+    if secret_shield is not None:
+        llm_kwargs = {**llm_kwargs, "secret_shield": secret_shield}
     if cache is not None:
         llm_kwargs = {**llm_kwargs, "cache": cache}
 
+    if cache is not None or secret_shield is not None:
+
         def _call_llm_for_secondary(*args, **kwargs):
-            kwargs.setdefault("cache", cache)
+            if cache is not None:
+                kwargs.setdefault("cache", cache)
+            if secret_shield is not None:
+                kwargs.setdefault("secret_shield", secret_shield)
             return call_llm(*args, **kwargs)
 
     consecutive_errors: dict[str, tuple[str, int]] = {}
@@ -4613,6 +4690,7 @@ def repl_loop(
     a2a_manager=None,
     continue_here: bool = True,
     cache=None,
+    secret_shield=None,
 ) -> None:
     """Interactive read-eval-print loop."""
     from prompt_toolkit import PromptSession
@@ -4656,6 +4734,7 @@ def repl_loop(
         mcp_manager=mcp_manager,
         a2a_manager=a2a_manager,
         cache=cache,
+        secret_shield=secret_shield,
     )
 
     while True:

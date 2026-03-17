@@ -33,12 +33,15 @@ extra_body = { chat_template_kwargs = { enable_thinking = false } }
 reasoning_effort = "high"
 cache = true
 # cache_dir = ".swival"
+# color = true           # true = force color, false = force no-color, absent = auto
+# no_mcp = false         # disable MCP server connections
+# no_a2a = false         # disable A2A agent connections
 
 # Reviewer settings
 reviewer = "swival --reviewer-mode"
 # self_review = true               # shorthand: mirrors provider/model into reviewer
 review_prompt = "Focus on correctness and test coverage"
-max_review_rounds = 10
+max_review_rounds = 15
 objective = "objective.md"
 verify = "verification/working.md"
 
@@ -217,6 +220,48 @@ session = Session(sanitize_thinking=True)
 ```
 
 The sanitizer strips `<think>...</think>` blocks, standalone `<think>` / `</think>` lines, and special tokens like `<|start_header_id|>`. Inline mentions of these tags in code examples or backtick-quoted text are preserved.
+
+## Secret Encryption
+
+When sending messages to remote LLM providers, secrets like API keys and tokens may appear in user messages, tool results, or system prompts. The `--encrypt-secrets` flag enables transparent format-preserving encryption that replaces recognized credential tokens with realistic-looking fakes before they leave your machine. The LLM can still reason about them (it sees a plausible `ghp_...` token, not garbled ciphertext), and Swival decrypts them back to real values before tool dispatch or final output.
+
+Enable it on the command line:
+
+```sh
+swival --encrypt-secrets "deploy using the token in .env"
+```
+
+Or in config:
+
+```toml
+encrypt_secrets = true
+```
+
+By default, a random 256-bit key is generated each session and discarded on exit. To use a persistent key (e.g., for stable ciphertext across sessions):
+
+```sh
+swival --encrypt-secrets --encrypt-secrets-key "$(openssl rand -hex 32)" "task"
+```
+
+Or in config:
+
+```toml
+encrypt_secrets = true
+encrypt_secrets_key = "aabbccdd..."   # 64 hex chars = 32 bytes
+```
+
+Built-in token types include GitHub PATs (`ghp_`, `gho_`, etc.), OpenAI keys (`sk-proj-`, `sk-`), AWS access keys (`AKIA`), Anthropic keys (`sk-ant-api03-`), Slack tokens, Stripe keys, and more. Custom patterns can be added in config:
+
+```toml
+[[encrypt_secrets_patterns]]
+name = "myapp-key"
+prefix = "myapp_"
+body_regex = "[A-Za-z0-9]{32}"
+```
+
+Encryption is disabled by default. The `command` provider (local subprocess) bypasses encryption since it runs locally. Response caching is also disabled when encryption is active to avoid cross-session cache key conflicts.
+
+The threat model: this protects against the LLM provider logging or storing real credentials. It does not protect against unrecognized credential formats, contextual inference by the model, or Python memory safety. For unrecognized formats, add custom patterns via `encrypt_secrets_patterns`.
 
 ## Turn And Token Limits
 

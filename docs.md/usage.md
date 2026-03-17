@@ -237,6 +237,16 @@ See [A2A](a2a.md) for full server documentation.
 
 Neither flag requires a question argument. Both refuse to overwrite an existing config file.
 
+### Encryption And Sanitization Flags
+
+`--encrypt-secrets` enables transparent format-preserving encryption of recognized credential tokens before sending messages to the LLM provider. The LLM sees realistic-looking fakes, and Swival decrypts them back before tool dispatch or final output. Off by default. See [Secret Encryption](customization.md#secret-encryption) for details.
+
+`--no-encrypt-secrets` explicitly disables secret encryption (the default).
+
+`--encrypt-secrets-key HEX` provides a hex-encoded 32-byte key for secret encryption instead of the default random per-session key. Useful for stable ciphertext across sessions.
+
+`--sanitize-thinking` strips leaked `<think>` tags from assistant responses. Some open-weight models served through vLLM emit these markers even when thinking mode is disabled. See [Thinking Tag Sanitization](customization.md#thinking-tag-sanitization) for details.
+
 ### Other Flags
 
 `--version` prints the version and exits.

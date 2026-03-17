@@ -1,6 +1,6 @@
 # Providers
 
-Swival supports LM Studio for local inference, HuggingFace Inference API for hosted inference, OpenRouter for multi-provider access through a single API, a ChatGPT Plus/Pro provider for using OpenAI models through your existing subscription via OAuth, and a generic provider for any OpenAI-compatible server. All provider calls are normalized through [LiteLLM](https://docs.litellm.ai/), so the runtime loop stays consistent while credential and model routing change per provider.
+Swival supports LM Studio for local inference, HuggingFace Inference API for hosted inference, OpenRouter for multi-provider access through a single API, Google Gemini API for Google's models, a ChatGPT Plus/Pro provider for using OpenAI models through your existing subscription via OAuth, a generic provider for any OpenAI-compatible server, and a command provider for shelling out to an external program. All provider calls are normalized through [LiteLLM](https://docs.litellm.ai/), so the runtime loop stays consistent while credential and model routing change per provider.
 
 ## LM Studio
 
@@ -156,7 +156,7 @@ Internally, generic calls are routed through LiteLLM as `openai/<model_id>` with
 
 The `google` provider connects to Google's Gemini API through its OpenAI-compatible endpoint (`/v1beta/openai`).
 
-`--model` is required. Authentication comes from `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `--api-key`.
+`--model` is required. Authentication comes from `--api-key`, `GEMINI_API_KEY`, or `OPENAI_API_KEY`.
 
 ```sh
 export GEMINI_API_KEY=...

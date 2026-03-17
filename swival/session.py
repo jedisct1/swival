@@ -84,6 +84,10 @@ class Session:
         cache: bool = False,
         cache_dir: str | None = None,
         scratch_dir: str | None = None,
+        encrypt_secrets: bool = False,
+        encrypt_secrets_key: str | None = None,
+        encrypt_secrets_tweak: str | None = None,
+        encrypt_secrets_patterns: list | None = None,
     ):
         self.base_dir = base_dir
         self.scratch_dir = scratch_dir
@@ -125,6 +129,10 @@ class Session:
         self.continue_here = continue_here
         self.cache = cache
         self.cache_dir = cache_dir
+        self.encrypt_secrets = encrypt_secrets
+        self.encrypt_secrets_key = encrypt_secrets_key
+        self.encrypt_secrets_tweak = encrypt_secrets_tweak
+        self.encrypt_secrets_patterns = encrypt_secrets_patterns
 
         # Streaming hooks (set externally, e.g. by A2A server)
         self.event_callback = None
@@ -153,6 +161,9 @@ class Session:
 
         # A2A manager (created in _setup if a2a_servers is non-empty)
         self._a2a_manager = None
+
+        # Secret shield (created in _setup if encrypt_secrets is enabled)
+        self._secret_shield = None
 
         # Per-conversation state (for ask() mode)
         self._conv_state: dict | None = None
@@ -255,6 +266,16 @@ class Session:
             a2a_tools = self._a2a_manager.list_tools()
             if a2a_tools:
                 self._tools.extend(a2a_tools)
+
+        # Initialize secret encryption shield
+        if self.encrypt_secrets:
+            from .secrets import SecretShield
+
+            self._secret_shield = SecretShield.from_config(
+                key_hex=self.encrypt_secrets_key,
+                tweak_str=self.encrypt_secrets_tweak,
+                extra_patterns=self.encrypt_secrets_patterns,
+            )
 
         # Open cache
         if self.cache:
@@ -381,6 +402,8 @@ class Session:
             kwargs["mcp_manager"] = self._mcp_manager
         if self._a2a_manager is not None:
             kwargs["a2a_manager"] = self._a2a_manager
+        if self._secret_shield is not None:
+            kwargs["secret_shield"] = self._secret_shield
         if self.event_callback is not None:
             kwargs["event_callback"] = self.event_callback
         if self.cancel_flag is not None:
@@ -476,6 +499,9 @@ class Session:
             self._mcp_manager.close()
         if self._a2a_manager is not None:
             self._a2a_manager.close()
+        if self._secret_shield is not None:
+            self._secret_shield.destroy()
+            self._secret_shield = None
 
     def reset(self) -> None:
         """Clear conversation state without invalidating setup. Next ask() starts fresh."""

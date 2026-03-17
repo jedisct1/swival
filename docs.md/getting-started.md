@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-Swival requires Python 3.13 or newer and [uv](https://docs.astral.sh/uv/). If `uv` is not installed yet, you can install it with the command below.
+Swival requires Python 3.11 or newer and [uv](https://docs.astral.sh/uv/). If `uv` is not installed yet, you can install it with the command below.
 
 ```sh
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -37,7 +37,7 @@ uv tool uninstall swival
 | `lmstudio`    | none                                               | none                                              |
 | `huggingface` | `HF_TOKEN` or `--api-key`                          | `--provider huggingface --model ORG/MODEL`        |
 | `openrouter`  | `OPENROUTER_API_KEY` or `--api-key`                | `--provider openrouter --model MODEL`             |
-| `google`      | `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `--api-key` | `--provider google --model MODEL`                 |
+| `google`      | `--api-key`, `GEMINI_API_KEY`, or `OPENAI_API_KEY` | `--provider google --model MODEL`                 |
 | `chatgpt`     | browser auth on first run or `CHATGPT_API_KEY`     | `--provider chatgpt --model MODEL`                |
 | `generic`     | optional `OPENAI_API_KEY`                          | `--provider generic --base-url URL --model MODEL` |
 | `command`     | none                                               | `--provider command --model "COMMAND"`            |
@@ -129,7 +129,7 @@ For a deeper look at OpenRouter-specific options, see [Providers](providers.md).
 
 ## Running with Google Gemini
 
-If you want to use Gemini through Google's API, use the `google` provider. Authentication comes from `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `--api-key`.
+If you want to use Gemini through Google's API, use the `google` provider. Authentication comes from `--api-key`, `GEMINI_API_KEY`, or `OPENAI_API_KEY`.
 
 ```sh
 export GEMINI_API_KEY=...

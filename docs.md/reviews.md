@@ -20,7 +20,7 @@ Reviewer execution has a 60-minute timeout. Timeout or spawn failures are treate
 
 ## Reviewer Environment Variables
 
-Swival sets context variables on the reviewer subprocess for each round. `SWIVAL_TASK` contains the original user task and is always set. `SWIVAL_REVIEW_ROUND` contains the current review round number and is always set. `SWIVAL_MODEL` contains the resolved model identifier when available.
+Swival sets context variables on the reviewer subprocess for each round. `SWIVAL_TASK` contains the original user task and is always set. `SWIVAL_REVIEW_ROUND` contains the current review round number and is always set. `SWIVAL_MODEL` contains the resolved model identifier when available. When `--encrypt-secrets` is active, `SWIVAL_ENCRYPT_KEY` is set to the hex-encoded encryption key so the reviewer can decrypt secrets in the answer.
 
 The reviewer inherits the parent environment too, but Swival's injected values override any same-named parent values.
 

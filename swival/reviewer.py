@@ -144,7 +144,24 @@ def run_as_reviewer(args, base_dir: str) -> int:
 
     messages = [{"role": "user", "content": prompt}]
 
+    # Set up secret encryption if configured
+    secret_shield = None
+    if getattr(args, "encrypt_secrets", False):
+        from .secrets import ENCRYPT_KEY_ENV, SecretShield
+
+        key_hex = getattr(args, "encrypt_secrets_key", None)
+        if not key_hex:
+            key_hex = os.environ.get(ENCRYPT_KEY_ENV)
+        secret_shield = SecretShield.from_config(
+            key_hex=key_hex,
+            tweak_str=getattr(args, "encrypt_secrets_tweak", None),
+            extra_patterns=getattr(args, "encrypt_secrets_patterns", None),
+        )
+
     try:
+        extra_kwargs = {}
+        if secret_shield is not None:
+            extra_kwargs["secret_shield"] = secret_shield
         msg, finish_reason = call_llm(
             api_base,
             model_id,
@@ -157,12 +174,18 @@ def run_as_reviewer(args, base_dir: str) -> int:
             args.verbose,
             provider=llm_kwargs.get("provider", args.provider),
             api_key=api_key,
+            **extra_kwargs,
         )
     except AgentError as e:
         print(f"reviewer error: LLM call failed: {e}", file=sys.stderr)
+        if secret_shield is not None:
+            secret_shield.destroy()
         return 2
 
     response_text = msg.content or ""
+
+    if secret_shield is not None:
+        secret_shield.destroy()
 
     # Parse verdict
     verdict = _parse_verdict(response_text)

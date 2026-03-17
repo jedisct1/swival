@@ -72,6 +72,9 @@ CONFIG_KEYS: dict[str, type | tuple[type, ...]] = {
     "cache_dir": str,
     "serve_name": str,
     "serve_description": str,
+    "encrypt_secrets": bool,
+    "encrypt_secrets_key": str,
+    "encrypt_secrets_tweak": str,
 }
 
 _LIST_OF_STR_KEYS = {
@@ -138,6 +141,10 @@ _ARGPARSE_DEFAULTS: dict[str, Any] = {
     "cache_dir": None,
     "serve_name": None,
     "serve_description": None,
+    "encrypt_secrets": False,
+    "no_encrypt_secrets": False,
+    "encrypt_secrets_key": None,
+    "encrypt_secrets_tweak": None,
 }
 
 
@@ -313,10 +320,12 @@ def _load_single(path: Path, label: str) -> dict:
     except tomllib.TOMLDecodeError as e:
         raise ConfigError(f"{label}: invalid TOML: {e}") from e
 
-    # Extract mcp_servers, a2a_servers, serve_skills before validation (nested tables)
+    # Extract mcp_servers, a2a_servers, serve_skills, encrypt_secrets_patterns
+    # before validation (nested tables)
     mcp_servers = config.pop("mcp_servers", None)
     a2a_servers = config.pop("a2a_servers", None)
     serve_skills = config.pop("serve_skills", None)
+    encrypt_patterns = config.pop("encrypt_secrets_patterns", None)
 
     # Strip unknown keys after warning (keep only known ones for downstream)
     _validate_config(config, label)
@@ -342,6 +351,23 @@ def _load_single(path: Path, label: str) -> dict:
             raise ConfigError(f"{label}: 'serve_skills' must be an array of tables")
         _validate_serve_skills(serve_skills, label)
         known["serve_skills"] = serve_skills
+
+    # Re-attach encrypt_secrets_patterns if present
+    if encrypt_patterns is not None:
+        if not isinstance(encrypt_patterns, list):
+            raise ConfigError(
+                f"{label}: 'encrypt_secrets_patterns' must be an array of tables"
+            )
+        for i, pat in enumerate(encrypt_patterns):
+            if not isinstance(pat, dict):
+                raise ConfigError(
+                    f"{label}: encrypt_secrets_patterns[{i}]: expected a table"
+                )
+            if "name" not in pat:
+                raise ConfigError(
+                    f"{label}: encrypt_secrets_patterns[{i}]: missing required key 'name'"
+                )
+        known["encrypt_secrets_patterns"] = encrypt_patterns
 
     return known
 
@@ -638,6 +664,15 @@ def load_config(base_dir: Path) -> dict:
     else:
         merged.pop("serve_skills", None)  # remove stale value from shallow merge
 
+    # Handle encrypt_secrets_patterns separately (project replaces global wholesale)
+    global_enc_pats = global_config.pop("encrypt_secrets_patterns", None)
+    project_enc_pats = project_config.pop("encrypt_secrets_patterns", None)
+    enc_pats = project_enc_pats if project_enc_pats is not None else global_enc_pats
+    if enc_pats is not None:
+        merged["encrypt_secrets_patterns"] = enc_pats
+    else:
+        merged.pop("encrypt_secrets_patterns", None)
+
     # Re-validate mutual exclusion on merged result (could conflict across files)
     if merged.get("system_prompt") and merged.get("no_system_prompt"):
         raise ConfigError(
@@ -675,13 +710,20 @@ def apply_config_to_args(args: argparse.Namespace, config: dict) -> None:
             args.color = color_val
             args.no_color = not color_val
 
+    # Special handling for encrypt_secrets: single config key controls mutual-exclusive pair
+    if "encrypt_secrets" in config:
+        enc_val = config["encrypt_secrets"]
+        if _is_unset("encrypt_secrets") and _is_unset("no_encrypt_secrets"):
+            args.encrypt_secrets = enc_val
+            args.no_encrypt_secrets = not enc_val
+
     # Special handling: positive config key -> negative argparse dest
     if "sandbox_auto_session" in config:
         if _is_unset("no_sandbox_auto_session"):
             args.no_sandbox_auto_session = not config["sandbox_auto_session"]
 
     # Apply all other config keys
-    _SKIP_KEYS = {"color", "sandbox_auto_session"}
+    _SKIP_KEYS = {"color", "sandbox_auto_session", "encrypt_secrets"}
     for key, value in config.items():
         if key in _SKIP_KEYS:
             continue
@@ -745,6 +787,9 @@ def args_to_session_kwargs(args, base_dir: str) -> dict:
         "sanitize_thinking",
         "cache",
         "cache_dir",
+        "encrypt_secrets_key",
+        "encrypt_secrets_tweak",
+        "encrypt_secrets_patterns",
     ]
 
     kwargs: dict = {"base_dir": base_dir}
@@ -761,6 +806,20 @@ def args_to_session_kwargs(args, base_dir: str) -> dict:
     for dest, kwarg in _INVERT.items():
         val = getattr(args, dest, False)
         kwargs[kwarg] = not val
+
+    # encrypt_secrets: resolve --encrypt-secrets / --no-encrypt-secrets pair
+    if getattr(args, "encrypt_secrets", False):
+        kwargs["encrypt_secrets"] = True
+    elif getattr(args, "no_encrypt_secrets", False):
+        kwargs["encrypt_secrets"] = False
+    # Also check env var for key (used by reviewer subprocess)
+    from .secrets import ENCRYPT_KEY_ENV
+
+    env_key = os.environ.get(ENCRYPT_KEY_ENV)
+    if env_key and "encrypt_secrets_key" not in kwargs:
+        kwargs["encrypt_secrets_key"] = env_key
+        if "encrypt_secrets" not in kwargs:
+            kwargs["encrypt_secrets"] = True
 
     # skills_dir uses None as sentinel for "not set"
     skills_dir = getattr(args, "skills_dir", None)
@@ -900,6 +959,10 @@ def generate_config(project: bool = False) -> str:
         '# review_prompt = "Focus on correctness"',
         '# objective = "objective.md"',
         '# verify = "verification/working.md"',
+        "",
+        "# --- Secret encryption ---",
+        "# encrypt_secrets = false         # encrypt credential tokens before sending to LLM provider",
+        '# encrypt_secrets_key = "hex..."  # optional persistent 32-byte key (hex-encoded)',
         "",
         "# --- A2A serve ---",
         '# serve_name = "My Agent"',

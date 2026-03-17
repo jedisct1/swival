@@ -178,6 +178,11 @@ cat prompts/review.md | swival --provider huggingface --model zai-org/GLM-5
 <p><code>--init-config</code> generates a global config file at <code>~/.config/swival/config.toml</code> and exits. The file is a commented starter template covering the main settings and integrations.</p>
 <p><code>--init-config --project</code> generates a project-local config file at <code>swival.toml</code> in the current base directory instead.</p>
 <p>Neither flag requires a question argument. Both refuse to overwrite an existing config file.</p>
+<h3 id="encryption-and-sanitization-flags">Encryption And Sanitization Flags</h3>
+<p><code>--encrypt-secrets</code> enables transparent format-preserving encryption of recognized credential tokens before sending messages to the LLM provider. The LLM sees realistic-looking fakes, and Swival decrypts them back before tool dispatch or final output. Off by default. See <a href="customization.html#secret-encryption">Secret Encryption</a> for details.</p>
+<p><code>--no-encrypt-secrets</code> explicitly disables secret encryption (the default).</p>
+<p><code>--encrypt-secrets-key HEX</code> provides a hex-encoded 32-byte key for secret encryption instead of the default random per-session key. Useful for stable ciphertext across sessions.</p>
+<p><code>--sanitize-thinking</code> strips leaked <code>&lt;think&gt;</code> tags from assistant responses. Some open-weight models served through vLLM emit these markers even when thinking mode is disabled. See <a href="customization.html#thinking-tag-sanitization">Thinking Tag Sanitization</a> for details.</p>
 <h3 id="other-flags">Other Flags</h3>
 <p><code>--version</code> prints the version and exits.</p>
 <p>For the full report schema and analysis workflow, see <a href="reports.html">Reports</a>. For the reviewer protocol and examples, see <a href="reviews.html">Reviews</a>.</p>
