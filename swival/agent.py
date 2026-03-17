@@ -1681,9 +1681,9 @@ def call_llm(
 
     litellm.suppress_debug_info = True
 
-    # Resolve sanitize_thinking: explicit config wins, otherwise provider default.
+    # Resolve sanitize_thinking: opt-in only.
     if sanitize_thinking is None:
-        sanitize_thinking = provider in ("generic", "lmstudio")
+        sanitize_thinking = False
 
     _skip_params: set[str] = set()
     _skip_tool_choice = False

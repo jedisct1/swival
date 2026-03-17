@@ -822,7 +822,7 @@ def generate_config(project: bool = False) -> str:
         "# seed = 42",
         "# extra_body = { chat_template_kwargs = { enable_thinking = false } }",
         '# reasoning_effort = "medium"     # "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "default"',
-        "# sanitize_thinking = true        # strip leaked <think> tags; default: on for generic/lmstudio, off for others",
+        "# sanitize_thinking = true        # strip leaked <think> tags from assistant responses (default: off)",
         "",
         "# --- Agent behaviour ---",
         "# max_turns = 50",
