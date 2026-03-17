@@ -2,6 +2,16 @@
 
 All notable user-facing changes to Swival.
 
+## 0.1.30
+
+- Secrets encryption has been added: credential tokens in LLM messages
+  can be transparently encrypted before being sent to the provider and decrypted
+  on return, preventing accidental leakage through hosted APIs.
+- The `--sanitize-thinking` CLI flag has been fixed (it was accepted but ignored
+  in 0.1.29).
+- `read_multiple_files` now accepts a plain string in addition to an array,
+  for resilience with models that pass a single filename as a string.
+
 ## 0.1.29
 
 - Command provider has been added for shelling out to external programs as the
