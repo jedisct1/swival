@@ -176,6 +176,15 @@ Don't add dependencies without asking.
 <pre><code class="language-python">session = Session(reasoning_effort=&quot;high&quot;)
 </code></pre>
 <p>Valid levels are <code>none</code>, <code>minimal</code>, <code>low</code>, <code>medium</code>, <code>high</code>, <code>xhigh</code>, and <code>default</code>. Not all models support this parameter — when used with a model that doesn't support it, the behavior depends on the provider (it may be ignored or cause an error). Only set it when you know your model supports it.</p>
+<h2 id="thinking-tag-sanitization">Thinking Tag Sanitization</h2>
+<p>Some open-weight models leak hidden-reasoning markers like <code>&lt;think&gt;</code> and <code>&lt;/think&gt;</code> into their responses. The <code>sanitize_thinking</code> option strips these leaked tags from assistant content before returning it to the user.</p>
+<p>This is off by default for all providers. Enable it in config if you're seeing leaked thinking tags:</p>
+<pre><code class="language-toml">sanitize_thinking = true
+</code></pre>
+<p>In the library API:</p>
+<pre><code class="language-python">session = Session(sanitize_thinking=True)
+</code></pre>
+<p>The sanitizer strips <code>&lt;think&gt;...&lt;/think&gt;</code> blocks, standalone <code>&lt;think&gt;</code> / <code>&lt;/think&gt;</code> lines, and special tokens like <code>&lt;|start_header_id|&gt;</code>. Inline mentions of these tags in code examples or backtick-quoted text are preserved.</p>
 <h2 id="turn-and-token-limits">Turn And Token Limits</h2>
 <p><code>--max-turns</code> limits how many agent-loop iterations are allowed.</p>
 <pre><code class="language-sh">swival --max-turns 10 &quot;quick task&quot;

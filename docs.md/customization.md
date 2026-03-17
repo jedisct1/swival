@@ -200,6 +200,24 @@ session = Session(reasoning_effort="high")
 
 Valid levels are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `default`. Not all models support this parameter — when used with a model that doesn't support it, the behavior depends on the provider (it may be ignored or cause an error). Only set it when you know your model supports it.
 
+## Thinking Tag Sanitization
+
+Some open-weight models leak hidden-reasoning markers like `<think>` and `</think>` into their responses. The `sanitize_thinking` option strips these leaked tags from assistant content before returning it to the user.
+
+This is off by default for all providers. Enable it in config if you're seeing leaked thinking tags:
+
+```toml
+sanitize_thinking = true
+```
+
+In the library API:
+
+```python
+session = Session(sanitize_thinking=True)
+```
+
+The sanitizer strips `<think>...</think>` blocks, standalone `<think>` / `</think>` lines, and special tokens like `<|start_header_id|>`. Inline mentions of these tags in code examples or backtick-quoted text are preserved.
+
 ## Turn And Token Limits
 
 `--max-turns` limits how many agent-loop iterations are allowed.
