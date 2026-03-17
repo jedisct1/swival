@@ -177,7 +177,7 @@ Don't add dependencies without asking.
 </code></pre>
 <p>Valid levels are <code>none</code>, <code>minimal</code>, <code>low</code>, <code>medium</code>, <code>high</code>, <code>xhigh</code>, and <code>default</code>. Not all models support this parameter — when used with a model that doesn't support it, the behavior depends on the provider (it may be ignored or cause an error). Only set it when you know your model supports it.</p>
 <h2 id="thinking-tag-sanitization">Thinking Tag Sanitization</h2>
-<p>Some open-weight models leak hidden-reasoning markers like <code>&lt;think&gt;</code> and <code>&lt;/think&gt;</code> into their responses. The <code>sanitize_thinking</code> option strips these leaked tags from assistant content before returning it to the user.</p>
+<p>Some open-weight models leak hidden-reasoning markers like <code>&lt;think&gt;</code> and <code>&lt;/think&gt;</code> into their responses. This is especially common when using vLLM as the inference engine, where models may emit these tags even when thinking mode is disabled. The <code>sanitize_thinking</code> option strips these leaked tags from assistant content before returning it to the user.</p>
 <p>This is off by default for all providers. Enable it in config if you're seeing leaked thinking tags:</p>
 <pre><code class="language-toml">sanitize_thinking = true
 </code></pre>

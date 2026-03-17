@@ -202,7 +202,7 @@ Valid levels are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `defau
 
 ## Thinking Tag Sanitization
 
-Some open-weight models leak hidden-reasoning markers like `<think>` and `</think>` into their responses. The `sanitize_thinking` option strips these leaked tags from assistant content before returning it to the user.
+Some open-weight models leak hidden-reasoning markers like `<think>` and `</think>` into their responses. This is especially common when using vLLM as the inference engine, where models may emit these tags even when thinking mode is disabled. The `sanitize_thinking` option strips these leaked tags from assistant content before returning it to the user.
 
 This is off by default for all providers. Enable it in config if you're seeing leaked thinking tags:
 

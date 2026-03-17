@@ -76,6 +76,8 @@ For recently released models, the default vLLM version configured in Inference E
 
 Internally, Swival normalizes the model to `huggingface/<model_id>` for LiteLLM and strips an existing `huggingface/` prefix if you already included it. If `--base-url` is set, it is forwarded as `api_base`.
 
+Some models served through vLLM leak internal reasoning markers like `<think>` tags into their responses. If you see these in the output, enable `--sanitize-thinking` to strip them. See [Thinking Tag Sanitization](customization.md#thinking-tag-sanitization) for details.
+
 Dedicated endpoints usually let you use the full deployed model context window rather than tighter serverless limits.
 
 ## OpenRouter
@@ -226,6 +228,8 @@ extra_body = { chat_template_kwargs = { enable_thinking = false } }
 ```
 
 The dictionary is forwarded as `extra_body` to LiteLLM, which passes it through to the server. Refer to your model or server documentation for supported parameters.
+
+When using vLLM as the inference backend, models may leak internal reasoning markers like `<think>` tags into their output even with thinking disabled. Use `--sanitize-thinking` to strip them. See [Thinking Tag Sanitization](customization.md#thinking-tag-sanitization) for details.
 
 For reasoning effort specifically, Swival provides a dedicated `--reasoning-effort` flag instead of requiring `extra_body`. See [Customization](customization.md) for details.
 
