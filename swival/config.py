@@ -133,6 +133,7 @@ _ARGPARSE_DEFAULTS: dict[str, Any] = {
     "a2a_config": None,
     "extra_body": None,
     "reasoning_effort": None,
+    "sanitize_thinking": False,
     "cache": False,
     "cache_dir": None,
     "serve_name": None,

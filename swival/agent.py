@@ -2139,6 +2139,13 @@ def build_parser():
         f"One of: {', '.join(_REASONING_LEVELS)}.",
     )
 
+    provider_group.add_argument(
+        "--sanitize-thinking",
+        action="store_true",
+        default=_UNSET,
+        help="Strip leaked <think> tags from assistant responses.",
+    )
+
     behavior_group.add_argument(
         "--cache",
         action="store_true",
@@ -3239,6 +3246,8 @@ def _run_main(args, report, _write_report, parser):
         llm_kwargs["extra_body"] = args.extra_body
     if getattr(args, "reasoning_effort", None) is not None:
         llm_kwargs["reasoning_effort"] = args.reasoning_effort
+    if getattr(args, "sanitize_thinking", False):
+        llm_kwargs["sanitize_thinking"] = True
 
     # Stash resolved model_id for error reporting
     args._resolved_model_id = model_id
