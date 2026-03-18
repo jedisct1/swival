@@ -2,6 +2,14 @@
 
 All notable user-facing changes to Swival.
 
+## 0.1.31
+
+- The `grep` tool now supports a `context_lines` parameter to show surrounding
+  lines before and after each match.
+- `/new` has been added as a synonym for `/clear` in the REPL.
+- `reasoning_effort` set to `"default"` is now skipped instead of being sent to
+  the provider.
+
 ## 0.1.30
 
 - Secrets encryption has been added: credential tokens in LLM messages
