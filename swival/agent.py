@@ -1834,7 +1834,13 @@ def call_llm(
         if base_url:
             kwargs["api_base"] = base_url
     elif provider == "openrouter":
-        kwargs = {"api_key": api_key}
+        kwargs = {
+            "api_key": api_key,
+            "extra_headers": {
+                "HTTP-Referer": "https://swival.dev",
+                "X-Title": "swival",
+            },
+        }
         if base_url:
             kwargs["api_base"] = base_url
     elif provider == "generic":
