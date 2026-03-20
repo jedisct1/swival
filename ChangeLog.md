@@ -2,6 +2,10 @@
 
 All notable user-facing changes to Swival.
 
+## 0.1.33
+
+- Updated ChangeLog
+
 ## 0.1.32
 
 - Last-resort compaction has been added: when the context window is too small for
