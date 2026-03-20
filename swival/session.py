@@ -184,6 +184,7 @@ class Session:
             build_tools,
             build_system_prompt,
             cleanup_old_cmd_outputs,
+            _filter_command_tool_schemas,
         )
         from .skills import discover_skills
 
@@ -287,6 +288,13 @@ class Session:
         # in run()/ask() so it can be keyed from the user's question).
         mcp_tool_info = self._mcp_manager.get_tool_info() if self._mcp_manager else None
         a2a_tool_info = self._a2a_manager.get_tool_info() if self._a2a_manager else None
+        # Build list of tool schemas exposable to command provider (MCP/A2A/skills).
+        _command_tool_schemas = (
+            _filter_command_tool_schemas(self._tools) or None
+            if self.provider == "command"
+            else None
+        )
+
         self._system_content, self._instructions_loaded = build_system_prompt(
             base_dir=self.base_dir,
             system_prompt=self.system_prompt,
@@ -302,6 +310,7 @@ class Session:
             a2a_tool_info=a2a_tool_info,
             no_continue=not self.continue_here,
             provider=self.provider,
+            command_tool_schemas=_command_tool_schemas,
         )
 
         # Clean up stale cmd_output files

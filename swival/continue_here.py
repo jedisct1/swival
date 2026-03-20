@@ -270,7 +270,7 @@ def _try_llm_summary(
         {"role": "user", "content": text},
     ]
     try:
-        resp, _ = call_llm_fn(
+        _result = call_llm_fn(
             base_url=base_url,
             model_id=model_id,
             messages=prompt,
@@ -283,6 +283,7 @@ def _try_llm_summary(
             api_key=api_key,
             provider=provider,
         )
+        resp = _result[0]
         content = resp.content if hasattr(resp, "content") else resp.get("content", "")
         return content if content else None
     except Exception:

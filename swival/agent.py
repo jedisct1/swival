@@ -81,6 +81,8 @@ _VISION_REJECTION_PATTERNS = (
 
 # Canonical prefixes for synthetic user messages injected by the agent loop.
 # Used by continue_here._find_last_user_task to skip interventions.
+_COMMAND_TOOL_CONTEXT_PREFIX = "[Context for follow-up:"
+
 SYNTHETIC_USER_PREFIXES: tuple[str, ...] = (
     "Your response was empty.",
     "Your response was cut off.",
@@ -90,6 +92,7 @@ SYNTHETIC_USER_PREFIXES: tuple[str, ...] = (
     "Reminder:",
     "[REVIEWER FEEDBACK",
     _IMAGE_SYNTHETIC_PREFIX,
+    _COMMAND_TOOL_CONTEXT_PREFIX,
 )
 
 _SUMMARIZE_SYSTEM_PROMPT = (
@@ -612,12 +615,15 @@ def compact_messages(messages: list) -> list:
     return [msg for turn in turns for msg in turn]
 
 
+_DROPPABLE_USER_PREFIXES = (_IMAGE_SYNTHETIC_PREFIX, _COMMAND_TOOL_CONTEXT_PREFIX)
+
+
 def is_pinned(turn: list) -> bool:
-    """User turns are always preserved — except synthetic image injections."""
+    """User turns are always preserved — except synthetic injections."""
     for msg in turn:
         if _msg_role(msg) == "user":
             content = _msg_content(msg)
-            if content.startswith(_IMAGE_SYNTHETIC_PREFIX):
+            if content.startswith(_DROPPABLE_USER_PREFIXES):
                 return False
             return True
     return False
@@ -855,7 +861,7 @@ def _call_summarize_llm(
         {"role": "user", "content": text},
     ]
     try:
-        resp, _ = call_llm_fn(
+        _result = call_llm_fn(
             base_url=base_url,
             model_id=model_id,
             messages=prompt,
@@ -868,6 +874,7 @@ def _call_summarize_llm(
             api_key=api_key,
             provider=provider,
         )
+        resp = _result[0]
         content = resp.content if hasattr(resp, "content") else resp.get("content", "")
         return content if content else None
     except Exception:
@@ -1411,6 +1418,88 @@ def _show_state_summaries(thinking_state, todo_state, snapshot_state) -> None:
             fmt.info(summary)
 
 
+def _post_tool_bookkeeping(
+    tool_msg,
+    tool_meta,
+    turn,
+    turn_offset,
+    report,
+    snapshot_state,
+    consecutive_errors,
+    verbose,
+    _emit,
+):
+    """Post-tool-call bookkeeping shared by run_agent_loop() and command provider.
+
+    Handles: post-call event emission, report logging, snapshot dirty tracking,
+    error guardrail tracking.
+
+    EVENT_TOOL_START is NOT included — callers emit it before execution.
+
+    Returns list of intervention strings.
+    """
+    interventions = []
+    name = tool_meta["name"]
+
+    if tool_meta["succeeded"]:
+        _emit(
+            EVENT_TOOL_FINISH,
+            {"name": name, "turn": turn, "elapsed": tool_meta["elapsed"]},
+        )
+    else:
+        _emit(
+            EVENT_TOOL_ERROR,
+            {"name": name, "turn": turn, "error": tool_msg["content"][:500]},
+        )
+
+    if report:
+        report.record_tool_call(
+            turn + turn_offset,
+            name,
+            tool_meta["arguments"],
+            tool_meta["succeeded"],
+            tool_meta["elapsed"],
+            len(tool_msg["content"]),
+            error=tool_msg["content"] if not tool_meta["succeeded"] else None,
+        )
+
+    if snapshot_state is not None:
+        snapshot_state.mark_dirty(name)
+
+    result = tool_msg["content"]
+    if result.startswith("error:"):
+        canonical = _canonical_error(result)
+        prev_err, prev_count = consecutive_errors.get(name, ("", 0))
+        count = prev_count + 1 if canonical == prev_err else 1
+        consecutive_errors[name] = (canonical, count)
+
+        if count >= 2:
+            if count >= 3:
+                level = "stop"
+                interventions.append(
+                    f"STOP: You have failed to use `{name}` correctly {count} times in a row "
+                    "with the same error. Do NOT call "
+                    f"`{name}` again with the same arguments. "
+                    "Either fix the arguments or use a completely different approach to accomplish your task."
+                )
+            else:
+                level = "nudge"
+                interventions.append(
+                    f"IMPORTANT: You have called `{name}` {count} times with the same error. "
+                    f"The error is: {canonical}\n"
+                    "Please carefully re-read the error message and fix your tool call. "
+                    "If you cannot use this tool correctly, use a different approach."
+                )
+            if report:
+                report.record_guardrail(turn + turn_offset, name, level)
+            if verbose:
+                fmt.guardrail(name, count, canonical)
+    else:
+        consecutive_errors.pop(name, None)
+
+    return interventions
+
+
 def handle_tool_call(
     tool_call,
     base_dir,
@@ -1681,12 +1770,105 @@ def _render_transcript(messages):
             continue
 
         if role == "tool":
-            tool_name = tc_names.get(_msg_tool_call_id(m), "tool")
-            lines.append(f"[tool:{tool_name}]\n{content}")
+            tool_call_id = _msg_tool_call_id(m)
+            msg_name = _msg_get(m, "name", "")
+            if msg_name and (
+                msg_name.startswith("mcp__")
+                or msg_name.startswith("a2a__")
+                or msg_name == "use_skill"
+            ):
+                lines.append(
+                    f'[swival_result id="{tool_call_id}" name="{msg_name}"]\n{content}'
+                )
+            else:
+                tool_name = tc_names.get(tool_call_id, "tool")
+                lines.append(f"[tool:{tool_name}]\n{content}")
         else:
             lines.append(f"[{role}]\n{content}")
 
     return "\n\n".join(lines)
+
+
+_SWIVAL_BLOCK_RE = re.compile(
+    r"<swival:call\s([^>]+)>\s*(\{.*?\})\s*</swival:call>",
+    re.DOTALL,
+)
+_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
+
+
+def _parse_swival_calls(text):
+    """Extract (call_id, tool_name, args_dict) tuples from agent output.
+
+    Attribute order in the opening tag does not matter. Unknown attributes
+    are ignored. Both id and name are required; blocks missing either are
+    skipped.
+
+    Malformed JSON in a block produces an entry with {"_parse_error": "..."}
+    so the caller can feed an error result back to the agent.
+    """
+    results = []
+    for m in _SWIVAL_BLOCK_RE.finditer(text):
+        attr_str, args_json = m.group(1), m.group(2)
+        attrs = dict(_ATTR_RE.findall(attr_str))
+
+        call_id = attrs.get("id")
+        name = attrs.get("name")
+        if not call_id or not name:
+            continue
+
+        try:
+            args = json.loads(args_json)
+        except json.JSONDecodeError as e:
+            results.append((call_id, name, {"_parse_error": str(e)}))
+            continue
+        results.append((call_id, name, args))
+    return results
+
+
+def _render_swival_tool_catalog(tool_schemas):
+    """Render tool schemas as a text catalog for the command provider system prompt."""
+    lines = []
+    for schema in tool_schemas:
+        func = schema.get("function", schema)
+        name = func.get("name", "unknown")
+        desc = func.get("description", "")
+        params = func.get("parameters", {})
+        props = params.get("properties", {})
+        required = set(params.get("required", []))
+
+        param_parts = []
+        for pname, pdef in props.items():
+            ptype = pdef.get("type", "any")
+            opt = "" if pname in required else "?"
+            param_parts.append(f'"{pname}{opt}": {ptype}')
+        param_str = "{" + ", ".join(param_parts) + "}" if param_parts else "{}"
+
+        lines.append(f"- {name}: {desc}")
+        lines.append(f"  Parameters: {param_str}")
+    return "\n".join(lines)
+
+
+def _filter_command_tool_schemas(tools):
+    """Filter tool schemas to those exposable to command provider (MCP/A2A/skills)."""
+    return [
+        t
+        for t in tools
+        if t.get("function", {}).get("name", "").startswith(("mcp__", "a2a__"))
+        or t.get("function", {}).get("name") == "use_skill"
+    ]
+
+
+def _make_tool_call_obj(call_id, name, args_dict):
+    """Build a synthetic tool_call matching the shape handle_tool_call() expects."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        id=call_id,
+        function=SimpleNamespace(
+            name=name,
+            arguments=json.dumps(args_dict),
+        ),
+    )
 
 
 class _SyntheticMessage:
@@ -1724,6 +1906,25 @@ def _call_command(command_str, messages, verbose, max_output_tokens=None):
     if verbose:
         fmt.model_info(f"Running command: {command_str}")
 
+    response_text = _run_command_once(parts, transcript, verbose, command_str)
+
+    if max_output_tokens and max_output_tokens > 0:
+        from .tokens import truncate_to_tokens
+
+        response_text = truncate_to_tokens(response_text, max_output_tokens)
+
+    msg = _make_synthetic_message(response_text)
+    return msg, "stop"
+
+
+_COMMAND_TOOL_MAX_ROUNDS = 20
+
+
+def _run_command_once(parts, transcript, verbose, command_str):
+    """Run command subprocess and return (response_text, stderr_text).
+
+    Raises AgentError on failure.
+    """
     try:
         proc = subprocess.run(
             parts,
@@ -1750,13 +1951,104 @@ def _call_command(command_str, messages, verbose, max_output_tokens=None):
     if not response_text:
         raise AgentError("command provider returned empty output")
 
+    return response_text
+
+
+def _call_command_with_tools(
+    command_str,
+    messages,
+    handle_tool_call_kwargs,
+    outer_turn,
+    outer_turn_offset,
+    report,
+    snapshot_state,
+    verbose,
+    _emit,
+    max_output_tokens=None,
+):
+    """Run command provider with Swival tool-calling support.
+
+    The external agent uses <swival:call> XML blocks to request tool execution.
+    Swival parses them, dispatches via handle_tool_call(), and re-invokes the
+    command with updated transcript until the agent responds without tool calls.
+
+    Returns (synthetic_message, "stop", activity_summary).
+    activity_summary is a list of {"name": str, "succeeded": bool} dicts.
+    """
+    parts = shlex.split(command_str)
+    transcript_messages = list(messages)
+    consecutive_errors: dict[str, tuple[str, int]] = {}
+    tool_activity: list[dict] = []
+    response_text = ""
+
+    for _ in range(_COMMAND_TOOL_MAX_ROUNDS):
+        transcript = _render_transcript(transcript_messages)
+
+        if verbose:
+            fmt.model_info(f"Running command: {command_str}")
+
+        response_text = _run_command_once(parts, transcript, verbose, command_str)
+
+        calls = _parse_swival_calls(response_text)
+        if not calls:
+            break
+
+        transcript_messages.append({"role": "assistant", "content": response_text})
+
+        round_interventions: list[str] = []
+        for call_id, name, args in calls:
+            if "_parse_error" in args:
+                tool_msg = {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": f"error: invalid JSON in tool arguments: {args['_parse_error']}",
+                }
+                tool_meta = {
+                    "name": name,
+                    "arguments": None,
+                    "elapsed": 0.0,
+                    "succeeded": False,
+                }
+            else:
+                tc = _make_tool_call_obj(call_id, name, args)
+                _emit(EVENT_TOOL_START, {"name": name, "turn": outer_turn})
+                tool_msg, tool_meta = handle_tool_call(tc, **handle_tool_call_kwargs)
+
+            intv = _post_tool_bookkeeping(
+                tool_msg,
+                tool_meta,
+                outer_turn,
+                outer_turn_offset,
+                report,
+                snapshot_state,
+                consecutive_errors,
+                verbose,
+                _emit,
+            )
+            round_interventions.extend(intv)
+
+            tool_activity.append({"name": name, "succeeded": tool_meta["succeeded"]})
+
+            transcript_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": name,
+                    "content": tool_msg["content"],
+                }
+            )
+
+        if round_interventions:
+            transcript_messages.append(
+                {"role": "user", "content": "\n\n".join(round_interventions)}
+            )
+
     if max_output_tokens and max_output_tokens > 0:
         from .tokens import truncate_to_tokens
 
         response_text = truncate_to_tokens(response_text, max_output_tokens)
 
-    msg = _make_synthetic_message(response_text)
-    return msg, "stop"
+    return _make_synthetic_message(response_text), "stop", tool_activity
 
 
 def _model_supports_vision(model_str: str) -> bool | None:
@@ -1802,10 +2094,25 @@ def call_llm(
     sanitize_thinking=None,
     cache=None,
     secret_shield=None,
+    command_tool_kwargs=None,
 ):
-    """Call LiteLLM with the appropriate provider. Returns (message, finish_reason)."""
+    """Call LiteLLM with the appropriate provider.
+
+    Returns (message, finish_reason, cmd_activity).
+    cmd_activity is a list of {"name": str, "succeeded": bool} dicts
+    (non-empty only for command provider with tool calls).
+    """
     if provider == "command":
-        return _call_command(model_id, messages, verbose, max_output_tokens)
+        if command_tool_kwargs is not None:
+            return _call_command_with_tools(
+                model_id,
+                messages,
+                verbose=verbose,
+                max_output_tokens=max_output_tokens,
+                **command_tool_kwargs,
+            )
+        msg, stop = _call_command(model_id, messages, verbose, max_output_tokens)
+        return msg, stop, []
 
     # --- Outbound: encrypt secrets ---
     if secret_shield is not None:
@@ -1914,7 +2221,7 @@ def call_llm(
             # Note: cache is disabled when secret_shield is active, so no
             # decrypt needed here.  But guard defensively in case the logic
             # changes.
-            return msg, finish_reason
+            return msg, finish_reason, []
 
     def _cache_store(choice):
         if cache is not None:
@@ -1962,7 +2269,7 @@ def call_llm(
                 if sanitize_thinking:
                     _sanitize_assistant_message(choice.message)
                 _cache_store(choice)
-                return _decrypt_msg(choice.message), choice.finish_reason
+                return _decrypt_msg(choice.message), choice.finish_reason, []
         raise AgentError(f"LLM call failed: {e}")
     except Exception as e:
         msg_text = str(e)
@@ -1974,7 +2281,7 @@ def call_llm(
     if sanitize_thinking:
         _sanitize_assistant_message(choice.message)
     _cache_store(choice)
-    return _decrypt_msg(choice.message), choice.finish_reason
+    return _decrypt_msg(choice.message), choice.finish_reason, []
 
 
 # Provider → env var that resolve_provider() checks for that provider
@@ -3125,6 +3432,7 @@ def build_system_prompt(
     user_query: str | None = None,
     report: "ReportCollector | None" = None,
     provider: str | None = None,
+    command_tool_schemas: list | None = None,
 ) -> tuple[str | None, list[str]]:
     """Assemble full system prompt with instructions, date, skills, memory.
 
@@ -3139,6 +3447,24 @@ def build_system_prompt(
         system_content = system_prompt
     elif provider == "command":
         system_content = _COMMAND_PROVIDER_SYSTEM_PROMPT
+        if command_tool_schemas:
+            catalog = _render_swival_tool_catalog(command_tool_schemas)
+            system_content += (
+                "\n\n"
+                "In addition to your own tools, you have access to external tools "
+                "provided by the orchestrator. To call one, emit a block in your "
+                "response:\n\n"
+                '<swival:call id="UNIQUE_ID" name="tool_name">\n'
+                '{"param": "value"}\n'
+                "</swival:call>\n\n"
+                "Each call must have a unique id (e.g. c1, c2, c3). Do NOT use "
+                "your own tool-calling mechanism for these — they must appear as "
+                "literal text in your response. The orchestrator will execute them "
+                "and provide results in [swival_result] sections.\n\n"
+                "Continue working until you can give a final answer with no "
+                "<swival:call> blocks.\n\n"
+                "Available external tools:\n\n" + catalog
+            )
     else:
         system_content = DEFAULT_SYSTEM_PROMPT_FILE.read_text(encoding="utf-8")
         if not no_instructions:
@@ -3418,6 +3744,13 @@ def _run_main(args, report, _write_report, parser):
             stats = llm_cache.stats()
             fmt.info(f"Cache: {llm_cache.db_path} ({stats['entries']} entries)")
 
+    # Build list of tool schemas exposable to command provider (MCP/A2A/skills).
+    _command_tool_schemas = (
+        _filter_command_tool_schemas(tools) or None
+        if llm_kwargs.get("provider") == "command"
+        else None
+    )
+
     system_content, instructions_loaded = build_system_prompt(
         base_dir=base_dir,
         system_prompt=args.system_prompt,
@@ -3436,6 +3769,7 @@ def _run_main(args, report, _write_report, parser):
         user_query=getattr(args, "question", None),
         report=report,
         provider=llm_kwargs.get("provider"),
+        command_tool_schemas=_command_tool_schemas,
     )
     messages = []
     if system_content is not None:
@@ -3777,6 +4111,41 @@ def run_agent_loop(
             ]
     effective_tools = None if provider == "command" else tools
 
+    # Build command_tool_kwargs for command provider tool-calling support
+    _command_tool_schemas = (
+        _filter_command_tool_schemas(tools) if provider == "command" else []
+    )
+    if _command_tool_schemas:
+        _handle_tc_kwargs = dict(
+            base_dir=base_dir,
+            thinking_state=thinking_state,
+            verbose=verbose,
+            resolved_commands=resolved_commands,
+            skills_catalog=skills_catalog,
+            skill_read_roots=skill_read_roots,
+            extra_write_roots=extra_write_roots,
+            yolo=yolo,
+            file_tracker=file_tracker,
+            todo_state=todo_state,
+            snapshot_state=snapshot_state,
+            mcp_manager=mcp_manager,
+            a2a_manager=a2a_manager,
+            messages=None,  # inner loop manages its own transcript
+            image_stash=None,
+            scratch_dir=scratch_dir,
+        )
+        llm_kwargs = {
+            **llm_kwargs,
+            "command_tool_kwargs": {
+                "handle_tool_call_kwargs": _handle_tc_kwargs,
+                "outer_turn": 0,  # updated per-turn below
+                "outer_turn_offset": turn_offset,
+                "report": report,
+                "snapshot_state": snapshot_state,
+                "_emit": _emit,
+            },
+        }
+
     # Auto-inject skills when user mentions $skill-name.
     # Injected as a synthetic assistant tool_call + tool result pair so that
     # compaction can trim the skill body like any other tool output.
@@ -3899,12 +4268,16 @@ def run_agent_loop(
                 verbose,
             )
 
+            if "command_tool_kwargs" in llm_kwargs:
+                llm_kwargs["command_tool_kwargs"]["outer_turn"] = turns
             with (
                 fmt.llm_spinner(f"Waiting for LLM (turn {turns}/{max_turns})")
                 if verbose
                 else nullcontext()
             ):
-                msg, finish_reason = call_llm(*_llm_args, **llm_kwargs)
+                _llm_result = call_llm(*_llm_args, **llm_kwargs)
+                msg, finish_reason = _llm_result[0], _llm_result[1]
+                cmd_activity = _llm_result[2] if len(_llm_result) > 2 else []
         except ContextOverflowError:
             elapsed = time.monotonic() - t0
             if report:
@@ -3986,6 +4359,8 @@ def run_agent_loop(
                     verbose,
                 )
                 t0 = time.monotonic()
+                if "command_tool_kwargs" in llm_kwargs:
+                    llm_kwargs["command_tool_kwargs"]["outer_turn"] = turns
                 try:
                     with (
                         fmt.llm_spinner(
@@ -3994,7 +4369,9 @@ def run_agent_loop(
                         if verbose
                         else nullcontext()
                     ):
-                        msg, finish_reason = call_llm(*_llm_args, **llm_kwargs)
+                        _llm_result = call_llm(*_llm_args, **llm_kwargs)
+                        msg, finish_reason = _llm_result[0], _llm_result[1]
+                        cmd_activity = _llm_result[2] if len(_llm_result) > 2 else []
                 except ContextOverflowError:
                     elapsed = time.monotonic() - t0
                     if report:
@@ -4140,6 +4517,21 @@ def run_agent_loop(
                 )
                 continue
             # Model produced a final text answer
+            if cmd_activity:
+                lines = [
+                    f"  - {a['name']}: {'ok' if a['succeeded'] else 'error'}"
+                    for a in cmd_activity
+                ]
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            _COMMAND_TOOL_CONTEXT_PREFIX
+                            + " external tool calls made during "
+                            "the previous response:\n" + "\n".join(lines) + "\n]"
+                        ),
+                    }
+                )
             if verbose:
                 fmt.completion(turns, "ok")
                 _show_state_summaries(thinking_state, todo_state, snapshot_state)
@@ -4180,35 +4572,18 @@ def run_agent_loop(
             )
             messages.append(tool_msg)
 
-            if tool_meta["succeeded"]:
-                _emit(
-                    EVENT_TOOL_FINISH,
-                    {
-                        "name": tool_meta["name"],
-                        "turn": turns,
-                        "elapsed": tool_meta["elapsed"],
-                    },
-                )
-            else:
-                _emit(
-                    EVENT_TOOL_ERROR,
-                    {
-                        "name": tool_meta["name"],
-                        "turn": turns,
-                        "error": tool_msg["content"][:500],
-                    },
-                )
-
-            if report:
-                report.record_tool_call(
-                    turns + turn_offset,
-                    tool_meta["name"],
-                    tool_meta["arguments"],
-                    tool_meta["succeeded"],
-                    tool_meta["elapsed"],
-                    len(tool_msg["content"]),
-                    error=tool_msg["content"] if not tool_meta["succeeded"] else None,
-                )
+            bk_interventions = _post_tool_bookkeeping(
+                tool_msg,
+                tool_meta,
+                turns,
+                turn_offset,
+                report,
+                snapshot_state,
+                consecutive_errors,
+                verbose,
+                _emit,
+            )
+            interventions.extend(bk_interventions)
 
             tool_name = tool_meta["name"]
             if tool_name == "think":
@@ -4217,43 +4592,8 @@ def run_agent_loop(
                 todo_last_used = turns
 
             if snapshot_state is not None:
-                snapshot_state.mark_dirty(tool_name)
                 if tool_name not in READ_ONLY_TOOLS:
                     all_tools_readonly = False
-
-            result = tool_msg["content"]
-            if result.startswith("error:"):
-                canonical_error = _canonical_error(result)
-                prev_error, prev_count = consecutive_errors.get(tool_name, ("", 0))
-                if canonical_error == prev_error:
-                    count = prev_count + 1
-                else:
-                    count = 1
-                consecutive_errors[tool_name] = (canonical_error, count)
-
-                if count >= 2:
-                    if count >= 3:
-                        level = "stop"
-                        interventions.append(
-                            f"STOP: You have failed to use `{tool_name}` correctly {count} times in a row "
-                            "with the same error. Do NOT call "
-                            f"`{tool_name}` again with the same arguments. "
-                            "Either fix the arguments or use a completely different approach to accomplish your task."
-                        )
-                    else:
-                        level = "nudge"
-                        interventions.append(
-                            f"IMPORTANT: You have called `{tool_name}` {count} times with the same error. "
-                            f"The error is: {canonical_error}\n"
-                            "Please carefully re-read the error message and fix your tool call. "
-                            "If you cannot use this tool correctly, use a different approach."
-                        )
-                    if report:
-                        report.record_guardrail(turns + turn_offset, tool_name, level)
-                    if verbose:
-                        fmt.guardrail(tool_name, count, canonical_error)
-            else:
-                consecutive_errors.pop(tool_name, None)
         # Think nudge: if model used edit_file/write_file without thinking first
         if not think_used and not think_nudge_fired:
             has_mutating = any(

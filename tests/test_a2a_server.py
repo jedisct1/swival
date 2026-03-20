@@ -1186,8 +1186,8 @@ class TestCancelMidToolBatch:
                 )
                 # Set cancel flag — it should be checked before tc2
                 cancel.set()
-                return _make_msg(tool_calls=[tc1, tc2]), "tool_calls"
-            return _make_msg(content="done"), "stop"
+                return _make_msg(tool_calls=[tc1, tc2]), "tool_calls", []
+            return _make_msg(content="done"), "stop", []
 
         monkeypatch.setattr("swival.agent.call_llm", fake_call_llm)
 

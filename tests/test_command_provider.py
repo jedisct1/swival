@@ -7,9 +7,14 @@ import pytest
 from swival.agent import (
     _render_transcript,
     _make_synthetic_message,
+    _parse_swival_calls,
+    _render_swival_tool_catalog,
+    _COMMAND_TOOL_CONTEXT_PREFIX,
     build_system_prompt,
     call_llm,
+    is_pinned,
     resolve_provider,
+    SYNTHETIC_USER_PREFIXES,
 )
 from swival.config import _resolve_command_model
 from swival.report import AgentError, ConfigError
@@ -64,7 +69,7 @@ class TestResolveCommand:
 
 class TestCallCommand:
     def test_simple_echo(self):
-        msg, reason = call_llm(
+        msg, reason, _ = call_llm(
             None,
             "echo 'hello world'",
             [{"role": "user", "content": "hi"}],
@@ -81,7 +86,7 @@ class TestCallCommand:
         assert reason == "stop"
 
     def test_receives_full_transcript_on_stdin(self):
-        msg, _ = call_llm(
+        msg, _, _ = call_llm(
             None,
             "cat",
             [
@@ -102,7 +107,7 @@ class TestCallCommand:
         assert "test input" in msg.content
 
     def test_model_dump_exclude_none(self):
-        msg, _ = call_llm(
+        msg, _, _ = call_llm(
             None,
             "echo ok",
             [{"role": "user", "content": "hi"}],
@@ -119,7 +124,7 @@ class TestCallCommand:
         assert "tool_calls" not in dumped
 
     def test_model_dump_full(self):
-        msg, _ = call_llm(
+        msg, _, _ = call_llm(
             None,
             "echo ok",
             [{"role": "user", "content": "hi"}],
@@ -185,7 +190,7 @@ class TestCallCommand:
 
     def test_max_output_tokens_truncates(self):
         # "echo" produces a short output; use a script that generates many tokens
-        msg, _ = call_llm(
+        msg, _, _ = call_llm(
             None,
             "echo 'word ' 'word ' 'word ' 'word ' 'word ' 'word ' 'word ' 'word ' 'word ' 'word '",
             [{"role": "user", "content": "hi"}],
@@ -207,7 +212,7 @@ class TestCallCommand:
         script = tmp_path / "warn.sh"
         script.write_text("#!/bin/sh\necho 'result'\necho 'warning' >&2")
         script.chmod(0o755)
-        msg, _ = call_llm(
+        msg, _, _ = call_llm(
             None,
             str(script),
             [{"role": "user", "content": "hi"}],
@@ -496,3 +501,275 @@ class TestCommandSystemPrompt:
             provider="command",
         )
         assert "mcp_tool" not in content
+
+
+# ---------------------------------------------------------------------------
+# _parse_swival_calls
+# ---------------------------------------------------------------------------
+
+
+class TestParseSwivalCalls:
+    def test_basic_call(self):
+        text = """I'll query the database.
+<swival:call id="c1" name="mcp__db__query">
+{"sql": "SELECT 1"}
+</swival:call>
+"""
+        calls = _parse_swival_calls(text)
+        assert len(calls) == 1
+        assert calls[0] == ("c1", "mcp__db__query", {"sql": "SELECT 1"})
+
+    def test_reversed_attribute_order(self):
+        text = '<swival:call name="mcp__db__query" id="c1">{"sql": "SELECT 1"}</swival:call>'
+        calls = _parse_swival_calls(text)
+        assert len(calls) == 1
+        assert calls[0][0] == "c1"
+        assert calls[0][1] == "mcp__db__query"
+
+    def test_extra_attributes_ignored(self):
+        text = '<swival:call id="c1" name="tool" priority="high">{"a": 1}</swival:call>'
+        calls = _parse_swival_calls(text)
+        assert len(calls) == 1
+        assert calls[0] == ("c1", "tool", {"a": 1})
+
+    def test_multiple_calls(self):
+        text = """
+<swival:call id="c1" name="t1">{"x": 1}</swival:call>
+Some reasoning text.
+<swival:call id="c2" name="t2">{"y": 2}</swival:call>
+"""
+        calls = _parse_swival_calls(text)
+        assert len(calls) == 2
+        assert calls[0][0] == "c1"
+        assert calls[1][0] == "c2"
+
+    def test_missing_id_skipped(self):
+        text = '<swival:call name="tool">{"a": 1}</swival:call>'
+        calls = _parse_swival_calls(text)
+        assert len(calls) == 0
+
+    def test_missing_name_skipped(self):
+        text = '<swival:call id="c1">{"a": 1}</swival:call>'
+        calls = _parse_swival_calls(text)
+        assert len(calls) == 0
+
+    def test_malformed_json_returns_parse_error(self):
+        text = '<swival:call id="c1" name="tool">{bad json}</swival:call>'
+        calls = _parse_swival_calls(text)
+        assert len(calls) == 1
+        assert calls[0][0] == "c1"
+        assert calls[0][1] == "tool"
+        assert "_parse_error" in calls[0][2]
+
+    def test_no_calls_returns_empty(self):
+        text = "Just some plain text response with no tool calls."
+        calls = _parse_swival_calls(text)
+        assert calls == []
+
+    def test_extra_whitespace_in_tag(self):
+        text = '<swival:call  id="c1"  name="tool" >{"a": 1}</swival:call>'
+        calls = _parse_swival_calls(text)
+        assert len(calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# _render_swival_tool_catalog
+# ---------------------------------------------------------------------------
+
+
+class TestRenderSwivalToolCatalog:
+    def test_basic_catalog(self):
+        schemas = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "mcp__db__query",
+                    "description": "Run a SQL query.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"sql": {"type": "string"}},
+                        "required": ["sql"],
+                    },
+                },
+            }
+        ]
+        result = _render_swival_tool_catalog(schemas)
+        assert "mcp__db__query" in result
+        assert "Run a SQL query." in result
+        assert '"sql": string' in result
+
+    def test_optional_params(self):
+        schemas = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "test_tool",
+                    "description": "A test.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "a": {"type": "string"},
+                            "b": {"type": "integer"},
+                        },
+                        "required": ["a"],
+                    },
+                },
+            }
+        ]
+        result = _render_swival_tool_catalog(schemas)
+        assert '"a": string' in result
+        assert '"b?": integer' in result
+
+
+# ---------------------------------------------------------------------------
+# _render_transcript with swival_result messages
+# ---------------------------------------------------------------------------
+
+
+class TestRenderTranscriptSwivalResult:
+    def test_swival_result_rendering(self):
+        messages = [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "let me check"},
+            {
+                "role": "tool",
+                "tool_call_id": "c1",
+                "name": "mcp__db__query",
+                "content": '[{"count": 42}]',
+            },
+        ]
+        transcript = _render_transcript(messages)
+        assert '[swival_result id="c1" name="mcp__db__query"]' in transcript
+        assert '[{"count": 42}]' in transcript
+
+    def test_a2a_result_rendering(self):
+        messages = [
+            {"role": "user", "content": "hello"},
+            {
+                "role": "tool",
+                "tool_call_id": "c2",
+                "name": "a2a__agent__ask",
+                "content": "agent response",
+            },
+        ]
+        transcript = _render_transcript(messages)
+        assert '[swival_result id="c2" name="a2a__agent__ask"]' in transcript
+
+    def test_use_skill_result_rendering(self):
+        messages = [
+            {"role": "user", "content": "hello"},
+            {
+                "role": "tool",
+                "tool_call_id": "c3",
+                "name": "use_skill",
+                "content": "skill output",
+            },
+        ]
+        transcript = _render_transcript(messages)
+        assert '[swival_result id="c3" name="use_skill"]' in transcript
+
+    def test_regular_tool_still_uses_old_format(self):
+        """Non-swival tools should still render as [tool:name]."""
+        import types
+
+        tc = types.SimpleNamespace(
+            id="tc1",
+            function=types.SimpleNamespace(name="read_file", arguments="{}"),
+        )
+        messages = [
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [tc],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "tc1",
+                "content": "file content",
+            },
+        ]
+        transcript = _render_transcript(messages)
+        assert "[tool:read_file]" in transcript
+        assert "swival_result" not in transcript
+
+
+# ---------------------------------------------------------------------------
+# is_pinned / SYNTHETIC_USER_PREFIXES
+# ---------------------------------------------------------------------------
+
+
+class TestCommandToolContextPrefix:
+    def test_prefix_in_synthetic_user_prefixes(self):
+        assert _COMMAND_TOOL_CONTEXT_PREFIX in SYNTHETIC_USER_PREFIXES
+
+    def test_is_pinned_returns_false_for_context_message(self):
+        turn = [
+            {
+                "role": "user",
+                "content": (
+                    _COMMAND_TOOL_CONTEXT_PREFIX + " external tool calls made during "
+                    "the previous response:\n  - mcp__db__query: ok\n]"
+                ),
+            }
+        ]
+        assert is_pinned(turn) is False
+
+    def test_is_pinned_returns_true_for_real_user(self):
+        turn = [{"role": "user", "content": "Fix the bug in main.py"}]
+        assert is_pinned(turn) is True
+
+
+# ---------------------------------------------------------------------------
+# build_system_prompt with command_tool_schemas
+# ---------------------------------------------------------------------------
+
+
+class TestCommandProviderToolCatalog:
+    def test_catalog_injected_when_schemas_present(self, tmp_path):
+        schemas = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "mcp__db__query",
+                    "description": "Run SQL.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"sql": {"type": "string"}},
+                        "required": ["sql"],
+                    },
+                },
+            }
+        ]
+        content, _ = build_system_prompt(
+            base_dir=str(tmp_path),
+            system_prompt=None,
+            no_system_prompt=False,
+            no_instructions=True,
+            no_memory=True,
+            skills_catalog={},
+            yolo=False,
+            resolved_commands={},
+            verbose=False,
+            provider="command",
+            command_tool_schemas=schemas,
+        )
+        assert "swival:call" in content
+        assert "mcp__db__query" in content
+        assert "Run SQL." in content
+        assert "UNIQUE_ID" in content
+
+    def test_no_catalog_when_no_schemas(self, tmp_path):
+        content, _ = build_system_prompt(
+            base_dir=str(tmp_path),
+            system_prompt=None,
+            no_system_prompt=False,
+            no_instructions=True,
+            no_memory=True,
+            skills_catalog={},
+            yolo=False,
+            resolved_commands={},
+            verbose=False,
+            provider="command",
+            command_tool_schemas=None,
+        )
+        assert "swival:call" not in content

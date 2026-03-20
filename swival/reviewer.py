@@ -162,7 +162,7 @@ def run_as_reviewer(args, base_dir: str) -> int:
         extra_kwargs = {}
         if secret_shield is not None:
             extra_kwargs["secret_shield"] = secret_shield
-        msg, finish_reason = call_llm(
+        _llm_result = call_llm(
             api_base,
             model_id,
             messages,
@@ -176,6 +176,7 @@ def run_as_reviewer(args, base_dir: str) -> int:
             api_key=api_key,
             **extra_kwargs,
         )
+        msg = _llm_result[0]
     except AgentError as e:
         print(f"reviewer error: LLM call failed: {e}", file=sys.stderr)
         if secret_shield is not None:
