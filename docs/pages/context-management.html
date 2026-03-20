@@ -102,7 +102,7 @@
 <h3 id="nudges">Nudges</h3>
 <p>After 5 consecutive turns of read-only work (reading files, grepping, thinking), Swival nudges the agent to consider using <code>snapshot restore</code> to compress its investigation. The nudge fires once per read streak and doesn't repeat until the agent breaks the streak with a non-read operation.</p>
 <h2 id="reactive-compaction">Reactive Compaction</h2>
-<p>When the context overflows — either detected before the LLM call or reported by the provider afterward — Swival runs up to three compaction levels in sequence.</p>
+<p>When the context overflows — either detected before the LLM call or reported by the provider afterward — Swival runs up to four compaction levels in sequence.</p>
 <h3 id="level-1-shrink-tool-results">Level 1: Shrink Tool Results</h3>
 <p>The gentlest approach. Old tool results (everything except the two most recent turns) are replaced with structured summaries. A file read becomes <code>[read_file: path, N lines — content compacted]</code>. A batched read becomes <code>[read_multiple_files: path1, path2, …, N chars — compacted]</code>. A grep becomes <code>[grep: 'pattern' in path, ~N matches — compacted]</code>. Command output keeps its first and last 200 characters.</p>
 <p>The agent retains all its turns and the structure of what it did. It loses the detailed content but keeps the metadata.</p>
@@ -119,7 +119,10 @@
 <h3 id="level-3-nuclear-drop">Level 3: Nuclear Drop</h3>
 <p>Last resort. Everything in the middle is dropped — including user messages. Only the system prompt, a summary of what was lost, and the last two turns survive.</p>
 <p>If the LLM summary fails, Swival falls back to checkpoint summaries (if proactive summaries are enabled) or a static splice marker.</p>
-<p>After any compaction level, the agent retries the LLM call. If all three levels fail to free enough space, the run is aborted with an error.</p>
+<p>After any compaction level, the agent retries the LLM call.</p>
+<h3 id="level-4-drop-tools">Level 4: Drop Tools</h3>
+<p>If all three message compaction levels fail — typically on models with very small context windows (4K or less) — Swival drops all tool schemas from the request and truncates the system prompt to fit the remaining budget. The model loses its ability to call tools and becomes a plain chatbot, but it can at least produce a text answer instead of aborting.</p>
+<p>If even this fails, the run is aborted with an error.</p>
 <h2 id="knowledge-survival">Knowledge Survival</h2>
 <p>The most important design principle: critical state must survive compaction. Three mechanisms ensure this.</p>
 <h3 id="thinking-state">Thinking State</h3>

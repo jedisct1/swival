@@ -68,7 +68,7 @@ After 5 consecutive turns of read-only work (reading files, grepping, thinking),
 
 ## Reactive Compaction
 
-When the context overflows — either detected before the LLM call or reported by the provider afterward — Swival runs up to three compaction levels in sequence.
+When the context overflows — either detected before the LLM call or reported by the provider afterward — Swival runs up to four compaction levels in sequence.
 
 ### Level 1: Shrink Tool Results
 
@@ -95,7 +95,13 @@ Last resort. Everything in the middle is dropped — including user messages. On
 
 If the LLM summary fails, Swival falls back to checkpoint summaries (if proactive summaries are enabled) or a static splice marker.
 
-After any compaction level, the agent retries the LLM call. If all three levels fail to free enough space, the run is aborted with an error.
+After any compaction level, the agent retries the LLM call.
+
+### Level 4: Drop Tools
+
+If all three message compaction levels fail — typically on models with very small context windows (4K or less) — Swival drops all tool schemas from the request and truncates the system prompt to fit the remaining budget. The model loses its ability to call tools and becomes a plain chatbot, but it can at least produce a text answer instead of aborting.
+
+If even this fails, the run is aborted with an error.
 
 ## Knowledge Survival
 
