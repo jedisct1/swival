@@ -130,7 +130,6 @@ class TestSessionRunPolicy:
         monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
 
         captured = {}
-        _original_run_agent_loop = agent.run_agent_loop
 
         def capturing_run_agent_loop(messages, *args, **kwargs):
             captured["system"] = messages[0]["content"]
