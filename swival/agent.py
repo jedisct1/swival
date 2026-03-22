@@ -3,6 +3,7 @@ from contextlib import nullcontext
 import copy
 from datetime import datetime
 import json
+from typing import Literal
 import os
 import re
 import shutil
@@ -3413,6 +3414,58 @@ _COMMAND_PROVIDER_SYSTEM_PROMPT = (
     "You are a helpful assistant. Answer the user's question directly and concisely."
 )
 
+# ---------------------------------------------------------------------------
+# Interaction-policy directives
+# ---------------------------------------------------------------------------
+# Substituted into system_prompt.txt placeholders {{AUTONOMY_DIRECTIVE}} and
+# {{AMBIGUITY_DIRECTIVE}}.  The sentinels use double-brace + SCREAMING_SNAKE
+# to minimise accidental collision with user instructions or memory text.
+# If they *do* appear in injected content the .replace() will still fire —
+# an acknowledged edge case considered acceptable given the sentinel style.
+
+_InteractionPolicy = Literal["autonomous", "interactive"]
+
+_AUTONOMY_DIRECTIVES: dict[_InteractionPolicy, str] = {
+    "autonomous": (
+        "You solve tasks autonomously using the tools provided. "
+        "Keep going until the task is fully complete \u2014 do not stop to ask for "
+        'confirmation or clarification. Never ask "should I continue?" \u2014 just '
+        "continue. If the task is ambiguous, use `think` to reason through the "
+        "possible interpretations against the codebase context, pick the most "
+        "likely intent, and briefly state your choice before acting."
+    ),
+    "interactive": (
+        "You solve tasks using the tools provided. Keep going until the task is "
+        "fully complete. If a request is genuinely ambiguous and you cannot "
+        "determine the intent from codebase context, briefly ask the user to "
+        "clarify before acting. For straightforward tasks, act without asking. "
+        'Never ask "should I continue?" mid-task \u2014 just continue.'
+    ),
+}
+
+_AMBIGUITY_DIRECTIVES: dict[_InteractionPolicy, str] = {
+    "autonomous": (
+        "- If the task is ambiguous, use `think` to reason through the possible "
+        "interpretations against the codebase context, pick the most likely intent, "
+        "and briefly state your choice before acting."
+    ),
+    "interactive": (
+        "- If the task is genuinely ambiguous, ask the user a brief clarifying "
+        "question. For minor ambiguities, pick the most likely intent and state "
+        "your choice."
+    ),
+}
+
+
+def _apply_interaction_policy(
+    system_content: str,
+    policy: _InteractionPolicy,
+) -> str:
+    """Replace autonomy placeholders with policy-specific directives."""
+    return system_content.replace(
+        "{{AUTONOMY_DIRECTIVE}}", _AUTONOMY_DIRECTIVES[policy]
+    ).replace("{{AMBIGUITY_DIRECTIVE}}", _AMBIGUITY_DIRECTIVES[policy])
+
 
 def build_system_prompt(
     base_dir: str,
@@ -3771,6 +3824,9 @@ def _run_main(args, report, _write_report, parser):
         provider=llm_kwargs.get("provider"),
         command_tool_schemas=_command_tool_schemas,
     )
+    policy: _InteractionPolicy = "interactive" if args.repl else "autonomous"
+    if system_content is not None:
+        system_content = _apply_interaction_policy(system_content, policy)
     messages = []
     if system_content is not None:
         messages.append({"role": "system", "content": system_content})

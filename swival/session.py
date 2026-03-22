@@ -4,6 +4,7 @@ import copy
 from dataclasses import dataclass
 from pathlib import Path
 
+from .agent import _InteractionPolicy, _apply_interaction_policy
 from .report import ConfigError, ReportCollector
 from .snapshot import SnapshotState
 from .thinking import ThinkingState
@@ -327,28 +328,32 @@ class Session:
         self,
         question: str,
         report: "ReportCollector | None" = None,
+        policy: "_InteractionPolicy" = "autonomous",
     ) -> str | None:
-        """Return system content with memory injected, keyed from *question*."""
+        """Return system content with memory and interaction policy applied."""
         if self._system_content is None:
             return None
-        if not self.memory:
-            return self._system_content
-        # Custom system_prompt skips memory (same logic as build_system_prompt)
-        if self.system_prompt:
-            return self._system_content
 
-        from .agent import load_memory
+        result = self._system_content
 
-        memory_text = load_memory(
-            self.base_dir,
-            verbose=self.verbose,
-            memory_full=self.memory_full,
-            user_query=question,
-            report=report,
-        )
-        if memory_text:
-            return self._system_content + "\n\n" + memory_text
-        return self._system_content
+        # Inject memory (skipped for custom prompts and when memory is disabled)
+        if self.memory and not self.system_prompt:
+            from .agent import load_memory
+
+            memory_text = load_memory(
+                self.base_dir,
+                verbose=self.verbose,
+                memory_full=self.memory_full,
+                user_query=question,
+                report=report,
+            )
+            if memory_text:
+                result = result + "\n\n" + memory_text
+
+        # Substitute interaction-policy placeholders
+        result = _apply_interaction_policy(result, policy)
+
+        return result
 
     def _make_initial_messages(
         self,
@@ -476,7 +481,7 @@ class Session:
         from .agent import run_agent_loop, append_history
 
         if self._conv_state is None:
-            system_content = self._system_with_memory(question)
+            system_content = self._system_with_memory(question, policy="interactive")
             self._conv_state = self._make_per_run_state(system_content=system_content)
 
         state = self._conv_state
