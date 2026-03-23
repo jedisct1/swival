@@ -2,6 +2,15 @@
 
 All notable user-facing changes to Swival.
 
+## 0.1.34
+
+- `/init` now discovers workflow files and validates the generated instructions
+  by writing them out and checking the result.
+- Transient LLM errors (rate limits, timeouts, server errors) are now retried
+  automatically with exponential backoff.
+- An interaction-policy system prompt has been added to distinguish REPL and
+  autonomous modes, giving the model clearer behavioral guidance for each.
+
 ## 0.1.33
 
 - Updated ChangeLog
