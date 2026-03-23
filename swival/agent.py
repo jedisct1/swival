@@ -1201,6 +1201,7 @@ def _get_recent_turns(messages: list, n: int) -> list[list]:
 
 
 MIN_OUTPUT_TOKENS = 16  # Minimum accepted by most LLM APIs
+_CUSTOM_CMD_OUTPUT_CAP = 100_000  # Byte cap when context_length is unknown
 
 
 def clamp_output_tokens(
@@ -5156,6 +5157,115 @@ def run_agent_loop(
 # ---------------------------------------------------------------------------
 
 
+def _repl_run_custom_command(
+    line: str, base_dir: str, *, model_id: str = ""
+) -> tuple[str, str] | None:
+    """Look up and run a custom command from the user's commands directory.
+
+    *line* starts with ``!``.  Returns ``(cmd_name, stdout_text)`` on success,
+    or ``None`` if the command could not be run (errors printed to stderr).
+    """
+    from .config import global_config_dir
+
+    raw = line[1:]
+    try:
+        parts = shlex.split(raw)
+    except ValueError as exc:
+        fmt.error(f"failed to parse command: {exc}")
+        return None
+    if not parts:
+        return None
+
+    cmd_name = parts[0]
+    args = parts[1:]
+
+    if not re.fullmatch(r"[a-zA-Z0-9_-]+", cmd_name):
+        fmt.error(f"invalid command name: {cmd_name!r}")
+        return None
+
+    commands_dir = global_config_dir() / "commands"
+    if not commands_dir.is_dir():
+        fmt.error(f"no commands directory at {commands_dir}")
+        return None
+
+    cmd_path = commands_dir / cmd_name
+    if not cmd_path.is_file():
+        fmt.error(f"command not found: {cmd_name}")
+        return None
+    if not os.access(cmd_path, os.X_OK):
+        fmt.error(f"command not executable: {cmd_name}")
+        return None
+
+    env = None
+    if model_id:
+        env = {**os.environ, "SWIVAL_MODEL": model_id}
+
+    try:
+        proc = subprocess.run(
+            [str(cmd_path), base_dir, *args],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=base_dir,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        fmt.error(f"command timed out after 30s: {cmd_name}")
+        return None
+    except OSError as exc:
+        fmt.error(f"failed to start command {cmd_name}: {exc}")
+        return None
+
+    if proc.returncode != 0:
+        error_text = (
+            proc.stderr.strip() or proc.stdout.strip() or f"exit code {proc.returncode}"
+        )
+        fmt.error(f"command failed: {error_text}")
+        return None
+
+    if proc.stderr:
+        print(proc.stderr, end="", file=sys.stderr)
+
+    stdout = proc.stdout.strip()
+    if not stdout:
+        fmt.info("command produced no output, skipping.")
+        return None
+
+    return cmd_name, stdout
+
+
+def _truncate_for_context(
+    text: str,
+    messages: list,
+    tools: list,
+    context_length: int | None,
+) -> str | None:
+    """Truncate *text* to fit in remaining context, or return None to skip."""
+    from .tokens import count_tokens, truncate_to_tokens
+
+    if context_length is None:
+        encoded = text.encode()
+        if len(encoded) > _CUSTOM_CMD_OUTPUT_CAP:
+            text = encoded[:_CUSTOM_CMD_OUTPUT_CAP].decode(errors="ignore")
+            fmt.warning("command output truncated to 100KB (unknown context length).")
+        return text
+
+    current_cost = estimate_tokens(messages, tools)
+    budget = (
+        context_length - current_cost - MIN_OUTPUT_TOKENS - 4
+    )  # 4 = per-message overhead
+    if budget <= 0:
+        fmt.warning("not enough context headroom to inject command output.")
+        return None
+
+    tok_count = count_tokens(text)
+    if tok_count > budget:
+        text = truncate_to_tokens(text, budget)
+        fmt.warning("command output truncated to fit context window.")
+
+    return text
+
+
 def _repl_help() -> None:
     """Print available REPL commands."""
     fmt.info(
@@ -5174,7 +5284,9 @@ def _repl_help() -> None:
         "  /learn             Review session for mistakes and persist to memory\n"
         "  /tools             List all available tools\n"
         "  /init              Scan project for build/test/lint workflow and conventions, write AGENTS.md\n"
-        "  /exit, /quit       Exit the REPL"
+        "  /exit, /quit       Exit the REPL\n"
+        "\n"
+        "  !command [args]    Run <config_dir>/commands/command; output becomes your next prompt"
     )
 
 
@@ -5527,6 +5639,50 @@ def repl_loop(
 
         line = line.strip()
         if not line:
+            continue
+
+        if line.startswith("!") and len(line) > 1 and not line[1:].startswith(" "):
+            result = _repl_run_custom_command(line, base_dir, model_id=model_id)
+            if result is None:
+                continue
+            cmd_name, prompt_content = result
+            prompt_content = _truncate_for_context(
+                prompt_content, messages, tools, context_length
+            )
+            if prompt_content is None:
+                continue
+
+            messages.append({"role": "user", "content": prompt_content})
+            try:
+                answer, exhausted = run_agent_loop(
+                    messages,
+                    tools,
+                    max_turns=turn_state["max_turns"],
+                    **_repl_loop_kwargs,
+                )
+            except KeyboardInterrupt:
+                fmt.warning("interrupted, question aborted.")
+                if continue_here:
+                    from .continue_here import write_continue_file
+
+                    write_continue_file(
+                        base_dir,
+                        messages,
+                        todo_state=todo_state,
+                        snapshot_state=snapshot_state,
+                        thinking_state=thinking_state,
+                    )
+                continue
+
+            history_label = f"[!{cmd_name}] {line}"
+            if not no_history and answer:
+                append_history(base_dir, history_label, answer, diagnostics=verbose)
+            if answer is not None:
+                print(answer)
+            if exhausted and verbose:
+                fmt.warning(
+                    "max turns reached for this question. Use /continue to resume."
+                )
             continue
 
         # REPL commands — only intercept known commands; unknown /foo passes through

@@ -80,6 +80,11 @@ NAV = [
                 "Connecting to remote agents via the Agent-to-Agent protocol",
             ),
             (
+                "custom-commands",
+                "Custom Commands",
+                "Run external scripts from the REPL and inject their output into the conversation",
+            ),
+            (
                 "customization",
                 "Customization",
                 "Config files, project instructions, system prompt overrides, tuning parameters",

@@ -79,6 +79,8 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 
 `/exit` and `/quit` leave the REPL. Pressing `Ctrl-D` exits as well.
 
+`!command [args]` runs an executable from your commands directory (`$XDG_CONFIG_HOME/swival/commands/` or `~/.config/swival/commands/`) and injects its stdout as the next user message. See [Custom Commands](custom-commands.md) for setup and details.
+
 ## CLI Flags
 
 `swival --help` uses the same grouping below and ends with copy-paste examples.

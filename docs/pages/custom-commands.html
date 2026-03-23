@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Custom Commands — Swival</title>
+    <meta name="description" content="Custom Commands — Swival documentation">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Custom Commands — Swival">
+    <meta property="og:description" content="Custom Commands — Swival documentation">
+    <meta property="og:image" content="https://swival.dev/img/logo.png">
+    <meta property="og:url" content="https://swival.dev/pages/custom-commands.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Custom Commands — Swival">
+    <meta name="twitter:description" content="Custom Commands — Swival documentation">
+    <meta name="twitter:image" content="https://swival.dev/img/logo.png">
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="../" class="header-logo">
+                <img src="../img/logo.png" alt="Swival">
+            </a>
+            <nav class="header-nav">
+                <a href="./">Docs</a>
+                <a href="https://github.com/swival/swival">GitHub</a>
+            </nav>
+        </div>
+    </header>
+    <div class="docs-layout">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+<h4>Basics</h4>
+<ul>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="usage.html">Usage</a></li>
+<li><a href="tools.html">Tools</a></li>
+<li><a href="context-management.html">Context Management</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Configuration & Deployment</h4>
+<ul>
+<li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
+<li><a href="secrets.html">Secret Encryption</a></li>
+<li><a href="skills.html">Skills</a></li>
+<li><a href="web-browsing.html">Web Browsing</a></li>
+<li><a href="mcp.html">MCP</a></li>
+<li><a href="a2a.html">A2A</a></li>
+<li><a href="custom-commands.html" class="active">Custom Commands</a></li>
+<li><a href="customization.html">Customization</a></li>
+<li><a href="providers.html">Providers</a></li>
+<li><a href="reports.html">Reports</a></li>
+<li><a href="reviews.html">Reviews</a></li>
+<li><a href="agentfs.html">AgentFS</a></li>
+</ul>
+</div>
+        </aside>
+        <article class="docs-content">
+            <h1 id="custom-commands">Custom Commands</h1>
+<p>Custom commands let you run external scripts from the REPL and feed their output into the conversation. Type <code>!name</code> and Swival looks up an executable called <code>name</code> in your commands directory, runs it, and injects its stdout as the next user message.</p>
+<h2 id="setup">Setup</h2>
+<p>Create the commands directory and add executable scripts:</p>
+<pre><code class="language-sh">mkdir -p ~/.config/swival/commands
+</code></pre>
+<p>If you set <code>XDG_CONFIG_HOME</code>, the directory is <code>$XDG_CONFIG_HOME/swival/commands</code> instead.</p>
+<p>Each file in this directory is a command. The file must be executable and its name must contain only letters, digits, hyphens, and underscores.</p>
+<pre><code class="language-sh">cat &gt; ~/.config/swival/commands/context &lt;&lt;'EOF'
+#!/bin/sh
+base_dir=&quot;$1&quot;
+cd &quot;$base_dir&quot;
+echo &quot;## Git status&quot;
+git status --short
+echo &quot;## Recent commits&quot;
+git log --oneline -5
+EOF
+chmod +x ~/.config/swival/commands/context
+</code></pre>
+<h2 id="usage">Usage</h2>
+<p>In the REPL, prefix the command name with <code>!</code>:</p>
+<pre><code class="language-text">swival&gt; !context
+</code></pre>
+<p>This runs the <code>context</code> script and sends its stdout to the model as if you had typed it. Additional arguments are passed through:</p>
+<pre><code class="language-text">swival&gt; !context --all
+</code></pre>
+<p>Quoted arguments are handled correctly:</p>
+<pre><code class="language-text">swival&gt; !deploy &quot;staging environment&quot; --dry-run
+</code></pre>
+<h2 id="how-commands-are-called">How Commands Are Called</h2>
+<p>The command receives <code>base_dir</code> (the project root) as its first positional argument, followed by any arguments from the REPL line. The working directory is also set to <code>base_dir</code>. This matches the convention used by reviewer scripts.</p>
+<pre><code class="language-text">$COMMANDS_DIR/name $base_dir [args...]
+</code></pre>
+<h2 id="environment-variables">Environment Variables</h2>
+<p>Commands inherit the parent environment. Swival also sets:</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SWIVAL_MODEL</code></td>
+<td>The resolved model identifier for the current session (when available)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="output-handling">Output Handling</h2>
+<p>The command's stdout is stripped and injected as a user message. If the output is too large for the remaining context window, it is truncated to fit. When the context window size is unknown, a hard cap of 100KB applies.</p>
+<p>The command's stderr is printed to the terminal on success. On failure (non-zero exit), Swival prints a single error message using stderr, stdout, or the exit code (in that priority order) and does not inject anything into the conversation.</p>
+<h2 id="timeouts">Timeouts</h2>
+<p>Commands have a 30-second timeout. If the command does not finish in time, Swival prints a timeout error and skips the injection.</p>
+<h2 id="edge-cases">Edge Cases</h2>
+<ul>
+<li><code>!</code> alone or <code>! foo</code> (space after <code>!</code>) are treated as regular input, not commands</li>
+<li>Names containing <code>/</code>, <code>..</code>, spaces, or special characters are rejected</li>
+<li>If the commands directory does not exist, Swival prints a hint and skips</li>
+<li>If the command is not found or not executable, Swival prints an error and skips</li>
+<li>Empty output (stdout is blank after stripping) is skipped with a note</li>
+<li>If a bad shebang or missing interpreter prevents the command from starting, Swival catches the error and continues</li>
+</ul>
+<h2 id="history">History</h2>
+<p>Custom command output is logged to <code>.swival/HISTORY.md</code> with the label <code>[!name] !name [args...]</code> so you can distinguish command-driven turns from typed input.</p>
+        </article>
+    </div>
+    <footer class="site-footer">
+        MIT License &middot;
+        <a href="https://github.com/swival/swival">GitHub</a>
+    </footer>
+</body>
+</html>
