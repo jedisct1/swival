@@ -1,5 +1,6 @@
 """Tests for REPL mode: argument parsing, run_agent_loop, and repl_loop."""
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 
@@ -13,6 +14,8 @@ from swival.agent import (
     INIT_PROMPT,
     INIT_ENRICH_PROMPT,
     INIT_WRITE_PROMPT,
+    _INIT_AGENTS_MD_BUDGET,
+    validate_agents_md,
     LEARN_PROMPT,
     _repl_help,
     _repl_tools,
@@ -1254,6 +1257,12 @@ class TestLearnCommand:
 # ---------------------------------------------------------------------------
 
 
+_VALID_AGENTS_MD = (
+    "## Workflow\n\n- install: `make install`\n\n"
+    "## Conventions\n\n- Example convention.\n"
+)
+
+
 class TestInitCommand:
     def _mock_session(self, inputs):
         mock_session = MagicMock()
@@ -1268,14 +1277,30 @@ class TestInitCommand:
         mock_session.prompt.side_effect = side
         return mock_session
 
+    def _fake_run_writing_on(self, base_dir, pass_num):
+        """Return a fake_run side-effect that writes valid AGENTS.md on the given pass."""
+        call_count = [0]
+
+        def fake_run(msgs, tools, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == pass_num:
+                Path(base_dir, "AGENTS.md").write_text(_VALID_AGENTS_MD)
+            return ("done", False)
+
+        return fake_run, call_count
+
     def test_init_sends_prompt(self, tmp_path):
-        """/init runs three passes: explore, enrich, write."""
+        """/init runs three passes when AGENTS.md is valid after write."""
         messages = [_sys("system")]
 
         call_messages = []
+        call_count = [0]
 
         def fake_run(msgs, tools, **kwargs):
+            call_count[0] += 1
             call_messages.append(list(msgs))
+            if call_count[0] == 3:
+                Path(tmp_path, "AGENTS.md").write_text(_VALID_AGENTS_MD)
             return ("done", False)
 
         inputs = ["/init", "/exit"]
@@ -1295,21 +1320,328 @@ class TestInitCommand:
     def test_init_ignores_args_with_warning(self, tmp_path, capsys):
         """/init foo warns about the argument but still runs all three passes."""
         messages = [_sys("system")]
+        fake_run, _ = self._fake_run_writing_on(tmp_path, 3)
 
         inputs = ["/init foo", "/exit"]
         mock_session = self._mock_session(inputs)
 
         with (
             patch("prompt_toolkit.PromptSession", return_value=mock_session),
-            patch(
-                "swival.agent.run_agent_loop", return_value=("done", False)
-            ) as mock_loop,
+            patch("swival.agent.run_agent_loop", side_effect=fake_run) as mock_loop,
         ):
             repl_loop(messages, [], **_loop_kwargs(tmp_path))
 
         assert mock_loop.call_count == 3
         captured = capsys.readouterr()
         assert "/init takes no arguments" in captured.err
+
+    def test_init_valid_file_no_retry(self, tmp_path, capsys):
+        """Valid AGENTS.md after pass 3 -> no retry, no warning."""
+        messages = [_sys("system")]
+        fake_run, _ = self._fake_run_writing_on(tmp_path, 3)
+
+        inputs = ["/init", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run) as mock_loop,
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        assert mock_loop.call_count == 3
+        captured = capsys.readouterr()
+        assert "still invalid" not in captured.err
+        assert "exceeds" not in captured.err
+
+    @pytest.mark.parametrize(
+        "bad_content, expected_reason",
+        [
+            (None, "not created"),
+            ("## Conventions\n\n- stuff\n", "missing"),
+            (
+                "## Conventions\n\n- stuff\n\n## Workflow\n\n- install: `x`\n",
+                "not the first",
+            ),
+        ],
+        ids=["file-not-created", "heading-missing", "heading-not-first"],
+    )
+    def test_init_retry_reason_strings(self, tmp_path, bad_content, expected_reason):
+        """Each predicate failure produces correct reason in retry prompt."""
+        messages = [_sys("system")]
+        call_count = [0]
+        call_messages = []
+
+        def fake_run(msgs, tools, **kwargs):
+            call_count[0] += 1
+            call_messages.append(list(msgs))
+            if call_count[0] == 3 and bad_content is not None:
+                Path(tmp_path, "AGENTS.md").write_text(bad_content)
+            elif call_count[0] == 4:
+                Path(tmp_path, "AGENTS.md").write_text(_VALID_AGENTS_MD)
+            return ("done", False)
+
+        inputs = ["/init", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run) as mock_loop,
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        assert mock_loop.call_count == 4
+        retry_content = call_messages[3][-1]["content"]
+        assert expected_reason in retry_content
+        assert retry_content != INIT_WRITE_PROMPT
+
+    def test_init_missing_heading_retry_succeeds(self, tmp_path, capsys):
+        """Missing ## Workflow triggers retry; retry fixes it -> no warning."""
+        messages = [_sys("system")]
+        call_count = [0]
+
+        def fake_run(msgs, tools, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 3:
+                Path(tmp_path, "AGENTS.md").write_text("## Conventions\n- x\n")
+            elif call_count[0] == 4:
+                Path(tmp_path, "AGENTS.md").write_text(_VALID_AGENTS_MD)
+            return ("done", False)
+
+        inputs = ["/init", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run) as mock_loop,
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        assert mock_loop.call_count == 4
+        captured = capsys.readouterr()
+        assert "still invalid" not in captured.err
+
+    def test_init_missing_heading_retry_fails(self, tmp_path, capsys):
+        """Both passes produce bad AGENTS.md -> warning emitted."""
+        messages = [_sys("system")]
+        call_count = [0]
+
+        def fake_run(msgs, tools, **kwargs):
+            call_count[0] += 1
+            Path(tmp_path, "AGENTS.md").write_text("no heading here\n")
+            return ("done", False)
+
+        inputs = ["/init", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run) as mock_loop,
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        assert mock_loop.call_count == 4
+        captured = capsys.readouterr()
+        assert "still invalid" in captured.err
+
+    def test_init_missing_file_retry_succeeds(self, tmp_path, capsys):
+        """AGENTS.md not created on pass 3 -> retry creates valid file."""
+        messages = [_sys("system")]
+        fake_run, _ = self._fake_run_writing_on(tmp_path, 4)
+
+        inputs = ["/init", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run) as mock_loop,
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        assert mock_loop.call_count == 4
+        captured = capsys.readouterr()
+        assert "still invalid" not in captured.err
+
+    def test_init_budget_warning_on_initial_write(self, tmp_path, capsys):
+        """Valid but oversized AGENTS.md -> no retry, budget warning."""
+        messages = [_sys("system")]
+        call_count = [0]
+
+        def fake_run(msgs, tools, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 3:
+                content = "## Workflow\n\n- install: `x`\n\n## Conventions\n\n"
+                content += "- " + "x" * (_INIT_AGENTS_MD_BUDGET + 100) + "\n"
+                Path(tmp_path, "AGENTS.md").write_text(content)
+            return ("done", False)
+
+        inputs = ["/init", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run) as mock_loop,
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        assert mock_loop.call_count == 3
+        captured = capsys.readouterr()
+        assert "exceeds" in captured.err
+
+    def test_init_budget_warning_after_retry(self, tmp_path, capsys):
+        """Retry produces valid but oversized file -> budget warning."""
+        messages = [_sys("system")]
+        call_count = [0]
+
+        def fake_run(msgs, tools, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 3:
+                Path(tmp_path, "AGENTS.md").write_text("bad content\n")
+            elif call_count[0] == 4:
+                content = "## Workflow\n\n- install: `x`\n\n## Conventions\n\n"
+                content += "- " + "x" * (_INIT_AGENTS_MD_BUDGET + 100) + "\n"
+                Path(tmp_path, "AGENTS.md").write_text(content)
+            return ("done", False)
+
+        inputs = ["/init", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run) as mock_loop,
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        assert mock_loop.call_count == 4
+        captured = capsys.readouterr()
+        assert "exceeds" in captured.err
+
+    def test_init_retry_interrupt_writes_continue(self, tmp_path, capsys):
+        """KeyboardInterrupt during retry writes continuation state."""
+        messages = [_sys("system")]
+        call_count = [0]
+
+        def fake_run(msgs, tools, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 3:
+                Path(tmp_path, "AGENTS.md").write_text("bad content\n")
+            if call_count[0] == 4:
+                raise KeyboardInterrupt
+            return ("done", False)
+
+        inputs = ["/init", "/exit"]
+        mock_session = self._mock_session(inputs)
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop", side_effect=fake_run) as mock_loop,
+            patch("swival.continue_here.write_continue_file") as mock_continue,
+        ):
+            repl_loop(
+                messages,
+                [],
+                **_loop_kwargs(tmp_path, continue_here=True),
+            )
+
+        assert mock_loop.call_count == 4
+        mock_continue.assert_called_once()
+        captured = capsys.readouterr()
+        assert "retry aborted" in captured.err
+
+
+class TestInitPromptContract:
+    """Prompt constants contain required keywords for the /init feature."""
+
+    def test_workflow_keywords_in_init_prompt(self):
+        assert "Makefile" in INIT_PROMPT
+        assert "test" in INIT_PROMPT.lower()
+        assert "lint" in INIT_PROMPT.lower()
+        assert any(
+            k in INIT_PROMPT.lower() for k in ("after every edit", "after-every-edit")
+        )
+
+    def test_ci_precedence_in_init_prompt(self):
+        lower = INIT_PROMPT.lower()
+        assert "ci" in lower
+        assert "local" in lower
+
+    def test_budget_target_in_write_prompt(self):
+        assert str(_INIT_AGENTS_MD_BUDGET) in INIT_WRITE_PROMPT
+
+    def test_section_ordering_in_write_prompt(self):
+        wf_idx = INIT_WRITE_PROMPT.index("Workflow")
+        conv_idx = INIT_WRITE_PROMPT.index("Convention")
+        assert wf_idx < conv_idx
+
+    def test_never_cut_in_enrich_prompt(self):
+        lower = INIT_ENRICH_PROMPT.lower()
+        assert "never cut" in lower or "do not cut" in lower
+
+
+class TestValidateAgentsMd:
+    """Unit tests for the validate_agents_md predicate."""
+
+    def test_valid(self, tmp_path):
+        p = tmp_path / "AGENTS.md"
+        p.write_text(_VALID_AGENTS_MD)
+        reason, content = validate_agents_md(p)
+        assert reason is None
+        assert content is not None
+
+    def test_missing_file(self, tmp_path):
+        p = tmp_path / "AGENTS.md"
+        reason, content = validate_agents_md(p)
+        assert reason is not None
+        assert "not created" in reason
+        assert content is None
+
+    def test_missing_heading(self, tmp_path):
+        p = tmp_path / "AGENTS.md"
+        p.write_text("## Conventions\n- c\n")
+        reason, content = validate_agents_md(p)
+        assert reason is not None
+        assert "missing" in reason
+        assert content is not None
+
+    def test_heading_not_first(self, tmp_path):
+        p = tmp_path / "AGENTS.md"
+        p.write_text("## Conventions\n- c\n\n## Workflow\n- install: `x`\n")
+        reason, content = validate_agents_md(p)
+        assert reason is not None
+        assert "not the first" in reason
+
+    def test_workflow_only_missing_conventions(self, tmp_path):
+        p = tmp_path / "AGENTS.md"
+        p.write_text("## Workflow\n\n- install: `x`\n")
+        reason, _ = validate_agents_md(p)
+        assert reason is not None
+        assert "Conventions" in reason
+
+    def test_conventions_only_missing_workflow(self, tmp_path):
+        """## Conventions without ## Workflow -> missing workflow error."""
+        p = tmp_path / "AGENTS.md"
+        p.write_text("## Conventions\n\n- c\n")
+        reason, _ = validate_agents_md(p)
+        assert reason is not None
+        assert "Workflow" in reason
+
+    def test_trailing_whitespace_ok(self, tmp_path):
+        p = tmp_path / "AGENTS.md"
+        p.write_text("## Workflow   \n\n- install: `x`\n\n## Conventions\n- c\n")
+        reason, _ = validate_agents_md(p)
+        assert reason is None
+
+    def test_workflow_details_not_accepted(self, tmp_path):
+        """'## Workflow Details' as first H2 must not pass the ordering check."""
+        p = tmp_path / "AGENTS.md"
+        p.write_text(
+            "## Workflow Details\n\n- stuff\n\n"
+            "## Workflow\n\n- install: `x`\n\n"
+            "## Conventions\n- c\n"
+        )
+        reason, _ = validate_agents_md(p)
+        assert reason is not None
+        assert "not the first" in reason
 
 
 class TestUnknownSlashCommand:

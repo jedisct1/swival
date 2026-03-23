@@ -105,30 +105,113 @@ _SUMMARIZE_SYSTEM_PROMPT = (
 )
 
 INIT_PROMPT = (
-    "Scan this project to find its conventions — patterns applied consistently "
-    "across the whole codebase that an AI agent wouldn't know without reading "
-    "the source. Look across all areas: naming schemes, file and directory "
-    "structure, error handling, return value formats, test organisation, "
-    "documentation style, CLI behaviour, exit codes, and API design. Read "
-    "source files, tests, docs, and config. Use think to separate genuine "
-    "project-wide patterns (appear in many independent places) from one-off "
-    "choices."
+    "Scan this project for two things:\n"
+    "\n"
+    "A) WORKFLOW — read build/CI files and extract exact, copy-pasteable commands for:\n"
+    "- Install dependencies\n"
+    "- Build (if applicable)\n"
+    "- Run all tests\n"
+    "- Run a single test file\n"
+    "- Run a single test case\n"
+    "- Lint\n"
+    "- Format\n"
+    "- Type-check (if applicable)\n"
+    "- The canonical local validation sequence (the after-every-edit command)\n"
+    "- Debug setup (launch configs, env vars, flags — if discoverable)\n"
+    "\n"
+    "Files to probe: Makefile, justfile, package.json (scripts section), "
+    "pyproject.toml ([tool.*] sections), tox.ini, .github/workflows/*.yml, "
+    "Taskfile.yml, Cargo.toml, CMakeLists.txt, build.zig.\n"
+    "\n"
+    "After-every-edit precedence:\n"
+    "1. A Makefile/justfile/package.json target that represents the full local "
+    "validation pass (e.g. make all, npm run validate, just check). Accept "
+    "whatever steps the target includes — do not second-guess.\n"
+    "2. If no single target exists, chain all discoverable validation steps "
+    "(lint, format-check, type-check, test) with &&.\n"
+    "3. CI config is informational context but does NOT define the after-every-edit "
+    "command — CI often runs a subset or superset of local validation. "
+    "Prefer local build-system targets over CI steps.\n"
+    "\n"
+    "B) CONVENTIONS — cross-cutting patterns applied consistently across the "
+    "codebase that an AI agent wouldn't know without reading the source. "
+    "Look at: naming schemes, file/directory structure, error handling, return "
+    "value formats, test organisation, API design. Read source files, tests, "
+    "docs, and config. Use think to separate genuine project-wide patterns "
+    "(appear in many independent places) from one-off choices."
 )
 
 INIT_ENRICH_PROMPT = (
-    "Review your list. Cut anything that: (1) only appears in one file or "
-    "module, (2) is standard Python/Unix/web practice that any competent agent "
-    "would already know, or (3) wouldn't affect how an agent writes correct "
-    "code or makes tool calls. Keep only conventions that cross module "
-    "boundaries and would surprise a capable agent new to this project. Check "
-    "tests, docs, and config files for anything missed."
+    "Review your findings. Never cut workflow commands (build, test, lint, "
+    "format, type-check, debug, after-every-edit). These are always actionable.\n"
+    "\n"
+    "For conventions, cut anything that: (1) only appears in one file or module, "
+    "(2) is standard practice any competent agent already knows, or (3) would not "
+    "cause an agent to produce incorrect code or miss a required step. Keep only "
+    "conventions that cross module boundaries and would surprise a capable agent "
+    "new to this project. Check tests, docs, and config for anything missed."
 )
 
+_INIT_AGENTS_MD_BUDGET = 3000
+
 INIT_WRITE_PROMPT = (
-    "Write the findings to AGENTS.md as a concise bulleted list. "
-    "Two sentences maximum per item. "
-    "The file is injected into every future agent context, so brevity is essential."
+    "Write findings to AGENTS.md. Use exactly this structure:\n"
+    "\n"
+    "## Workflow\n"
+    "\n"
+    "- install: `<command>`\n"
+    "- build: `<command>` (omit line if N/A)\n"
+    "- test all: `<command>`\n"
+    "- test file: `<command with placeholder>`\n"
+    "- test case: `<command with placeholder>`\n"
+    "- lint: `<command>`\n"
+    "- format: `<command>`\n"
+    "- typecheck: `<command>` (omit line if N/A)\n"
+    "- after every edit: `<command or sequence>`\n"
+    "- debug: `<notes>` (omit line if nothing discoverable)\n"
+    "\n"
+    "## Conventions\n"
+    "\n"
+    "- <terse convention bullets, 2 sentences max each>\n"
+    "\n"
+    "Rules:\n"
+    f"- Total output must not exceed {_INIT_AGENTS_MD_BUDGET} characters. "
+    "Workflow section takes priority. Cut convention bullets before workflow lines.\n"
+    "- ## Workflow must be the first section.\n"
+    "- Every command must be exact and copy-pasteable. No descriptions of what "
+    "commands do.\n"
+    "- The file is injected into every future agent context, so brevity is essential."
 )
+
+INIT_RETRY_PROMPT = (
+    "The previous write failed validation: {reason}. "
+    "Rewrite AGENTS.md with ## Workflow as the first section, followed by "
+    "## Conventions. Follow the exact structure from the previous instructions."
+)
+
+_WORKFLOW_HEADING_RE = re.compile(r"^## Workflow\s*$", re.MULTILINE)
+_CONVENTIONS_HEADING_RE = re.compile(r"^## Conventions\s*$", re.MULTILINE)
+_ANY_H2_RE = re.compile(r"^## .+", re.MULTILINE)
+
+
+def validate_agents_md(path: Path) -> tuple[str | None, str | None]:
+    """Check AGENTS.md structure.
+
+    Returns ``(reason, content)`` — *reason* is ``None`` when valid.
+    *content* is the file text (``None`` when the file doesn't exist).
+    """
+    if not path.is_file():
+        return "AGENTS.md was not created", None
+    content = path.read_text(encoding="utf-8", errors="replace")
+    if not _WORKFLOW_HEADING_RE.search(content):
+        return "missing ## Workflow section", content
+    if not _CONVENTIONS_HEADING_RE.search(content):
+        return "missing ## Conventions section", content
+    first_h2 = _ANY_H2_RE.search(content)
+    if first_h2 and not _WORKFLOW_HEADING_RE.match(first_h2.group()):
+        return "## Workflow is not the first section", content
+    return None, content
+
 
 LEARN_PROMPT = (
     "Review this session for concrete mistakes, confusions, or surprises you "
@@ -5499,7 +5582,8 @@ def repl_loop(
                 todo_state=todo_state,
                 snapshot_state=snapshot_state,
             )
-            # Three-pass init: explore, enrich, then write to file
+            # Three-pass init: explore, enrich, write — then validate
+            _init_aborted = False
             for _pass, prompt in enumerate(
                 (INIT_PROMPT, INIT_ENRICH_PROMPT, INIT_WRITE_PROMPT), 1
             ):
@@ -5523,6 +5607,7 @@ def repl_loop(
                             snapshot_state=snapshot_state,
                             thinking_state=thinking_state,
                         )
+                    _init_aborted = True
                     break
                 if not no_history and answer:
                     append_history(
@@ -5535,6 +5620,55 @@ def repl_loop(
                     print(answer)
                 if exhausted and verbose:
                     fmt.warning(f"max turns reached during /init pass {_pass}.")
+            # Post-write validation and conditional retry
+            if not _init_aborted:
+                agents_path = Path(base_dir).resolve() / "AGENTS.md"
+                reason, content = validate_agents_md(agents_path)
+                if reason is not None:
+                    retry_prompt = INIT_RETRY_PROMPT.format(reason=reason)
+                    messages.append({"role": "user", "content": retry_prompt})
+                    try:
+                        answer, exhausted = run_agent_loop(
+                            messages,
+                            tools,
+                            max_turns=turn_state["max_turns"],
+                            **_repl_loop_kwargs,
+                        )
+                    except KeyboardInterrupt:
+                        fmt.warning("interrupted, /init retry aborted.")
+                        if continue_here:
+                            from .continue_here import write_continue_file
+
+                            write_continue_file(
+                                base_dir,
+                                messages,
+                                todo_state=todo_state,
+                                snapshot_state=snapshot_state,
+                                thinking_state=thinking_state,
+                            )
+                        _init_aborted = True
+                    else:
+                        if not no_history and answer:
+                            append_history(
+                                base_dir,
+                                "/init pass 4 (retry)",
+                                answer,
+                                diagnostics=verbose,
+                            )
+                        if answer is not None:
+                            print(answer)
+                        retry_reason, content = validate_agents_md(agents_path)
+                        if retry_reason is not None:
+                            fmt.warning(
+                                f"AGENTS.md still invalid after retry: {retry_reason}"
+                            )
+                # Budget check using already-read content
+                if not _init_aborted and content is not None:
+                    if len(content) > _INIT_AGENTS_MD_BUDGET:
+                        fmt.warning(
+                            f"AGENTS.md is {len(content)} chars, "
+                            f"exceeds {_INIT_AGENTS_MD_BUDGET} target."
+                        )
             continue
         elif cmd == "/learn":
             messages.append({"role": "user", "content": LEARN_PROMPT})
