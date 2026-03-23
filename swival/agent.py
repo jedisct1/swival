@@ -2302,6 +2302,8 @@ def call_llm(
     secret_shield=None,
     command_tool_kwargs=None,
     max_retries=5,
+    llm_filter=None,
+    call_kind="agent",
 ):
     """Call LiteLLM with the appropriate provider.
 
@@ -2310,6 +2312,24 @@ def call_llm(
     (non-empty only for command provider with tool calls).
     provider_retries is the number of transient-error retries (0 = first attempt ok).
     """
+    # --- Outbound: user-defined filter ---
+    if llm_filter is not None:
+        from .filter import run_llm_filter, FilterError
+
+        try:
+            messages = run_llm_filter(
+                llm_filter,
+                messages,
+                model=model_id,
+                provider=provider,
+                tools=tools,
+                call_kind=call_kind,
+            )
+        except FilterError as e:
+            raise AgentError(f"LLM filter blocked request: {e}") from e
+        _sanitize_assistant_messages(messages)
+        cache = None
+
     if provider == "command":
         if command_tool_kwargs is not None:
             return (
@@ -2746,6 +2766,16 @@ def build_parser():
         default=_UNSET,
         metavar="PATH",
         help="Custom cache database directory (default: .swival).",
+    )
+
+    behavior_group.add_argument(
+        "--llm-filter",
+        metavar="COMMAND",
+        dest="llm_filter",
+        default=_UNSET,
+        help="Filter command (shell-split) run before each outbound LLM request. "
+        "Receives JSON on stdin, writes filtered messages JSON to stdout. "
+        'Non-zero exit or {"allow": false} blocks the request.',
     )
 
     encrypt_group = behavior_group.add_mutually_exclusive_group()
@@ -4128,6 +4158,27 @@ def _run_main(args, report, _write_report, parser):
         secret_shield=secret_shield,
     )
 
+    # Validate and thread llm_filter
+    _llm_filter_cmd = getattr(args, "llm_filter", None)
+    if _llm_filter_cmd:
+        import shlex as _shlex_f
+
+        try:
+            _fparts = _shlex_f.split(_llm_filter_cmd)
+        except ValueError as e:
+            raise AgentError(f"malformed llm_filter command: {e}")
+        if not _fparts:
+            raise AgentError("llm_filter command is empty")
+        _fexe = _fparts[0]
+        _fresolved = shutil.which(_fexe)
+        if not _fresolved:
+            _fp = Path(_fexe).resolve()
+            if not (_fp.is_file() and os.access(_fp, os.X_OK)):
+                raise AgentError(
+                    f"llm_filter executable not found or not executable: {_fexe}"
+                )
+        loop_kwargs["llm_filter"] = _llm_filter_cmd
+
     if getattr(args, "proactive_summaries", False):
         loop_kwargs["compaction_state"] = CompactionState()
 
@@ -4353,6 +4404,7 @@ def run_agent_loop(
     continue_here: bool = True,
     cache=None,
     secret_shield=None,
+    llm_filter=None,
     event_callback=None,
     cancel_flag=None,
 ) -> tuple[str | None, bool]:
@@ -4363,19 +4415,24 @@ def run_agent_loop(
     Returns (final_answer, exhausted). final_answer is the last
     assistant text (may be None). exhausted is True if max_turns hit.
     """
-    # Thread cache and secret_shield into llm_kwargs (for main loop calls
-    # via **llm_kwargs) and create a wrapper for secondary call sites that
-    # pass call_llm as a function reference (compaction summaries, proactive
-    # checkpoints, continue-file enrichment).
+    # Thread cache, secret_shield, and llm_filter into llm_kwargs (for main
+    # loop calls via **llm_kwargs) and create a wrapper for secondary call
+    # sites that pass call_llm as a function reference (compaction summaries,
+    # proactive checkpoints, continue-file enrichment).
     _call_llm_for_secondary = call_llm
+    if llm_filter is not None:
+        llm_kwargs = {**llm_kwargs, "llm_filter": llm_filter}
     if secret_shield is not None:
         llm_kwargs = {**llm_kwargs, "secret_shield": secret_shield}
     if cache is not None:
         llm_kwargs = {**llm_kwargs, "cache": cache}
 
-    if cache is not None or secret_shield is not None:
+    if cache is not None or secret_shield is not None or llm_filter is not None:
 
         def _call_llm_for_secondary(*args, **kwargs):
+            if llm_filter is not None:
+                kwargs.setdefault("llm_filter", llm_filter)
+                kwargs.setdefault("call_kind", "summary")
             if cache is not None:
                 kwargs.setdefault("cache", cache)
             if secret_shield is not None:

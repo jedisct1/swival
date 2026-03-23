@@ -57,6 +57,7 @@ CONFIG_KEYS: dict[str, type | tuple[type, ...]] = {
     "no_continue": bool,
     "color": bool,
     "quiet": bool,
+    "llm_filter": str,
     "reviewer": str,
     "self_review": bool,
     "review_prompt": str,
@@ -125,6 +126,7 @@ _ARGPARSE_DEFAULTS: dict[str, Any] = {
     "color": False,
     "no_color": False,
     "quiet": False,
+    "llm_filter": None,
     "reviewer": None,
     "self_review": False,
     "review_prompt": None,
@@ -248,6 +250,13 @@ def _resolve_command_string(
     return shlex.join(parts)
 
 
+def _resolve_llm_filter_command(config: dict, config_dir: Path, source: str) -> None:
+    """Shell-split the llm_filter value, resolve only path-like first tokens."""
+    config["llm_filter"] = _resolve_command_string(
+        config["llm_filter"], config_dir, source, "llm_filter command"
+    )
+
+
 def _resolve_reviewer_command(config: dict, config_dir: Path, source: str) -> None:
     """Shell-split the reviewer value, resolve only path-like first tokens."""
     config["reviewer"] = _resolve_command_string(
@@ -280,6 +289,9 @@ def _resolve_paths(config: dict, config_dir: Path, source: str = "") -> None:
                 else:
                     resolved.append(str(config_dir / p))
             config[key] = resolved
+
+    if "llm_filter" in config:
+        _resolve_llm_filter_command(config, config_dir, source)
 
     if "reviewer" in config:
         _resolve_reviewer_command(config, config_dir, source)
@@ -790,6 +802,7 @@ def args_to_session_kwargs(args, base_dir: str) -> dict:
         "cache",
         "cache_dir",
         "retries",
+        "llm_filter",
         "encrypt_secrets_key",
         "encrypt_secrets_tweak",
         "encrypt_secrets_patterns",
@@ -958,6 +971,7 @@ def generate_config(project: bool = False) -> str:
         "",
         "# --- External ---",
         "# max_review_rounds = 15",
+        '# llm_filter = "./filter.py"    # outbound message filter script (stdin/stdout JSON)',
         '# reviewer = "./review.sh"',
         "# self_review = false              # use self as reviewer (mirrors provider/model flags)",
         '# review_prompt = "Focus on correctness"',

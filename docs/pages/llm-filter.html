@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Outbound LLM Filter — Swival</title>
+    <meta name="description" content="Outbound LLM Filter — Swival documentation">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Outbound LLM Filter — Swival">
+    <meta property="og:description" content="Outbound LLM Filter — Swival documentation">
+    <meta property="og:image" content="https://swival.dev/img/logo.png">
+    <meta property="og:url" content="https://swival.dev/pages/llm-filter.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Outbound LLM Filter — Swival">
+    <meta name="twitter:description" content="Outbound LLM Filter — Swival documentation">
+    <meta name="twitter:image" content="https://swival.dev/img/logo.png">
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="../" class="header-logo">
+                <img src="../img/logo.png" alt="Swival">
+            </a>
+            <nav class="header-nav">
+                <a href="./">Docs</a>
+                <a href="https://github.com/swival/swival">GitHub</a>
+            </nav>
+        </div>
+    </header>
+    <div class="docs-layout">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+<h4>Basics</h4>
+<ul>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="usage.html">Usage</a></li>
+<li><a href="tools.html">Tools</a></li>
+<li><a href="context-management.html">Context Management</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Configuration & Deployment</h4>
+<ul>
+<li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
+<li><a href="secrets.html">Secret Encryption</a></li>
+<li><a href="llm-filter.html" class="active">Outbound LLM Filter</a></li>
+<li><a href="skills.html">Skills</a></li>
+<li><a href="web-browsing.html">Web Browsing</a></li>
+<li><a href="mcp.html">MCP</a></li>
+<li><a href="a2a.html">A2A</a></li>
+<li><a href="custom-commands.html">Custom Commands</a></li>
+<li><a href="customization.html">Customization</a></li>
+<li><a href="providers.html">Providers</a></li>
+<li><a href="reports.html">Reports</a></li>
+<li><a href="reviews.html">Reviews</a></li>
+<li><a href="agentfs.html">AgentFS</a></li>
+</ul>
+</div>
+        </aside>
+        <article class="docs-content">
+            <h1 id="outbound-llm-filter">Outbound LLM Filter</h1>
+<p>Swival can run a user-defined script before every outbound LLM request. The script receives the message list as JSON, and can modify messages, redact content, or block the request entirely. This is useful for stripping internal URLs, project names, customer identifiers, or any other text that should not reach an external provider.</p>
+<p>The filter covers all Swival-managed LLM call paths: normal agent turns, REPL turns, the Session API, and compaction summaries.</p>
+<h2 id="enabling-a-filter">Enabling a Filter</h2>
+<p>On the command line:</p>
+<pre><code class="language-sh">swival --llm-filter &quot;./scripts/redact.py&quot; &quot;task&quot;
+</code></pre>
+<p>In a config file:</p>
+<pre><code class="language-toml">llm_filter = &quot;./scripts/redact.py&quot;
+</code></pre>
+<p>In the library API:</p>
+<pre><code class="language-python">from swival import Session
+
+session = Session(llm_filter=&quot;./scripts/redact.py&quot;)
+result = session.run(&quot;task&quot;)
+</code></pre>
+<p>The value is a shell command string. It is split with <code>shlex.split</code>, and path-like first tokens (<code>./</code>, <code>../</code>, <code>~</code>) resolve against the config file's parent directory, consistent with <code>reviewer</code> and other command-valued config keys.</p>
+<h2 id="script-contract">Script Contract</h2>
+<p>Swival sends a JSON object to the script's stdin:</p>
+<pre><code class="language-json">{
+  &quot;provider&quot;: &quot;openrouter&quot;,
+  &quot;model&quot;: &quot;qwen/qwen3-coder-next&quot;,
+  &quot;call_kind&quot;: &quot;agent&quot;,
+  &quot;messages&quot;: [
+    {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;You are a helpful assistant.&quot;},
+    {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Tell me about https://internal.corp.example/secret-project&quot;}
+  ],
+  &quot;tools&quot;: [...]
+}
+</code></pre>
+<p><code>messages</code> is the exact message list about to be sent. <code>tools</code> is included as read-only context so the filter can make informed decisions. <code>call_kind</code> is <code>"agent"</code> for normal turns and <code>"summary"</code> for compaction summaries.</p>
+<p>The script writes a JSON object to stdout. Two response shapes are supported:</p>
+<p><strong>Allow (with optional modifications):</strong></p>
+<pre><code class="language-json">{&quot;messages&quot;: [...]}
+</code></pre>
+<p><strong>Block:</strong></p>
+<pre><code class="language-json">{&quot;allow&quot;: false, &quot;reason&quot;: &quot;contains internal hostname&quot;}
+</code></pre>
+<h2 id="behavior-rules">Behavior Rules</h2>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Exit 0 + <code>{"messages": [...]}</code></td>
+<td>Use the returned messages</td>
+</tr>
+<tr>
+<td>Exit 0 + <code>{"allow": false, ...}</code></td>
+<td>Abort the LLM call, show the reason</td>
+</tr>
+<tr>
+<td>Non-zero exit</td>
+<td>Abort the LLM call</td>
+</tr>
+<tr>
+<td>Malformed JSON on stdout</td>
+<td>Abort the LLM call</td>
+</tr>
+<tr>
+<td>Timeout (30 seconds)</td>
+<td>Abort the LLM call</td>
+</tr>
+</tbody>
+</table>
+<p>The filter fails closed. If the script errors or rejects the request, Swival does not send anything to the provider. Stderr from the script is forwarded to Swival's stderr for debugging.</p>
+<p>When a filter blocks a request, Swival raises a hard error and the agent loop terminates. The block reason is shown to the user as an error message. No synthetic assistant reply is generated and nothing is written to history.</p>
+<h2 id="returned-message-validation">Returned Message Validation</h2>
+<p>Swival validates the structure of messages returned by the filter:</p>
+<ul>
+<li>The top-level output must be a JSON object with a <code>messages</code> key</li>
+<li><code>messages</code> must be a list of dicts</li>
+<li>Each message must have a <code>role</code> field with a valid value (<code>system</code>, <code>user</code>, <code>assistant</code>, or <code>tool</code>)</li>
+<li><code>tool</code> messages must have a <code>tool_call_id</code> field</li>
+<li><code>tool_calls</code> entries on assistant messages must have an <code>id</code> and a <code>function.name</code></li>
+</ul>
+<p>If validation fails, the request is aborted.</p>
+<h2 id="ordering">Ordering</h2>
+<p>The filter runs <strong>before</strong> secret encryption. This means the filter sees human-readable plaintext, not encrypted tokens. After filtering, the existing <code>--encrypt-secrets</code> pipeline still runs on the filtered copy, so credentials that survive filtering are still protected at the provider boundary.</p>
+<p>The filter also runs before the LLM response cache lookup. When a filter is active, caching is automatically disabled to avoid stale responses if the filter script changes.</p>
+<h2 id="example-redacting-internal-urls">Example: Redacting Internal URLs</h2>
+<pre><code class="language-python">#!/usr/bin/env python3
+import json
+import re
+import sys
+
+payload = json.load(sys.stdin)
+for msg in payload[&quot;messages&quot;]:
+    content = msg.get(&quot;content&quot;)
+    if isinstance(content, str):
+        msg[&quot;content&quot;] = re.sub(
+            r&quot;https://[^\s]*corp\.example[^\s]*&quot;,
+            &quot;[internal-url]&quot;,
+            content,
+        )
+json.dump({&quot;messages&quot;: payload[&quot;messages&quot;]}, sys.stdout)
+</code></pre>
+<h2 id="example-blocking-on-keywords">Example: Blocking on Keywords</h2>
+<pre><code class="language-python">#!/usr/bin/env python3
+import json
+import sys
+
+payload = json.load(sys.stdin)
+text = json.dumps(payload[&quot;messages&quot;])
+if &quot;PROJECT_CODENAME&quot; in text:
+    json.dump({&quot;allow&quot;: False, &quot;reason&quot;: &quot;message contains project codename&quot;}, sys.stdout)
+else:
+    json.dump({&quot;messages&quot;: payload[&quot;messages&quot;]}, sys.stdout)
+</code></pre>
+<h2 id="interaction-with-other-features">Interaction with Other Features</h2>
+<p><strong>Secret encryption:</strong> The filter runs first, then encryption. The filter sees plaintext; the provider sees encrypted tokens (if encryption is enabled).</p>
+<p><strong>Command provider:</strong> Filtered messages flow through to the command provider the same way they flow to API-based providers. No separate filter path is needed.</p>
+<p><strong>Compaction summaries:</strong> Internal summarization calls also pass through the filter with <code>call_kind</code> set to <code>"summary"</code>, so sensitive content is redacted even during context management.</p>
+<p><strong>Cache:</strong> Caching is disabled when a filter is active.</p>
+<p><strong>Reviewer:</strong> The reviewer subprocess is a separate Swival invocation and can use its own <code>llm_filter</code> setting independently.</p>
+<h2 id="limitations">Limitations</h2>
+<ul>
+<li>Only one filter command is supported. If you need multiple filters, chain them inside a wrapper script.</li>
+<li>The filter only covers outbound messages. Model responses are not filtered.</li>
+<li>Tool schemas are included in the payload as read-only context but cannot be modified by the filter.</li>
+<li>The filter is stateless across calls. Each invocation is a fresh subprocess.</li>
+</ul>
+        </article>
+    </div>
+    <footer class="site-footer">
+        MIT License &middot;
+        <a href="https://github.com/swival/swival">GitHub</a>
+    </footer>
+</body>
+</html>

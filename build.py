@@ -63,6 +63,11 @@ NAV = [
                 "Secret Encryption",
                 "Format-preserving encryption of credentials before they reach the LLM provider",
             ),
+            (
+                "llm-filter",
+                "Outbound LLM Filter",
+                "User-defined scripts that redact or block content before it reaches the LLM provider",
+            ),
             ("skills", "Skills", "Creating and using SKILL.md-based agent skills"),
             (
                 "web-browsing",

@@ -221,6 +221,10 @@ session = Session(sanitize_thinking=True)
 
 The sanitizer strips `<think>...</think>` blocks, standalone `<think>` / `</think>` lines, and special tokens like `<|start_header_id|>`. Inline mentions of these tags in code examples or backtick-quoted text are preserved.
 
+## Outbound LLM Filter
+
+Swival can run a user-defined script before every outbound LLM request to redact or block sensitive content. See [Outbound LLM Filter](llm-filter.md) for the script contract, configuration, and examples.
+
 ## Secret Encryption
 
 Swival can transparently encrypt recognized credential tokens before they leave your machine. See [Secret Encryption](secrets.md) for the full documentation, including built-in token patterns, custom patterns, key management, and threat model.

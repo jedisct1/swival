@@ -90,6 +90,7 @@ class Session:
         encrypt_secrets_key: str | None = None,
         encrypt_secrets_tweak: str | None = None,
         encrypt_secrets_patterns: list | None = None,
+        llm_filter: str | None = None,
     ):
         self.base_dir = base_dir
         self.scratch_dir = scratch_dir
@@ -138,6 +139,7 @@ class Session:
         self.encrypt_secrets_key = encrypt_secrets_key
         self.encrypt_secrets_tweak = encrypt_secrets_tweak
         self.encrypt_secrets_patterns = encrypt_secrets_patterns
+        self.llm_filter = llm_filter
 
         # Streaming hooks (set externally, e.g. by A2A server)
         self.event_callback = None
@@ -421,6 +423,8 @@ class Session:
             kwargs["mcp_manager"] = self._mcp_manager
         if self._a2a_manager is not None:
             kwargs["a2a_manager"] = self._a2a_manager
+        if self.llm_filter is not None:
+            kwargs["llm_filter"] = self.llm_filter
         if self._secret_shield is not None:
             kwargs["secret_shield"] = self._secret_shield
         if self.event_callback is not None:

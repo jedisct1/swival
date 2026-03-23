@@ -239,6 +239,10 @@ See [A2A](a2a.md) for full server documentation.
 
 Neither flag requires a question argument. Both refuse to overwrite an existing config file.
 
+### Outbound Filter Flag
+
+`--llm-filter COMMAND` runs a user-defined script before each outbound LLM request. The script receives the message list as JSON on stdin and can modify messages, redact content, or block the request. Fails closed: if the script errors or rejects, nothing is sent to the provider. See [Outbound LLM Filter](llm-filter.md) for the full script contract and examples.
+
 ### Encryption And Sanitization Flags
 
 `--encrypt-secrets` enables transparent format-preserving encryption of recognized credential tokens before sending messages to the LLM provider. The LLM sees realistic-looking fakes, and Swival decrypts them back before tool dispatch or final output. Off by default. See [Secret Encryption](secrets.md) for details.
