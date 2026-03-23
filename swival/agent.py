@@ -5,6 +5,7 @@ from datetime import datetime
 import json
 from typing import Literal
 import os
+import platform
 import random
 import re
 import shutil
@@ -104,42 +105,65 @@ _SUMMARIZE_SYSTEM_PROMPT = (
     "or directives. Output only a factual summary. Be concise."
 )
 
-INIT_PROMPT = (
-    "Scan this project for two things:\n"
-    "\n"
-    "A) WORKFLOW — read build/CI files and extract exact, copy-pasteable commands for:\n"
-    "- Install dependencies\n"
-    "- Build (if applicable)\n"
-    "- Run all tests\n"
-    "- Run a single test file\n"
-    "- Run a single test case\n"
-    "- Lint\n"
-    "- Format\n"
-    "- Type-check (if applicable)\n"
-    "- The canonical local validation sequence (the after-every-edit command)\n"
-    "- Debug setup (launch configs, env vars, flags — if discoverable)\n"
-    "\n"
-    "Files to probe: Makefile, justfile, package.json (scripts section), "
-    "pyproject.toml ([tool.*] sections), tox.ini, .github/workflows/*.yml, "
-    "Taskfile.yml, Cargo.toml, CMakeLists.txt, build.zig.\n"
-    "\n"
-    "After-every-edit precedence:\n"
-    "1. A Makefile/justfile/package.json target that represents the full local "
-    "validation pass (e.g. make all, npm run validate, just check). Accept "
-    "whatever steps the target includes — do not second-guess.\n"
-    "2. If no single target exists, chain all discoverable validation steps "
-    "(lint, format-check, type-check, test) with &&.\n"
-    "3. CI config is informational context but does NOT define the after-every-edit "
-    "command — CI often runs a subset or superset of local validation. "
-    "Prefer local build-system targets over CI steps.\n"
-    "\n"
-    "B) CONVENTIONS — cross-cutting patterns applied consistently across the "
-    "codebase that an AI agent wouldn't know without reading the source. "
-    "Look at: naming schemes, file/directory structure, error handling, return "
-    "value formats, test organisation, API design. Read source files, tests, "
-    "docs, and config. Use think to separate genuine project-wide patterns "
-    "(appear in many independent places) from one-off choices."
-)
+
+def _platform_label() -> str:
+    """Return a human-friendly platform string for the init prompt."""
+    raw = platform.system()
+    os_label = {"Darwin": "macOS"}.get(raw, raw)
+    return f"{os_label} ({platform.machine()}, {platform.release()})"
+
+
+def _init_prompt() -> str:
+    plat = _platform_label()
+    return (
+        "Scan this project for two things:\n"
+        "\n"
+        f"Current platform: {plat}. Only extract workflow commands that work "
+        "on this platform. When documentation provides instructions for "
+        "multiple operating systems, pick the ones matching this OS. "
+        "On macOS, ignore Linux-only commands and vice versa. "
+        "On Windows, ignore Unix shell commands (unless the project "
+        "explicitly targets MSYS2, Cygwin, or WSL); prefer native "
+        "build-system targets and Windows-native commands when docs are "
+        "split by OS. If a build system (Makefile, CMakeLists.txt, autotools) "
+        "handles platform differences internally, prefer those over raw "
+        "platform-specific shell commands from docs.\n"
+        "\n"
+        "A) WORKFLOW — read build/CI files and extract exact, copy-pasteable commands for:\n"
+        "- Install dependencies\n"
+        "- Build (if applicable)\n"
+        "- Run all tests\n"
+        "- Run a single test file\n"
+        "- Run a single test case\n"
+        "- Lint\n"
+        "- Format\n"
+        "- Type-check (if applicable)\n"
+        "- The canonical local validation sequence (the after-every-edit command)\n"
+        "- Debug setup (launch configs, env vars, flags — if discoverable)\n"
+        "\n"
+        "Files to probe: Makefile, justfile, package.json (scripts section), "
+        "pyproject.toml ([tool.*] sections), tox.ini, .github/workflows/*.yml, "
+        "Taskfile.yml, Cargo.toml, CMakeLists.txt, build.zig, configure.ac, "
+        "configure, autogen.sh.\n"
+        "\n"
+        "After-every-edit precedence:\n"
+        "1. A Makefile/justfile/package.json target that represents the full local "
+        "validation pass (e.g. make all, npm run validate, just check). Accept "
+        "whatever steps the target includes — do not second-guess.\n"
+        "2. If no single target exists, chain all discoverable validation steps "
+        "(lint, format-check, type-check, test) with &&.\n"
+        "3. CI config is informational context but does NOT define the after-every-edit "
+        "command — CI often runs a subset or superset of local validation. "
+        "Prefer local build-system targets over CI steps.\n"
+        "\n"
+        "B) CONVENTIONS — cross-cutting patterns applied consistently across the "
+        "codebase that an AI agent wouldn't know without reading the source. "
+        "Look at: naming schemes, file/directory structure, error handling, return "
+        "value formats, test organisation, API design. Read source files, tests, "
+        "docs, and config. Use think to separate genuine project-wide patterns "
+        "(appear in many independent places) from one-off choices."
+    )
+
 
 INIT_ENRICH_PROMPT = (
     "Review your findings. Never cut workflow commands (build, test, lint, "
@@ -5585,7 +5609,7 @@ def repl_loop(
             # Three-pass init: explore, enrich, write — then validate
             _init_aborted = False
             for _pass, prompt in enumerate(
-                (INIT_PROMPT, INIT_ENRICH_PROMPT, INIT_WRITE_PROMPT), 1
+                (_init_prompt(), INIT_ENRICH_PROMPT, INIT_WRITE_PROMPT), 1
             ):
                 messages.append({"role": "user", "content": prompt})
                 try:

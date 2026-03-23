@@ -11,7 +11,7 @@ from swival.agent import (
     run_agent_loop,
     repl_loop,
     ContextOverflowError,
-    INIT_PROMPT,
+    _init_prompt,
     INIT_ENRICH_PROMPT,
     INIT_WRITE_PROMPT,
     _INIT_AGENTS_MD_BUDGET,
@@ -1313,7 +1313,7 @@ class TestInitCommand:
             repl_loop(messages, [], **_loop_kwargs(tmp_path))
 
         assert mock_loop.call_count == 3
-        assert call_messages[0][1]["content"] == INIT_PROMPT
+        assert call_messages[0][1]["content"] == _init_prompt()
         assert call_messages[1][2]["content"] == INIT_ENRICH_PROMPT
         assert call_messages[2][3]["content"] == INIT_WRITE_PROMPT
 
@@ -1553,15 +1553,33 @@ class TestInitPromptContract:
     """Prompt constants contain required keywords for the /init feature."""
 
     def test_workflow_keywords_in_init_prompt(self):
-        assert "Makefile" in INIT_PROMPT
-        assert "test" in INIT_PROMPT.lower()
-        assert "lint" in INIT_PROMPT.lower()
-        assert any(
-            k in INIT_PROMPT.lower() for k in ("after every edit", "after-every-edit")
-        )
+        prompt = _init_prompt()
+        lower = prompt.lower()
+        assert "Makefile" in prompt
+        assert "test" in lower
+        assert "lint" in lower
+        assert any(k in lower for k in ("after every edit", "after-every-edit"))
+
+    @pytest.mark.parametrize(
+        "system, machine, release, expected_label",
+        [
+            ("Darwin", "arm64", "24.0.0", "macOS"),
+            ("Linux", "x86_64", "6.1.0", "Linux"),
+            ("Windows", "AMD64", "10.0.26100", "Windows"),
+        ],
+    )
+    def test_platform_in_init_prompt(
+        self, system, machine, release, expected_label, monkeypatch
+    ):
+        monkeypatch.setattr("platform.system", lambda: system)
+        monkeypatch.setattr("platform.machine", lambda: machine)
+        monkeypatch.setattr("platform.release", lambda: release)
+        prompt = _init_prompt()
+        assert expected_label in prompt
+        assert machine in prompt
 
     def test_ci_precedence_in_init_prompt(self):
-        lower = INIT_PROMPT.lower()
+        lower = _init_prompt().lower()
         assert "ci" in lower
         assert "local" in lower
 
