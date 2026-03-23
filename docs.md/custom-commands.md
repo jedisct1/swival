@@ -75,15 +75,6 @@ The command's stderr is printed to the terminal on success. On failure (non-zero
 
 Commands have a 30-second timeout. If the command does not finish in time, Swival prints a timeout error and skips the injection.
 
-## Edge Cases
-
-- `!` alone or `! foo` (space after `!`) are treated as regular input, not commands
-- Names containing `/`, `..`, spaces, or special characters are rejected
-- If the commands directory does not exist, Swival prints a hint and skips
-- If the command is not found or not executable, Swival prints an error and skips
-- Empty output (stdout is blank after stripping) is skipped with a note
-- If a bad shebang or missing interpreter prevents the command from starting, Swival catches the error and continues
-
 ## History
 
 Custom command output is logged to `.swival/HISTORY.md` with the label `[!name] !name [args...]` so you can distinguish command-driven turns from typed input.

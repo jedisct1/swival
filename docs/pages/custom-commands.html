@@ -114,15 +114,6 @@ chmod +x ~/.config/swival/commands/context
 <p>The command's stderr is printed to the terminal on success. On failure (non-zero exit), Swival prints a single error message using stderr, stdout, or the exit code (in that priority order) and does not inject anything into the conversation.</p>
 <h2 id="timeouts">Timeouts</h2>
 <p>Commands have a 30-second timeout. If the command does not finish in time, Swival prints a timeout error and skips the injection.</p>
-<h2 id="edge-cases">Edge Cases</h2>
-<ul>
-<li><code>!</code> alone or <code>! foo</code> (space after <code>!</code>) are treated as regular input, not commands</li>
-<li>Names containing <code>/</code>, <code>..</code>, spaces, or special characters are rejected</li>
-<li>If the commands directory does not exist, Swival prints a hint and skips</li>
-<li>If the command is not found or not executable, Swival prints an error and skips</li>
-<li>Empty output (stdout is blank after stripping) is skipped with a note</li>
-<li>If a bad shebang or missing interpreter prevents the command from starting, Swival catches the error and continues</li>
-</ul>
 <h2 id="history">History</h2>
 <p>Custom command output is logged to <code>.swival/HISTORY.md</code> with the label <code>[!name] !name [args...]</code> so you can distinguish command-driven turns from typed input.</p>
         </article>
