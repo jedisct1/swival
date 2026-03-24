@@ -16,18 +16,30 @@ Install the CLI with `uv tool install swival`. This places the `swival` command 
 uv tool install swival
 ```
 
-## Upgrading
+### Homebrew (macOS)
 
-To upgrade an existing installation to the newest release, run `uv tool upgrade swival`.
+On macOS you can also install through the Homebrew tap:
 
 ```sh
-uv tool upgrade swival
+brew install swival/tap/swival
 ```
 
-If you ever want to remove it, run `uv tool uninstall swival`.
+This builds from source and pulls in Python 3.13 automatically. The first install takes a while because several dependencies compile native extensions.
+
+## Upgrading
+
+To upgrade an existing installation to the newest release:
 
 ```sh
-uv tool uninstall swival
+uv tool upgrade swival    # if installed with uv
+brew upgrade swival       # if installed with Homebrew
+```
+
+To remove it:
+
+```sh
+uv tool uninstall swival  # if installed with uv
+brew uninstall swival     # if installed with Homebrew
 ```
 
 ## Provider Quick Reference

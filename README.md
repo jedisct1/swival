@@ -51,6 +51,8 @@ Run `swival --help` for the grouped CLI reference and copy-paste examples.
 uv tool install swival
 ```
 
+On macOS you can also use Homebrew: `brew install swival/tap/swival`
+
 4. Run:
 
 ```sh
@@ -141,8 +143,10 @@ Useful for long prompts, shell-quoting avoidance, and scripted workflows.
 ### Updates and uninstall
 
 ```sh
-uv tool upgrade swival    # update
-uv tool uninstall swival  # remove
+uv tool upgrade swival    # update (uv)
+uv tool uninstall swival  # remove (uv)
+brew upgrade swival       # update (Homebrew)
+brew uninstall swival     # remove (Homebrew)
 ```
 
 ## What makes it different
