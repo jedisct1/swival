@@ -250,6 +250,7 @@ s.close(outcome=&quot;success&quot;, exit_code=0)
 <p>For multi-turn <code>ask()</code>, the exit hook fires when the session is closed — either via <code>close()</code> or <code>__exit__</code>. It does not fire after each <code>ask()</code> call. This matches REPL semantics: one startup, one exit.</p>
 <h2 id="hugging-face-buckets">Hugging Face Buckets</h2>
 <p>HF Buckets provide S3-like object storage on the Hugging Face Hub. Combined with lifecycle hooks, they give Swival commit-scoped remote state with no HF-specific code in Swival itself.</p>
+<p>Note that HF Buckets are not end-to-end encrypted. Files are encrypted in transit (TLS) and at rest on HF's servers, but Hugging Face itself can access the stored data. If your <code>.swival/</code> state contains sensitive information, encrypt it before syncing.</p>
 <h3 id="bucket-layout">Bucket Layout</h3>
 <p>The recommended layout uses one stable bucket per repo identity and commit-specific prefixes inside it:</p>
 <pre><code class="language-text">hf://buckets/&lt;namespace&gt;/swival-&lt;repo_hash&gt;/

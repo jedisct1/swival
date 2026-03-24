@@ -163,6 +163,8 @@ For multi-turn `ask()`, the exit hook fires when the session is closed — eithe
 
 HF Buckets provide S3-like object storage on the Hugging Face Hub. Combined with lifecycle hooks, they give Swival commit-scoped remote state with no HF-specific code in Swival itself.
 
+Note that HF Buckets are not end-to-end encrypted. Files are encrypted in transit (TLS) and at rest on HF's servers, but Hugging Face itself can access the stored data. If your `.swival/` state contains sensitive information, encrypt it before syncing.
+
 ### Bucket Layout
 
 The recommended layout uses one stable bucket per repo identity and commit-specific prefixes inside it:
