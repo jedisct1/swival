@@ -47,8 +47,8 @@ class TestReplRunCustomCommand:
 
     def test_with_arguments(self, tmp_path, monkeypatch):
         cmd_dir = _commands_dir(tmp_path)
-        # $1 is base_dir (injected), $2+ are user args
-        _make_script(cmd_dir / "echo-args", '#!/bin/sh\nshift\necho "$@"')
+        # $1 is base_dir, $2 is the raw argument string
+        _make_script(cmd_dir / "echo-args", '#!/bin/sh\necho "$2"')
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
 
         result = _repl_run_custom_command(
@@ -56,7 +56,7 @@ class TestReplRunCustomCommand:
         )
         assert result is not None
         _, stdout = result
-        assert stdout == "hello world --flag"
+        assert stdout == '"hello world" --flag'
 
     def test_swival_model_env_var(self, tmp_path, monkeypatch):
         cmd_dir = _commands_dir(tmp_path)
@@ -211,12 +211,15 @@ class TestReplRunCustomCommand:
         result = _repl_run_custom_command("!bad", str(tmp_path))
         assert result is None
 
-    def test_shlex_parse_error(self, tmp_path, monkeypatch):
-        _commands_dir(tmp_path)
+    def test_unclosed_quotes_passed_through(self, tmp_path, monkeypatch):
+        cmd_dir = _commands_dir(tmp_path)
+        _make_script(cmd_dir / "cmd", '#!/bin/sh\necho "$2"')
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
 
         result = _repl_run_custom_command('!cmd "unclosed', str(tmp_path))
-        assert result is None
+        assert result is not None
+        _, stdout = result
+        assert stdout == '"unclosed'
 
     def test_xdg_config_home_override(self, tmp_path, monkeypatch):
         custom_xdg = tmp_path / "custom_xdg"
@@ -250,9 +253,50 @@ class TestReplRunCustomCommand:
         _commands_dir(tmp_path)
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
 
-        for bad_name in ["foo bar", "foo;bar", "foo&bar", ""]:
+        for bad_name in ["foo;bar", "foo&bar", ""]:
             result = _repl_run_custom_command(f"!{bad_name}", str(tmp_path))
             assert result is None
+
+    def test_args_as_single_string(self, tmp_path, monkeypatch):
+        cmd_dir = _commands_dir(tmp_path)
+        _make_script(cmd_dir / "mycmd", '#!/bin/sh\necho "$2"')
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+        result = _repl_run_custom_command("!mycmd a b c", str(tmp_path))
+        assert result is not None
+        _, stdout = result
+        assert stdout == "a b c"
+
+    def test_no_args_only_base_dir(self, tmp_path, monkeypatch):
+        cmd_dir = _commands_dir(tmp_path)
+        _make_script(cmd_dir / "mycmd", '#!/bin/sh\necho "$#"')
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+        result = _repl_run_custom_command("!mycmd", str(tmp_path))
+        assert result is not None
+        _, stdout = result
+        assert stdout == "1"
+
+    def test_leading_trailing_spaces_stripped(self, tmp_path, monkeypatch):
+        cmd_dir = _commands_dir(tmp_path)
+        _make_script(cmd_dir / "mycmd", '#!/bin/sh\necho "$2"')
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+        result = _repl_run_custom_command("!mycmd   a b   ", str(tmp_path))
+        assert result is not None
+        _, stdout = result
+        assert stdout == "a b"
+
+    def test_whitespace_after_bang(self, tmp_path, monkeypatch):
+        cmd_dir = _commands_dir(tmp_path)
+        _make_script(cmd_dir / "greet", '#!/bin/sh\necho "hi"')
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+        result = _repl_run_custom_command("!  greet", str(tmp_path))
+        assert result is not None
+        cmd_name, stdout = result
+        assert cmd_name == "greet"
+        assert stdout == "hi"
 
 
 # ---------------------------------------------------------------------------

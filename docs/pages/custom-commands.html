@@ -85,15 +85,13 @@ chmod +x ~/.config/swival/commands/context
 <p>In the REPL, prefix the command name with <code>!</code>:</p>
 <pre><code class="language-text">swival&gt; !context
 </code></pre>
-<p>This runs the <code>context</code> script and sends its stdout to the model as if you had typed it. Additional arguments are passed through:</p>
-<pre><code class="language-text">swival&gt; !context --all
+<p>This runs the <code>context</code> script and sends its stdout to the model as if you had typed it. Everything after the command name is passed as a single argument (<code>$2</code>):</p>
+<pre><code class="language-text">swival&gt; !deploy staging environment --dry-run
 </code></pre>
-<p>Quoted arguments are handled correctly:</p>
-<pre><code class="language-text">swival&gt; !deploy &quot;staging environment&quot; --dry-run
-</code></pre>
+<p>The command receives <code>$2</code> = <code>staging environment --dry-run</code>. Leading and trailing whitespace is stripped, but the text is otherwise passed through verbatim — no shell parsing or quote handling.</p>
 <h2 id="how-commands-are-called">How Commands Are Called</h2>
-<p>The command receives <code>base_dir</code> (the project root) as its first positional argument, followed by any arguments from the REPL line. The working directory is also set to <code>base_dir</code>. This matches the convention used by reviewer scripts.</p>
-<pre><code class="language-text">$COMMANDS_DIR/name $base_dir [args...]
+<p>The command receives <code>base_dir</code> (the project root) as <code>$1</code>. If arguments are given, the raw text after the command name is stripped and passed as <code>$2</code>. If no arguments are given, only <code>$1</code> is passed. The working directory is also set to <code>base_dir</code>.</p>
+<pre><code class="language-text">$COMMANDS_DIR/name $base_dir &quot;$args&quot;
 </code></pre>
 <h2 id="environment-variables">Environment Variables</h2>
 <p>Commands inherit the parent environment. Swival also sets:</p>

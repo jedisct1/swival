@@ -37,24 +37,20 @@ In the REPL, prefix the command name with `!`:
 swival> !context
 ```
 
-This runs the `context` script and sends its stdout to the model as if you had typed it. Additional arguments are passed through:
+This runs the `context` script and sends its stdout to the model as if you had typed it. Everything after the command name is passed as a single argument (`$2`):
 
 ```text
-swival> !context --all
+swival> !deploy staging environment --dry-run
 ```
 
-Quoted arguments are handled correctly:
-
-```text
-swival> !deploy "staging environment" --dry-run
-```
+The command receives `$2` = `staging environment --dry-run`. Leading and trailing whitespace is stripped, but the text is otherwise passed through verbatim — no shell parsing or quote handling.
 
 ## How Commands Are Called
 
-The command receives `base_dir` (the project root) as its first positional argument, followed by any arguments from the REPL line. The working directory is also set to `base_dir`. This matches the convention used by reviewer scripts.
+The command receives `base_dir` (the project root) as `$1`. If arguments are given, the raw text after the command name is stripped and passed as `$2`. If no arguments are given, only `$1` is passed. The working directory is also set to `base_dir`.
 
 ```text
-$COMMANDS_DIR/name $base_dir [args...]
+$COMMANDS_DIR/name $base_dir "$args"
 ```
 
 ## Environment Variables

@@ -5359,17 +5359,14 @@ def _repl_run_custom_command(
     """
     from .config import global_config_dir
 
-    raw = line[1:]
-    try:
-        parts = shlex.split(raw)
-    except ValueError as exc:
-        fmt.error(f"failed to parse command: {exc}")
-        return None
+    raw = line[1:].lstrip()
+
+    # Split command name from the raw argument string
+    parts = raw.split(None, 1)  # split on whitespace, max 1 split
     if not parts:
         return None
-
     cmd_name = parts[0]
-    args = parts[1:]
+    arg_string = parts[1].strip() if len(parts) > 1 else ""
 
     if not re.fullmatch(r"[a-zA-Z0-9_-]+", cmd_name):
         fmt.error(f"invalid command name: {cmd_name!r}")
@@ -5410,7 +5407,7 @@ def _repl_run_custom_command(
 
     try:
         proc = subprocess.run(
-            [str(cmd_path), base_dir, *args],
+            [str(cmd_path), base_dir] + ([arg_string] if arg_string else []),
             capture_output=True,
             text=True,
             timeout=30,
