@@ -2,6 +2,18 @@
 
 All notable user-facing changes to Swival.
 
+## 0.9.1
+
+- Generic lifecycle hooks have been added: user-configured commands run at
+  startup and exit, with Git and project metadata passed via `SWIVAL_*`
+  environment variables. Startup hooks run before memory and continue-here
+  loading so they can hydrate `.swival/` from remote storage; exit hooks run
+  after all artifacts are written. Configurable via `swival.toml` or
+  `~/.config/swival/config.toml`.
+- Custom command arguments are now passed as a single string: `!command a b c`
+  calls the script with `$2="a b c"` instead of spreading each word as a
+  separate argv entry.
+
 ## 0.9.0
 
 - Outbound LLM filter: a new `--llm-filter` flag (and `llm_filter` config key)

@@ -1,6 +1,6 @@
 # Lifecycle Hooks
 
-Swival can run a user-configured command at two points in every session: once at startup (before memory and continue state are loaded) and once at exit (after history, reports, and continue files are written). This lets you sync `.swival/` state to and from remote storage without any provider-specific code in Swival itself.
+Swival can run a user-configured command at two points in every session: once at startup (before memory and continue state are loaded) and once at exit (after history, reports, and continue files are written). This lets you sync `.swival/` state to and from remote storage without any provider-specific code in Swival itself — and without committing `.swival/` to git. Memory, continue files, and reports stay out of version control but still follow you across machines.
 
 The feature is generic. Swival does not know or care what the hook does. The canonical use case is syncing `.swival/` to Hugging Face Buckets so that memory, continue files, and reports survive across machines and commits — but any storage backend works.
 
