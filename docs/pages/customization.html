@@ -80,7 +80,14 @@ swival --init-config --project  # project config in current directory
 <p>Settings mostly use the same names as CLI flags, with a few exceptions: the config keys <code>allowed_dirs</code> and <code>allowed_dirs_ro</code> correspond to the CLI flags <code>--add-dir</code> and <code>--add-dir-ro</code>. Lists use TOML arrays instead of comma-separated strings.</p>
 <pre><code class="language-toml">provider = &quot;openrouter&quot;
 model = &quot;qwen/qwen3-coder-next&quot;
+# base_url = &quot;http://127.0.0.1:1234&quot;    # provider API base URL
+# api_key = &quot;...&quot;                       # prefer env vars over config for credentials
+# system_prompt = &quot;...&quot;                 # replaces the built-in system prompt
+# no_system_prompt = false              # omit the system message entirely
 max_turns = 250
+# temperature = 0.3
+# top_p = 0.9
+# seed = 42
 allowed_commands = [&quot;ls&quot;, &quot;git&quot;, &quot;python3&quot;]
 allowed_dirs = [&quot;/tmp&quot;]
 allowed_dirs_ro = [&quot;/opt/zig/lib/std&quot;]
@@ -91,9 +98,24 @@ extra_body = { chat_template_kwargs = { enable_thinking = false } }
 reasoning_effort = &quot;high&quot;
 cache = true
 # cache_dir = &quot;.swival&quot;
-# color = true           # true = force color, false = force no-color, absent = auto
-# no_mcp = false         # disable MCP server connections
-# no_a2a = false         # disable A2A agent connections
+# retries = 5              # max provider retries on transient network errors
+# color = true             # true = force color, false = force no-color, absent = auto
+# yolo = false             # disable sandbox checks and command whitelisting
+# no_read_guard = false    # disable read-before-write guard
+# no_mcp = false           # disable MCP server connections
+# no_a2a = false           # disable A2A agent connections
+# no_instructions = false  # skip CLAUDE.md and AGENTS.md loading
+# no_skills = false        # disable skill discovery
+# no_memory = false        # skip auto-memory loading
+# memory_full = false      # inject entire MEMORY.md instead of budgeted retrieval
+# no_history = false       # disable HISTORY.md writes
+# sandbox = &quot;builtin&quot;      # &quot;builtin&quot; or &quot;agentfs&quot;
+# sandbox_session = &quot;...&quot;  # AgentFS session ID
+# sandbox_strict_read = false  # strict read isolation (agentfs only)
+# sandbox_auto_session = true  # auto session ID from project dir (agentfs only)
+# encrypt_secrets = false  # transparent credential encryption
+# encrypt_secrets_key = &quot;...&quot; # hex 32-byte key for stable ciphertext
+# sanitize_thinking = false   # strip leaked &lt;think&gt; tags
 
 # Reviewer settings
 reviewer = &quot;swival --reviewer-mode&quot;
@@ -114,7 +136,7 @@ auth_token = &quot;sk-...&quot;
 model = &quot;gpt-5.4&quot;
 </code></pre>
 <p>Relative paths in <code>allowed_dirs</code>, <code>allowed_dirs_ro</code>, <code>skills_dir</code>, <code>cache_dir</code>, <code>objective</code>, and <code>verify</code> resolve against the config file's parent directory, not the working directory. Tilde paths like <code>~/projects</code> expand to the home directory.</p>
-<p>The <code>reviewer</code> value is shell-split; only path-like first tokens (<code>./</code>, <code>../</code>, <code>~</code>) are resolved against the config directory, while bare command names like <code>swival</code> are left for PATH lookup at runtime. The same resolution applies to <code>model</code> when <code>provider = "command"</code>.</p>
+<p>The <code>reviewer</code>, <code>llm_filter</code>, and <code>lifecycle_command</code> values are shell-split; only path-like first tokens (<code>./</code>, <code>../</code>, <code>~</code>, <code>/</code>) are resolved against the config directory, while bare command names like <code>swival</code> are left for PATH lookup at runtime. The same resolution applies to <code>model</code> when <code>provider = "command"</code>.</p>
 <p>If a project config contains <code>api_key</code> inside a git repository, Swival prints a warning because the key could be committed accidentally. Prefer environment variables for credentials.</p>
 <p>The <code>--system-prompt</code> and <code>no_system_prompt</code> settings are mutually exclusive in config files, just as they are on the command line.</p>
 <p>The library API (<code>Session</code> class) does not auto-load config files. If you want config file support in library code, call <code>load_config()</code> and <code>config_to_session_kwargs()</code> explicitly.</p>

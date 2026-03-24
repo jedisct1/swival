@@ -35,7 +35,7 @@ swival --allowed-commands ls,git,python3 \
 
 That whitelist changes what the agent can do. If `python3` is available, it can use Python for implementation and verification. If no commands are whitelisted, `run_command` is unavailable unless you enable YOLO mode.
 
-A successful run exits with code `0`. A runtime or configuration failure exits with code `1`. A run that reaches the turn limit before finishing exits with code `2`. A run interrupted with Ctrl+C exits with code `130`.
+A successful run exits with code `0`. A runtime or configuration failure exits with code `1`. A run that reaches the turn limit before finishing exits with code `2`. A run interrupted with Ctrl+C exits with code `130`. A run terminated by SIGTERM exits with code `143`.
 
 ## Interactive Mode
 
@@ -51,7 +51,7 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 
 `/help` prints the command reference in the terminal.
 
-`/clear` drops conversation history back to the initial system state and also resets internal thinking and file-tracking state.
+`/clear` (or `/new`) drops conversation history back to the initial system state and also resets internal thinking and file-tracking state.
 
 `/compact` compacts older tool output in memory. `/compact --drop` is more aggressive and also drops middle turns.
 

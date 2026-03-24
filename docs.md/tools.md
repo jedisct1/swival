@@ -54,7 +54,7 @@ Set `case_insensitive` to `true` for case-insensitive matching. Results are capp
 
 `think` is structured scratchpad reasoning. It lets the model capture numbered thoughts, revise earlier thoughts, and branch from a prior thought to compare alternative approaches. This is especially helpful for debugging and multi-step refactors.
 
-The only required parameter is `thought`. Everything else is optional. A `mode` parameter (`"new"`, `"revision"`, `"branch"`) selects the type of thought. Revision mode requires `revises_thought` to reference an earlier thought number. Branch mode requires `branch_from_thought` plus a `branch_id` label.
+The only required parameter is `thought`. Everything else is optional. `thought_number` is a 1-based step number that auto-increments if omitted. `total_thoughts` is the estimated total steps needed, defaulting to 3 on the first call and then carrying forward. `next_thought_needed` is a boolean that defaults to true — set it to false when done thinking. A `mode` parameter (`"new"`, `"revision"`, `"branch"`) selects the type of thought. Revision mode requires `revises_thought` to reference an earlier thought number. Branch mode requires `branch_from_thought` plus a `branch_id` label.
 
 The tool applies tolerant coercion so models that send extra or contradictory fields don't get stuck in validation loops. Incompatible fields are stripped based on the inferred mode, and corrective error messages include valid thought numbers when a reference is wrong.
 
@@ -78,7 +78,7 @@ This tool is only available when the model supports vision. Swival checks vision
 
 ## `fetch_url`
 
-`fetch_url` downloads HTTP or HTTPS content and returns it as markdown, plain text, or raw HTML. It is designed for documentation lookup and API reference pulls. Binary content types are rejected.
+`fetch_url` downloads HTTP or HTTPS content and returns it as markdown, plain text, or raw HTML. It is designed for documentation lookup and API reference pulls. Binary content types are rejected. The `format` parameter selects the output format: `"markdown"` (default), `"text"`, or `"html"`. The `timeout` parameter sets the request timeout in seconds (1–120, default 30).
 
 Raw response bodies are capped at 5 MB, and inline output is capped at 50 KB. Larger converted outputs are saved under `.swival/` so the agent can page through them with `read_file`.
 

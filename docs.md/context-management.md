@@ -12,7 +12,7 @@ Swival's context management operates as four concentric layers of defense.
 
 **Layer 2 — Proactive collapse.** The agent can actively manage its own context using the `snapshot` tool. After reading several files to understand a problem, the agent calls `snapshot restore` with a summary of what it learned. The file reads — often 10K+ tokens of dead weight — are replaced with a ~200 token summary. The agent keeps the knowledge; the context gets the space back.
 
-**Layer 3 — Reactive compaction.** When the context fills up despite prevention and proactive collapse, Swival runs a graduated compaction pipeline. It starts gentle (shrinking old tool results), escalates if needed (dropping low-importance turns), and has a last-resort nuclear option (keeping only the system prompt, a summary, and the last two turns). Each level is tried in sequence, and the agent only moves to the next if the previous wasn't enough.
+**Layer 3 — Reactive compaction.** When the context fills up despite prevention and proactive collapse, Swival runs a graduated compaction pipeline. It starts gentle (shrinking old tool results), escalates if needed (dropping low-importance turns with the last 3 turns protected), and has a last-resort nuclear option (keeping only the system prompt, a summary, and the last 2 turns). Each level is tried in sequence, and the agent only moves to the next if the previous wasn't enough.
 
 **Layer 4 — Knowledge survival.** Thinking notes, todo lists, and snapshot summaries live outside the message history in independent channels that compaction cannot touch. Even after the most aggressive compaction wipes nearly everything, the agent still knows its reasoning, its task list, and what it learned during investigation.
 

@@ -239,5 +239,15 @@ Full documentation is available at [swival.dev](https://swival.dev/).
   MCP, and agent-browser for web interaction
 - [Reviews](docs.md/reviews.md) -- external reviewer scripts for automated QA
   and LLM-as-judge evaluation
+- [Secret Encryption](docs.md/secrets.md) -- transparent encryption of
+  credentials before they reach the LLM provider
+- [Outbound LLM Filter](docs.md/llm-filter.md) -- user-defined scripts to
+  redact or block outbound LLM requests
+- [Lifecycle Hooks](docs.md/lifecycle-hooks.md) -- startup/exit hooks for
+  syncing state to remote storage
+- [Custom Commands](docs.md/custom-commands.md) -- REPL custom command setup
+  and execution
+- [Python API](docs.md/python-api.md) -- library API for embedding Swival in
+  Python applications
 - [Using Swival with AgentFS](docs.md/agentfs.md) -- copy-on-write filesystem
   sandboxing for safe agent runs

@@ -22,7 +22,14 @@ Settings mostly use the same names as CLI flags, with a few exceptions: the conf
 ```toml
 provider = "openrouter"
 model = "qwen/qwen3-coder-next"
+# base_url = "http://127.0.0.1:1234"    # provider API base URL
+# api_key = "..."                       # prefer env vars over config for credentials
+# system_prompt = "..."                 # replaces the built-in system prompt
+# no_system_prompt = false              # omit the system message entirely
 max_turns = 250
+# temperature = 0.3
+# top_p = 0.9
+# seed = 42
 allowed_commands = ["ls", "git", "python3"]
 allowed_dirs = ["/tmp"]
 allowed_dirs_ro = ["/opt/zig/lib/std"]
@@ -33,9 +40,24 @@ extra_body = { chat_template_kwargs = { enable_thinking = false } }
 reasoning_effort = "high"
 cache = true
 # cache_dir = ".swival"
-# color = true           # true = force color, false = force no-color, absent = auto
-# no_mcp = false         # disable MCP server connections
-# no_a2a = false         # disable A2A agent connections
+# retries = 5              # max provider retries on transient network errors
+# color = true             # true = force color, false = force no-color, absent = auto
+# yolo = false             # disable sandbox checks and command whitelisting
+# no_read_guard = false    # disable read-before-write guard
+# no_mcp = false           # disable MCP server connections
+# no_a2a = false           # disable A2A agent connections
+# no_instructions = false  # skip CLAUDE.md and AGENTS.md loading
+# no_skills = false        # disable skill discovery
+# no_memory = false        # skip auto-memory loading
+# memory_full = false      # inject entire MEMORY.md instead of budgeted retrieval
+# no_history = false       # disable HISTORY.md writes
+# sandbox = "builtin"      # "builtin" or "agentfs"
+# sandbox_session = "..."  # AgentFS session ID
+# sandbox_strict_read = false  # strict read isolation (agentfs only)
+# sandbox_auto_session = true  # auto session ID from project dir (agentfs only)
+# encrypt_secrets = false  # transparent credential encryption
+# encrypt_secrets_key = "..." # hex 32-byte key for stable ciphertext
+# sanitize_thinking = false   # strip leaked <think> tags
 
 # Reviewer settings
 reviewer = "swival --reviewer-mode"
@@ -61,7 +83,7 @@ model = "gpt-5.4"
 
 Relative paths in `allowed_dirs`, `allowed_dirs_ro`, `skills_dir`, `cache_dir`, `objective`, and `verify` resolve against the config file's parent directory, not the working directory. Tilde paths like `~/projects` expand to the home directory.
 
-The `reviewer` value is shell-split; only path-like first tokens (`./`, `../`, `~`) are resolved against the config directory, while bare command names like `swival` are left for PATH lookup at runtime. The same resolution applies to `model` when `provider = "command"`.
+The `reviewer`, `llm_filter`, and `lifecycle_command` values are shell-split; only path-like first tokens (`./`, `../`, `~`, `/`) are resolved against the config directory, while bare command names like `swival` are left for PATH lookup at runtime. The same resolution applies to `model` when `provider = "command"`.
 
 If a project config contains `api_key` inside a git repository, Swival prints a warning because the key could be committed accidentally. Prefer environment variables for credentials.
 
