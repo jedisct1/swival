@@ -14,8 +14,7 @@ import time
 from pathlib import Path
 
 
-class LifecycleError(Exception):
-    """Raised when a lifecycle hook fails in fail-closed mode."""
+from .report import LifecycleError as LifecycleError  # re-export
 
 
 _GIT_ENV_MAP = {

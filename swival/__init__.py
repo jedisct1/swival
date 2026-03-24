@@ -2,6 +2,8 @@ from .session import Result as Result
 from .session import Session as Session
 from .report import AgentError as AgentError
 from .report import ConfigError as ConfigError
+from .report import ContextOverflowError as ContextOverflowError
+from .report import LifecycleError as LifecycleError
 
 
 def run(question: str, *, base_dir: str = ".", **kwargs) -> str:

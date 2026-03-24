@@ -109,6 +109,16 @@ NAV = [
             ("agentfs", "AgentFS", "Copy-on-write filesystem sandboxing"),
         ],
     ),
+    (
+        "Reference",
+        [
+            (
+                "python-api",
+                "Python API",
+                "Session, Result, run(), and the exception contract",
+            ),
+        ],
+    ),
 ]
 
 MD_EXTENSIONS = ["fenced_code", "tables", "toc"]

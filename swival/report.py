@@ -12,6 +12,14 @@ class ConfigError(AgentError):
     """Raised for invalid configuration (missing model, bad API key, etc.)."""
 
 
+class ContextOverflowError(AgentError):
+    """Raised when the LLM call fails due to context window overflow."""
+
+
+class LifecycleError(AgentError):
+    """Raised when a lifecycle hook fails in fail-closed mode."""
+
+
 class ReportCollector:
     """Accumulates events during an agent run for JSON report output."""
 

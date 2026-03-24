@@ -34,7 +34,7 @@ from ._msg import (
     _set_msg_content,
 )
 from .config import _UNSET
-from .report import AgentError, ConfigError, ReportCollector
+from .report import AgentError, ConfigError, ContextOverflowError, ReportCollector
 from .snapshot import (
     SNAPSHOT_HISTORY_SENTINEL,
     SNAPSHOT_RECAP_PREFIX,
@@ -327,12 +327,6 @@ _THINK_LINE_PREFIX_RE = re.compile(
     r"^.*?\n\s*</think>\s*\n*", re.IGNORECASE | re.DOTALL
 )
 _THINK_TAG_LINE_RE = re.compile(r"(?mi)^\s*</?think>\s*$\n?")
-
-
-class ContextOverflowError(Exception):
-    """Raised when the LLM call fails due to context window overflow."""
-
-    pass
 
 
 def _sanitize_assistant_messages(messages: list) -> bool:
@@ -4214,23 +4208,20 @@ def _run_main(args, report, _write_report, parser):
 
     if lifecycle_cmd and not no_lifecycle:
         _validate_external_command(lifecycle_cmd, "lifecycle_command")
-        from .lifecycle import run_lifecycle_hook, _git_metadata, LifecycleError
+        from .lifecycle import run_lifecycle_hook, _git_metadata
 
         lifecycle_git_meta = _git_metadata(base_dir)
-        try:
-            lifecycle_startup_result = run_lifecycle_hook(
-                lifecycle_cmd,
-                "startup",
-                base_dir,
-                timeout=lifecycle_timeout,
-                fail_closed=lifecycle_fail_closed,
-                provider=args.provider,
-                model=model_id,
-                git_meta=lifecycle_git_meta,
-                verbose=args.verbose,
-            )
-        except LifecycleError as e:
-            raise AgentError(f"lifecycle startup hook failed (fail-closed): {e}")
+        lifecycle_startup_result = run_lifecycle_hook(
+            lifecycle_cmd,
+            "startup",
+            base_dir,
+            timeout=lifecycle_timeout,
+            fail_closed=lifecycle_fail_closed,
+            provider=args.provider,
+            model=model_id,
+            git_meta=lifecycle_git_meta,
+            verbose=args.verbose,
+        )
         if args.verbose and lifecycle_startup_result:
             fmt.info(
                 f"Lifecycle startup hook completed in "
@@ -5021,7 +5012,9 @@ def run_agent_loop(
                             snapshot_state=snapshot_state,
                             thinking_state=thinking_state,
                         )
-                    raise AgentError("context window exceeded even after compaction")
+                    raise ContextOverflowError(
+                        "context window exceeded even after compaction"
+                    )
 
         except AgentError as e:
             if _vision_pending and _is_vision_rejection(e):

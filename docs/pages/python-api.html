@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Python API — Swival</title>
+    <meta name="description" content="Python API — Swival documentation">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Python API — Swival">
+    <meta property="og:description" content="Python API — Swival documentation">
+    <meta property="og:image" content="https://swival.dev/img/logo.png">
+    <meta property="og:url" content="https://swival.dev/pages/python-api.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Python API — Swival">
+    <meta name="twitter:description" content="Python API — Swival documentation">
+    <meta name="twitter:image" content="https://swival.dev/img/logo.png">
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="../" class="header-logo">
+                <img src="../img/logo.png" alt="Swival">
+            </a>
+            <nav class="header-nav">
+                <a href="./">Docs</a>
+                <a href="https://github.com/swival/swival">GitHub</a>
+            </nav>
+        </div>
+    </header>
+    <div class="docs-layout">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+<h4>Basics</h4>
+<ul>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="usage.html">Usage</a></li>
+<li><a href="tools.html">Tools</a></li>
+<li><a href="context-management.html">Context Management</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Configuration & Deployment</h4>
+<ul>
+<li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
+<li><a href="secrets.html">Secret Encryption</a></li>
+<li><a href="llm-filter.html">Outbound LLM Filter</a></li>
+<li><a href="skills.html">Skills</a></li>
+<li><a href="web-browsing.html">Web Browsing</a></li>
+<li><a href="mcp.html">MCP</a></li>
+<li><a href="a2a.html">A2A</a></li>
+<li><a href="lifecycle-hooks.html">Lifecycle Hooks</a></li>
+<li><a href="custom-commands.html">Custom Commands</a></li>
+<li><a href="customization.html">Customization</a></li>
+<li><a href="providers.html">Providers</a></li>
+<li><a href="reports.html">Reports</a></li>
+<li><a href="reviews.html">Reviews</a></li>
+<li><a href="agentfs.html">AgentFS</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Reference</h4>
+<ul>
+<li><a href="python-api.html" class="active">Python API</a></li>
+</ul>
+</div>
+        </aside>
+        <article class="docs-content">
+            <h1 id="python-api">Python API</h1>
+<p>Swival exposes a small public API for embedding the agent loop in your own programs. Everything you need is importable from the top-level <code>swival</code> package.</p>
+<pre><code class="language-python">from swival import Session, Result, run
+from swival import AgentError, ConfigError, ContextOverflowError, LifecycleError
+</code></pre>
+<h2 id="runquestion-base_dir-kwargs-str"><code>run(question, *, base_dir=".", **kwargs) -&gt; str</code></h2>
+<p>One-call convenience function. Creates a <code>Session</code>, runs the question, and returns the answer string. Raises <code>AgentError</code> if the agent exhausts its turns or returns no answer. All keyword arguments are forwarded to <code>Session</code>.</p>
+<pre><code class="language-python">import swival
+
+answer = swival.run(&quot;list the Python files in this directory&quot;, provider=&quot;lmstudio&quot;)
+print(answer)
+</code></pre>
+<h2 id="session"><code>Session</code></h2>
+<p>The main entry point. Stores configuration as plain attributes. Call <code>.run()</code> for single-shot questions or <code>.ask()</code> for multi-turn conversations.</p>
+<h3 id="constructor">Constructor</h3>
+<pre><code class="language-python">Session(
+    *,
+    base_dir: str = &quot;.&quot;,
+    provider: str = &quot;lmstudio&quot;,
+    model: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    max_turns: int = 100,
+    max_output_tokens: int = 32768,
+    max_context_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float = 1.0,
+    seed: int | None = None,
+    allowed_commands: list[str] | None = None,
+    yolo: bool = False,
+    verbose: bool = False,
+    system_prompt: str | None = None,
+    no_system_prompt: bool = False,
+    no_instructions: bool = False,
+    no_skills: bool = False,
+    skills_dir: list[str] | None = None,
+    allowed_dirs: list[str] | None = None,
+    allowed_dirs_ro: list[str] | None = None,
+    sandbox: str = &quot;builtin&quot;,
+    sandbox_session: str | None = None,
+    sandbox_strict_read: bool = False,
+    sandbox_auto_session: bool = True,
+    read_guard: bool = True,
+    history: bool = True,
+    memory: bool = True,
+    memory_full: bool = False,
+    config_dir: Path | None = None,
+    proactive_summaries: bool = False,
+    mcp_servers: dict | None = None,
+    a2a_servers: dict | None = None,
+    extra_body: dict | None = None,
+    reasoning_effort: str | None = None,
+    continue_here: bool = True,
+    sanitize_thinking: bool | None = None,
+    cache: bool = False,
+    cache_dir: str | None = None,
+    scratch_dir: str | None = None,
+    retries: int = 5,
+    encrypt_secrets: bool = False,
+    encrypt_secrets_key: str | None = None,
+    encrypt_secrets_tweak: str | None = None,
+    encrypt_secrets_patterns: list | None = None,
+    llm_filter: str | None = None,
+    lifecycle_command: str | None = None,
+    lifecycle_timeout: int = 300,
+    lifecycle_fail_closed: bool = False,
+    lifecycle_enabled: bool = True,
+)
+</code></pre>
+<p>All parameters are keyword-only. The important ones:</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>base_dir</code></td>
+<td>Project root. Tools resolve paths relative to this.</td>
+</tr>
+<tr>
+<td><code>provider</code></td>
+<td>LLM provider: <code>"lmstudio"</code>, <code>"huggingface"</code>, <code>"openrouter"</code>, <code>"chatgpt"</code>, <code>"google"</code>, <code>"generic"</code>, or a command string.</td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>Model identifier. Required for most providers; LM Studio auto-discovers.</td>
+</tr>
+<tr>
+<td><code>api_key</code></td>
+<td>API key. Can also be set via provider-specific env vars.</td>
+</tr>
+<tr>
+<td><code>base_url</code></td>
+<td>Override the provider's default endpoint.</td>
+</tr>
+<tr>
+<td><code>max_turns</code></td>
+<td>Maximum agent loop iterations before returning <code>exhausted=True</code>.</td>
+</tr>
+<tr>
+<td><code>max_output_tokens</code></td>
+<td>Maximum tokens per LLM response.</td>
+</tr>
+<tr>
+<td><code>max_context_tokens</code></td>
+<td>Hard cap on context window size. <code>None</code> uses the provider's default.</td>
+</tr>
+<tr>
+<td><code>temperature</code></td>
+<td>Sampling temperature. <code>None</code> uses the provider's default.</td>
+</tr>
+<tr>
+<td><code>allowed_commands</code></td>
+<td>Whitelist of shell commands the agent may run. <code>None</code> uses the built-in default list.</td>
+</tr>
+<tr>
+<td><code>yolo</code></td>
+<td>Disable command restrictions entirely.</td>
+</tr>
+<tr>
+<td><code>system_prompt</code></td>
+<td>Override the default system prompt.</td>
+</tr>
+<tr>
+<td><code>mcp_servers</code></td>
+<td>MCP server configurations (see <a href="mcp.html">MCP</a>).</td>
+</tr>
+<tr>
+<td><code>a2a_servers</code></td>
+<td>A2A server configurations (see <a href="a2a.html">A2A</a>).</td>
+</tr>
+<tr>
+<td><code>lifecycle_command</code></td>
+<td>Shell command to run at startup and exit (see <a href="lifecycle-hooks.html">Lifecycle Hooks</a>).</td>
+</tr>
+<tr>
+<td><code>lifecycle_fail_closed</code></td>
+<td>If <code>True</code>, hook failures raise <code>LifecycleError</code> instead of being silently ignored.</td>
+</tr>
+<tr>
+<td><code>llm_filter</code></td>
+<td>Path to a filter script that can redact or block outbound LLM requests (see <a href="llm-filter.html">Outbound LLM Filter</a>).</td>
+</tr>
+<tr>
+<td><code>encrypt_secrets</code></td>
+<td>Enable format-preserving secret encryption (see <a href="secrets.html">Secret Encryption</a>).</td>
+</tr>
+<tr>
+<td><code>retries</code></td>
+<td>Number of LLM call retries on transient failures. Must be &gt;= 1.</td>
+</tr>
+<tr>
+<td><code>history</code></td>
+<td>Write <code>HISTORY.md</code> after successful runs.</td>
+</tr>
+<tr>
+<td><code>memory</code></td>
+<td>Load memory files (<code>.swival/memory/</code>) into the system prompt.</td>
+</tr>
+<tr>
+<td><code>cache</code></td>
+<td>Cache LLM responses to disk for deterministic replay.</td>
+</tr>
+<tr>
+<td><code>verbose</code></td>
+<td>Print diagnostics to stderr.</td>
+</tr>
+</tbody>
+</table>
+<p>Parameters not listed here correspond to the same-named CLI flags and config keys. See <a href="customization.html">Customization</a> for the full config reference.</p>
+<h3 id="sessionrunquestion-reportfalse-result"><code>Session.run(question, *, report=False) -&gt; Result</code></h3>
+<p>Single-shot execution. Each call is independent — fresh message history, fresh state.</p>
+<pre><code class="language-python">session = Session(provider=&quot;lmstudio&quot;)
+result = session.run(&quot;refactor the login handler&quot;)
+print(result.answer)
+</code></pre>
+<p>If <code>report=True</code>, the returned <code>Result</code> includes a <code>report</code> dict with timing, token usage, and tool stats (see <a href="reports.html">Reports</a>).</p>
+<p>The exit lifecycle hook runs automatically after <code>run()</code>, even if the agent loop raises.</p>
+<h3 id="sessionaskquestion-result"><code>Session.ask(question) -&gt; Result</code></h3>
+<p>Multi-turn conversation. Shares message history across calls, like the REPL.</p>
+<pre><code class="language-python">session = Session(provider=&quot;lmstudio&quot;)
+r1 = session.ask(&quot;read src/auth.py and explain the login flow&quot;)
+r2 = session.ask(&quot;now add rate limiting to that handler&quot;)
+session.close(outcome=&quot;success&quot;, exit_code=0)
+</code></pre>
+<p>On success, the assistant's reply is appended to the shared history so subsequent calls build on prior context.</p>
+<p>On failure, the message list is rolled back to its state before the call — including any in-place mutations from compaction — so the session stays usable. State objects (thinking notes, todo items, file tracker) are not rolled back; partial progress from the failed turn is preserved.</p>
+<p>Raises <code>AgentError</code> (or one of its subclasses) on LLM, tool, or infrastructure failures. In particular, <code>ContextOverflowError</code> is raised when the context window is exhausted even after all compaction strategies have been tried.</p>
+<h3 id="sessionreset"><code>Session.reset()</code></h3>
+<p>Clear the conversation state. The next <code>ask()</code> starts with a fresh message history. Setup (provider validation, MCP connections, etc.) is preserved.</p>
+<h3 id="sessionclose-outcomenone-exit_codenone"><code>Session.close(*, outcome=None, exit_code=None)</code></h3>
+<p>Explicitly close the session and run the exit lifecycle hook. Pass <code>outcome</code> and <code>exit_code</code> to make them available to the hook as <code>SWIVAL_OUTCOME</code> and <code>SWIVAL_EXIT_CODE</code>.</p>
+<p>Idempotent — safe to call after <code>run()</code> already ran the exit hook. Resources (MCP servers, cache, secrets) are always cleaned up.</p>
+<p>Raises <code>LifecycleError</code> if the exit hook fails and <code>lifecycle_fail_closed</code> is <code>True</code>.</p>
+<h3 id="context-manager">Context Manager</h3>
+<p><code>Session</code> supports <code>with</code> blocks. The exit hook runs on block exit; resources are cleaned up regardless.</p>
+<pre><code class="language-python">with Session(lifecycle_command=&quot;./sync.sh&quot;) as s:
+    s.ask(&quot;first question&quot;)
+    s.ask(&quot;follow-up&quot;)
+# exit hook fires, resources cleaned up
+</code></pre>
+<p>If <code>lifecycle_fail_closed</code> is <code>True</code> and the exit hook fails, <code>LifecycleError</code> propagates from <code>__exit__</code> — but only when no other exception is already active.</p>
+<h2 id="result"><code>Result</code></h2>
+<p>Returned by <code>Session.run()</code> and <code>Session.ask()</code>.</p>
+<pre><code class="language-python">@dataclass
+class Result:
+    answer: str | None
+    exhausted: bool
+    messages: list[dict]
+    report: dict | None
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>answer</code></td>
+<td>The agent's final text answer, or <code>None</code> if it never produced one.</td>
+</tr>
+<tr>
+<td><code>exhausted</code></td>
+<td><code>True</code> if the agent hit <code>max_turns</code> without finishing.</td>
+</tr>
+<tr>
+<td><code>messages</code></td>
+<td>Deep copy of the full message history (system, user, assistant, tool results).</td>
+</tr>
+<tr>
+<td><code>report</code></td>
+<td>Timing and token report dict if <code>report=True</code> was passed, otherwise <code>None</code>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="exceptions">Exceptions</h2>
+<p>All exceptions raised through the public API are subclasses of <code>AgentError</code>. Code that catches <code>AgentError</code> handles every failure mode. Catch a subclass when you need finer control.</p>
+<pre><code>AgentError
+├── ConfigError
+├── ContextOverflowError
+└── LifecycleError
+</code></pre>
+<h3 id="agenterror"><code>AgentError</code></h3>
+<p>Base class for all swival errors that reach the caller. Raised on LLM failures, tool dispatch errors, provider connection problems, and any other runtime failure in the agent loop.</p>
+<h3 id="configerror"><code>ConfigError</code></h3>
+<p>Invalid configuration before the agent loop starts: missing model, bad API key format, malformed MCP server config, non-existent directories in <code>allowed_dirs</code>, conflicting options.</p>
+<p><code>ConfigError</code> is a subclass of <code>AgentError</code>, so <code>except AgentError</code> catches it too.</p>
+<h3 id="contextoverflowerror"><code>ContextOverflowError</code></h3>
+<p>The context window is full and all compaction strategies (message shrinking, turn dropping, tool schema pruning, system prompt truncation) have been exhausted. This means the conversation grew too large for the model's context window and could not be recovered.</p>
+<p>Callers that want to handle context exhaustion differently — retry with a larger-context model, split the task, or save partial progress — can catch this specifically:</p>
+<pre><code class="language-python">from swival import Session, ContextOverflowError
+
+session = Session(provider=&quot;lmstudio&quot;)
+try:
+    result = session.ask(&quot;very large task&quot;)
+except ContextOverflowError:
+    session.reset()
+    result = session.ask(&quot;smaller subtask&quot;)
+</code></pre>
+<h3 id="lifecycleerror"><code>LifecycleError</code></h3>
+<p>A lifecycle hook (startup or exit) failed while <code>lifecycle_fail_closed</code> is <code>True</code>. When <code>lifecycle_fail_closed</code> is <code>False</code> (the default), hook failures are silently ignored and this exception is never raised.</p>
+<p>Propagates from <code>Session.run()</code>, <code>Session.ask()</code> (startup hooks), <code>Session.close()</code>, and <code>Session.__exit__()</code> (exit hooks). See <a href="lifecycle-hooks.html">Lifecycle Hooks</a> for details.</p>
+<h3 id="internal-exceptions">Internal exceptions</h3>
+<p><code>FilterError</code>, <code>McpShutdownError</code>, and <code>A2aShutdownError</code> are caught internally and either wrapped as <code>AgentError</code> or handled silently. They are not part of the public API.</p>
+        </article>
+    </div>
+    <footer class="site-footer">
+        MIT License &middot;
+        <a href="https://github.com/swival/swival">GitHub</a>
+    </footer>
+</body>
+</html>

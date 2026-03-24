@@ -308,26 +308,21 @@ class Session:
         # --- Lifecycle startup hook ---
         if self.lifecycle_command and self.lifecycle_enabled:
             from .agent import _validate_external_command
-            from .lifecycle import run_lifecycle_hook, _git_metadata, LifecycleError
+            from .lifecycle import run_lifecycle_hook, _git_metadata
 
             _validate_external_command(self.lifecycle_command, "lifecycle_command")
             self._lifecycle_git_meta = _git_metadata(self.base_dir)
-            try:
-                self._lifecycle_startup_result = run_lifecycle_hook(
-                    self.lifecycle_command,
-                    "startup",
-                    self.base_dir,
-                    timeout=self.lifecycle_timeout,
-                    fail_closed=self.lifecycle_fail_closed,
-                    provider=self.provider,
-                    model=self._model_id,
-                    git_meta=self._lifecycle_git_meta,
-                    verbose=self.verbose,
-                )
-            except LifecycleError as e:
-                from .report import AgentError
-
-                raise AgentError(f"lifecycle startup hook failed (fail-closed): {e}")
+            self._lifecycle_startup_result = run_lifecycle_hook(
+                self.lifecycle_command,
+                "startup",
+                self.base_dir,
+                timeout=self.lifecycle_timeout,
+                fail_closed=self.lifecycle_fail_closed,
+                provider=self.provider,
+                model=self._model_id,
+                git_meta=self._lifecycle_git_meta,
+                verbose=self.verbose,
+            )
 
         # Build system prompt (without memory — memory is injected per-call
         # in run()/ask() so it can be keyed from the user's question).
@@ -546,8 +541,11 @@ class Session:
         intentionally preserved.
 
         Raises:
-            AgentError: on LLM, tool, or infrastructure failures, including
-                context-window exhaustion after compaction.
+            AgentError: on LLM, tool, or infrastructure failures.
+            ContextOverflowError: (subclass of AgentError) when the context
+                window is exhausted even after all compaction strategies.
+            LifecycleError: (subclass of AgentError) when a fail-closed
+                startup hook fails during the first call's setup.
         """
         self._setup()
 
