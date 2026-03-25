@@ -101,8 +101,7 @@ swival --provider huggingface --model zai-org/GLM-5 &quot;task&quot;
 <p>HuggingFace <a href="https://huggingface.co/inference-endpoints">Inference Endpoints</a> let you deploy any supported model on dedicated infrastructure. Create an endpoint from the HuggingFace UI, then point Swival at it with <code>--base-url</code>.</p>
 <pre><code class="language-sh">swival --provider huggingface \
     --model Qwen/Qwen3.5-35B-A3B \
-    --base-url https://tfg1ghx03o7xuv5p.us-east-1.aws.endpoints.huggingface.cloud \
-    --repl
+    --base-url https://tfg1ghx03o7xuv5p.us-east-1.aws.endpoints.huggingface.cloud
 </code></pre>
 <p>Most inference endpoints use vLLM as the serving backend. For tool calling to work, you must add the following to the <strong>Container Arguments</strong> field in your endpoint's configuration on HuggingFace:</p>
 <pre><code>--enable-auto-tool-choice --tool-call-parser qwen3_xml

@@ -152,7 +152,7 @@ If you do not want the result, remove `.agentfs/add-config.db`.
 The integrated sandbox mode works with REPL mode directly:
 
 ```sh
-swival --sandbox agentfs --repl --yolo
+swival --sandbox agentfs --yolo
 ```
 
 This gives you an interactive agent session inside the overlay. You can test changes from a separate terminal by re-entering the same session with `agentfs run --session <id> -- bash`.

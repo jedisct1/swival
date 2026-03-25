@@ -148,7 +148,7 @@ brew uninstall swival     # if installed with Homebrew
 <p>When you run a task against LM Studio, Swival first calls <code>/api/v1/models</code> to discover the loaded model and context size. It then builds a system prompt that includes tool definitions and workspace context, sends your task through LiteLLM, and enters the agent loop where the model can read files, edit files, search, and continue tool-calling until it finishes. When the model returns a final text answer with no more tool calls, Swival prints that answer to standard output and exits.</p>
 <p>Diagnostic logs such as turn headers, tool traces, and timing information are written to standard error, which keeps standard output clean for piping into other tools.</p>
 <h2 id="passing-the-task-on-stdin">Passing The Task On Stdin</h2>
-<p>If you omit the positional task and pipe stdin, Swival reads the task from stdin.</p>
+<p>If you omit the positional task and pipe stdin, Swival reads the task from stdin. On an interactive terminal with no task, Swival enters REPL mode automatically.</p>
 <pre><code class="language-sh">swival -q &lt; objective.md
 
 cat prompts/review.md | swival --provider huggingface --model zai-org/GLM-5

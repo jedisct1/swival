@@ -40,7 +40,7 @@ Once configured, Swival gets MCP tools like `mcp__chrome__navigate_page`, `mcp__
 ### Example
 
 ```sh
-swival --repl
+swival
 > Navigate to https://news.ycombinator.com, find the top story, and summarize it
 ```
 
@@ -123,7 +123,7 @@ Once configured, Swival gets tools like `mcp__lightpanda__markdown`, `mcp__light
 ### Example
 
 ```sh
-swival --repl
+swival
 > Fetch https://news.ycombinator.com and summarize the top 5 stories
 ```
 
@@ -208,7 +208,7 @@ A typical snapshot is 200-400 tokens compared to 3,000-5,000 for a full DOM dump
 ### Example session
 
 ```sh
-swival --allowed-commands agent-browser --repl
+swival --allowed-commands agent-browser
 > Go to https://news.ycombinator.com, click on the top story, and summarize the article
 ```
 

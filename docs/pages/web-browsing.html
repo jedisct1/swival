@@ -117,7 +117,7 @@ args = [&quot;-y&quot;, &quot;chrome-devtools-mcp@latest&quot;, &quot;--headless
 <h3 id="what-it-gives-swival">What it gives Swival</h3>
 <p>Once configured, Swival gets MCP tools like <code>mcp__chrome__navigate_page</code>, <code>mcp__chrome__click</code>, <code>mcp__chrome__fill</code>, <code>mcp__chrome__take_screenshot</code>, and <code>mcp__chrome__list_console_messages</code>. The model calls them like any other tool.</p>
 <h3 id="example">Example</h3>
-<pre><code class="language-sh">swival --repl
+<pre><code class="language-sh">swival
 &gt; Navigate to https://news.ycombinator.com, find the top story, and summarize it
 </code></pre>
 <p>Swival will call <code>navigate_page</code>, then <code>snapshot</code> or <code>get_page_content</code> to read the page, and return a summary.</p>
@@ -164,7 +164,7 @@ args = [&quot;mcp&quot;]
 <h3 id="what-it-gives-swival_1">What it gives Swival</h3>
 <p>Once configured, Swival gets tools like <code>mcp__lightpanda__markdown</code>, <code>mcp__lightpanda__links</code>, <code>mcp__lightpanda__semantic_tree</code>, and <code>mcp__lightpanda__evaluate</code>. The <code>markdown</code> tool is particularly useful since it returns page content in a format that's already compact and easy for the model to reason about.</p>
 <h3 id="example_1">Example</h3>
-<pre><code class="language-sh">swival --repl
+<pre><code class="language-sh">swival
 &gt; Fetch https://news.ycombinator.com and summarize the top 5 stories
 </code></pre>
 <p>Swival will call <code>mcp__lightpanda__markdown</code> with the URL and get back clean markdown content it can work with directly.</p>
@@ -214,7 +214,7 @@ agent-browser close
 </code></pre>
 <p>A typical snapshot is 200-400 tokens compared to 3,000-5,000 for a full DOM dump. This matters when you're browsing multiple pages in a single session.</p>
 <h3 id="example-session">Example session</h3>
-<pre><code class="language-sh">swival --allowed-commands agent-browser --repl
+<pre><code class="language-sh">swival --allowed-commands agent-browser
 &gt; Go to https://news.ycombinator.com, click on the top story, and summarize the article
 </code></pre>
 <p>The model will run <code>agent-browser open</code>, <code>agent-browser snapshot -i</code>, <code>agent-browser click @e1</code>, and so on, chaining commands until it has the information it needs.</p>

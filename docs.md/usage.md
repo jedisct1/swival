@@ -1,6 +1,6 @@
 # Usage
 
-Swival has two operating modes. The default mode is one-shot, where you give the agent a task and let it run to completion. The second mode is an interactive REPL, where conversation history stays live across follow-up prompts.
+Swival has two operating modes. In one-shot mode you give the agent a task and let it run to completion. In interactive mode conversation history stays live across follow-up prompts. When you run `swival` on a terminal without a task, it enters interactive mode automatically.
 
 ## One-Shot Mode
 
@@ -42,7 +42,7 @@ A successful run exits with code `0`. A runtime or configuration failure exits w
 REPL mode keeps a shared conversation state, so each new question can build on earlier turns.
 
 ```sh
-swival --repl
+swival
 ```
 
 The REPL is built on `prompt-toolkit`, so it supports input history, history search, and normal terminal line editing.
@@ -203,13 +203,13 @@ See [A2A](a2a.md) for full server documentation.
 
 `--quiet` and `-q` suppress diagnostics and keep terminal output focused on final answers.
 
-`--report FILE` writes a JSON run report to `FILE`. This flag is incompatible with `--repl`.
+`--report FILE` writes a JSON run report to `FILE`. Requires a task; incompatible with `--repl`.
 
-`--reviewer COMMAND` runs an external reviewer after each answer. The command string is shell-split, so you can pass arguments inline (e.g. `--reviewer "swival --reviewer-mode"`). This flag is incompatible with `--repl`.
+`--reviewer COMMAND` runs an external reviewer after each answer. The command string is shell-split, so you can pass arguments inline (e.g. `--reviewer "swival --reviewer-mode"`). Requires a task; incompatible with `--repl`.
 
 `--max-review-rounds N` limits how many times the reviewer can request retries and defaults to `15`. Set to `0` to accept the first answer without retries.
 
-`--self-review` uses a second Swival instance as reviewer, inheriting provider, model, skills-dir, and yolo settings from the current invocation. Incompatible with `--repl` and `--reviewer`. See [Reviews](reviews.md) for details.
+`--self-review` uses a second Swival instance as reviewer, inheriting provider, model, skills-dir, and yolo settings from the current invocation. Requires a task; incompatible with `--repl` and `--reviewer`. See [Reviews](reviews.md) for details.
 
 `--reviewer-mode` runs Swival as a reviewer process that speaks the reviewer protocol. It reads `base_dir` from the positional argument, the answer from standard input, evaluates with the LLM, and exits 0 (accept), 1 (retry), or 2 (error). Incompatible with `--repl` and `--reviewer`.
 

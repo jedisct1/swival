@@ -76,7 +76,7 @@ Diagnostic logs such as turn headers, tool traces, and timing information are wr
 
 ## Passing The Task On Stdin
 
-If you omit the positional task and pipe stdin, Swival reads the task from stdin.
+If you omit the positional task and pipe stdin, Swival reads the task from stdin. On an interactive terminal with no task, Swival enters REPL mode automatically.
 
 ```sh
 swival -q < objective.md

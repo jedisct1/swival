@@ -2630,14 +2630,15 @@ def build_parser():
     parser = argparse.ArgumentParser(
         prog="swival",
         usage=(
-            "%(prog)s [options] <task>\n"
+            "%(prog)s [options] [task]\n"
             "       %(prog)s [options] < task.md\n"
             "       %(prog)s --repl [options] [task]"
         ),
         description=(
             "A CLI coding agent with tool-calling, sandboxed file access, and "
             "multi-provider LLM support.\n"
-            "Pass a task as a positional argument, or omit it and pipe the task on stdin."
+            "Pass a task as a positional argument, pipe it on stdin, or omit it on a "
+            "terminal to start an interactive session."
         ),
         epilog=help_examples,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -2649,7 +2650,7 @@ def build_parser():
         nargs="?",
         default=None,
         metavar="TASK",
-        help="Task to run. If omitted and stdin is piped, Swival reads the task from stdin.",
+        help="Task to run. If omitted on a terminal, starts an interactive session. If stdin is piped, reads the task from it.",
     )
 
     modes = parser.add_argument_group("Modes")
@@ -2993,14 +2994,14 @@ def build_parser():
     modes.add_argument(
         "--repl",
         action="store_true",
-        help="Start an interactive session instead of answering a single question.",
+        help="Start an interactive session (automatic when no task is given on a terminal).",
     )
     review_group.add_argument(
         "--report",
         type=str,
         default=None,
         metavar="FILE",
-        help="Write a JSON evaluation report to FILE. Incompatible with --repl.",
+        help="Write a JSON evaluation report to FILE. Requires a task; incompatible with --repl.",
     )
     review_group.add_argument(
         "--review-prompt",
@@ -3013,7 +3014,8 @@ def build_parser():
         metavar="COMMAND",
         default=_UNSET,
         help="Reviewer command (shell-split). Called after each answer with base_dir as argument "
-        "and answer on stdin. Exit 0=accept, 1=retry with stdout as feedback, 2=reviewer error.",
+        "and answer on stdin. Exit 0=accept, 1=retry with stdout as feedback, 2=reviewer error. "
+        "Requires a task; incompatible with --repl.",
     )
     review_group.add_argument(
         "--reviewer-mode",
@@ -3027,7 +3029,8 @@ def build_parser():
         action="store_true",
         default=_UNSET,
         help="Use a second swival instance as reviewer, inheriting provider, model, "
-        "skills-dir, and yolo settings from the current invocation.",
+        "skills-dir, and yolo settings from the current invocation. "
+        "Requires a task; incompatible with --repl.",
     )
     provider_group.add_argument(
         "--seed",
@@ -3253,13 +3256,23 @@ def main():
             parser.error("question is required (stdin was empty)")
 
     if not args.repl and not _is_serve and args.question is None:
-        parser.error("question is required (or use --repl)")
+        if args.self_review:
+            parser.error("--self-review requires a task")
+        if args.report:
+            parser.error("--report requires a task")
+        if args.reviewer:
+            parser.error("--reviewer requires a task")
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            args.repl = True
+        else:
+            parser.error("question is required (or use --repl)")
+
+    if args.self_review and args.repl:
+        parser.error("--self-review is incompatible with --repl")
     if args.report and args.repl:
         parser.error("--report is incompatible with --repl")
     if args.reviewer and args.repl:
         parser.error("--reviewer is incompatible with --repl")
-    if args.self_review and args.repl:
-        parser.error("--self-review is incompatible with --repl")
 
     fmt.init(color=args.color, no_color=args.no_color)
 

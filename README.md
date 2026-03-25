@@ -121,7 +121,7 @@ local servers.
 ### Interactive sessions
 
 ```sh
-swival --repl
+swival
 ```
 
 The REPL carries conversation history across questions, which makes it good for

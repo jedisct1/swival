@@ -8,6 +8,7 @@ import pytest
 
 from swival.agent import (
     build_parser,
+    main,
     run_agent_loop,
     repl_loop,
     ContextOverflowError,
@@ -98,6 +99,71 @@ def _loop_kwargs(tmp_path, **overrides):
 # ---------------------------------------------------------------------------
 
 
+def _make_main_args(**overrides):
+    defaults = dict(
+        question=None,
+        repl=False,
+        quiet=False,
+        verbose=True,
+        color=False,
+        no_color=False,
+        version=False,
+        report=None,
+        reviewer=None,
+        self_review=False,
+        base_dir=".",
+        init_config=False,
+        project=False,
+        reviewer_mode=False,
+        review_prompt=None,
+        objective=None,
+        verify=None,
+    )
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+def _run_main_validation(
+    stdin_tty=True,
+    stdout_tty=True,
+    stdin_content=None,
+    extra_patches=None,
+    **arg_overrides,
+):
+    """Run main() with mocked parser/sys, return (mock_parser, mock_args)."""
+    from contextlib import ExitStack
+
+    mock_stdin = MagicMock()
+    mock_stdin.isatty.return_value = stdin_tty
+    if stdin_content is not None:
+        mock_stdin.read.return_value = stdin_content
+    mock_stdout = MagicMock()
+    mock_stdout.isatty.return_value = stdout_tty
+
+    mock_args = _make_main_args(**arg_overrides)
+    mock_parser = MagicMock()
+    mock_parser.parse_args.return_value = mock_args
+    mock_parser.error.side_effect = SystemExit(2)
+
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch("swival.agent.build_parser", return_value=mock_parser)
+        )
+        mock_sys = stack.enter_context(patch("swival.agent.sys"))
+        if extra_patches:
+            for p in extra_patches:
+                stack.enter_context(p)
+        mock_sys.stdin = mock_stdin
+        mock_sys.stdout = mock_stdout
+        mock_sys.argv = ["swival"]
+        try:
+            main()
+        except (SystemExit, Exception):
+            pass
+
+    return mock_parser, mock_args
+
+
 class TestArgumentParsing:
     def test_question_optional_with_repl(self):
         parser = build_parser()
@@ -106,45 +172,63 @@ class TestArgumentParsing:
         assert args.question is None
 
     def test_question_required_without_repl(self):
-        """Without --repl and no question, main() should call parser.error()."""
-        # The parser itself accepts question as nargs="?", so parse_args([])
-        # succeeds. Validation happens in main().
-        mock_stdin = MagicMock()
-        mock_stdin.isatty.return_value = True
-        with (
-            patch("swival.agent.build_parser") as mock_bp,
-            patch("swival.agent.sys") as mock_sys,
-        ):
-            mock_sys.stdin = mock_stdin
-            mock_sys.argv = ["swival"]
-            mock_parser = MagicMock()
-            mock_args = SimpleNamespace(
-                question=None,
-                repl=False,
-                quiet=False,
-                verbose=True,
-                color=False,
-                no_color=False,
-                version=False,
-                report=None,
-                reviewer=None,
-                base_dir=".",
-                init_config=False,
-                project=False,
-                reviewer_mode=False,
-                review_prompt=None,
-                objective=None,
-                verify=None,
-            )
-            mock_parser.parse_args.return_value = mock_args
-            mock_parser.error.side_effect = SystemExit(2)
-            mock_bp.return_value = mock_parser
+        """Without --repl, no question, and non-TTY stdout, main() errors."""
+        mock_parser, _ = _run_main_validation(stdout_tty=False)
+        mock_parser.error.assert_called_once_with(
+            "question is required (or use --repl)"
+        )
 
-            from swival.agent import main
+    def test_auto_repl_on_tty(self):
+        """Bare invocation on a full TTY auto-enters REPL."""
+        mock_parser, mock_args = _run_main_validation()
+        mock_parser.error.assert_not_called()
+        assert mock_args.repl is True
 
-            with pytest.raises(SystemExit):
-                main()
-            mock_parser.error.assert_called_once()
+    def test_no_auto_repl_when_stdin_piped(self):
+        """Piped stdin with no question still errors."""
+        mock_parser, _ = _run_main_validation(stdin_tty=False, stdin_content="")
+        mock_parser.error.assert_called_once_with(
+            "question is required (stdin was empty)"
+        )
+
+    def test_no_auto_repl_when_stdout_redirected(self):
+        """Redirected stdout with no question still errors."""
+        mock_parser, _ = _run_main_validation(stdout_tty=False)
+        mock_parser.error.assert_called_once_with(
+            "question is required (or use --repl)"
+        )
+
+    def test_no_auto_repl_with_report(self):
+        """--report with no task on TTY errors with '--report requires a task'."""
+        mock_parser, _ = _run_main_validation(report="out.json")
+        mock_parser.error.assert_called_once_with("--report requires a task")
+
+    def test_no_auto_repl_with_reviewer(self):
+        """--reviewer with no task on TTY errors with '--reviewer requires a task'."""
+        mock_parser, _ = _run_main_validation(reviewer="my-review-cmd")
+        mock_parser.error.assert_called_once_with("--reviewer requires a task")
+
+    def test_no_auto_repl_with_self_review(self):
+        """--self-review with no task on TTY errors with '--self-review requires a task'."""
+        mock_parser, _ = _run_main_validation(
+            self_review=True,
+            extra_patches=[
+                patch(
+                    "swival.agent._build_self_review_cmd",
+                    return_value="swival --reviewer-mode",
+                ),
+            ],
+        )
+        mock_parser.error.assert_called_once_with("--self-review requires a task")
+
+    def test_report_piped_empty_stdin(self):
+        """swival --report out.json with piped empty stdin gets 'stdin was empty' error."""
+        mock_parser, _ = _run_main_validation(
+            stdin_tty=False, stdin_content="", report="out.json"
+        )
+        mock_parser.error.assert_called_once_with(
+            "question is required (stdin was empty)"
+        )
 
     def test_question_with_repl(self):
         parser = build_parser()

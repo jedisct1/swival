@@ -60,8 +60,7 @@ HuggingFace [Inference Endpoints](https://huggingface.co/inference-endpoints) le
 ```sh
 swival --provider huggingface \
     --model Qwen/Qwen3.5-35B-A3B \
-    --base-url https://tfg1ghx03o7xuv5p.us-east-1.aws.endpoints.huggingface.cloud \
-    --repl
+    --base-url https://tfg1ghx03o7xuv5p.us-east-1.aws.endpoints.huggingface.cloud
 ```
 
 Most inference endpoints use vLLM as the serving backend. For tool calling to work, you must add the following to the **Container Arguments** field in your endpoint's configuration on HuggingFace:
