@@ -1791,11 +1791,6 @@ def discover_model(base_url, verbose):
                 vision = litellm.supports_vision(model=f"openai/{model_key}")
             except Exception:
                 pass
-            if verbose:
-                vision_tag = " (vision enabled)" if vision else ""
-                fmt.model_info(
-                    f"Discovered loaded model: {model_key} (context={context_length}){vision_tag}"
-                )
             return model_key, context_length
 
     return None, None
@@ -3582,8 +3577,6 @@ def resolve_provider(
         if model:
             model_id = model
             current_context = None
-            if verbose:
-                fmt.model_info(f"Using user-specified model: {model_id}")
         else:
             model_id, current_context = discover_model(api_base, verbose)
             if not model_id:
@@ -4113,6 +4106,18 @@ def _run_main(args, report, _write_report, parser):
 
     # Stash resolved model_id for error reporting
     args._resolved_model_id = model_id
+
+    if args.verbose:
+        provider_name = llm_kwargs.get("provider", args.provider)
+        parts = [f"provider={provider_name}", f"model={model_id}"]
+        if context_length is not None:
+            parts.append(f"context={context_length:,}")
+        if provider_name != "command":
+            model_str = _resolve_model_str(provider_name, model_id)
+            vision = _model_supports_vision(model_str)
+            if vision is True:
+                parts.append("vision")
+        fmt.info("  ".join(parts))
 
     # Resolve --add-dir paths
     allowed_dirs: list[Path] = []
