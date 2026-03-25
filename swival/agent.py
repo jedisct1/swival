@@ -2351,6 +2351,7 @@ def call_llm(
     import litellm
 
     litellm.suppress_debug_info = True
+    litellm.drop_params = True
 
     # Resolve sanitize_thinking: opt-in only.
     if sanitize_thinking is None:
