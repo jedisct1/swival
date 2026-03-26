@@ -3582,7 +3582,11 @@ def resolve_provider(
         api_base = base_url or "http://127.0.0.1:1234"
         if model:
             model_id = model
-            current_context = None
+            # Still query LM Studio to discover the loaded context length
+            try:
+                _, current_context = discover_model(api_base, verbose)
+            except AgentError:
+                current_context = None
         else:
             model_id, current_context = discover_model(api_base, verbose)
             if not model_id:
