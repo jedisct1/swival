@@ -5,7 +5,7 @@ Usage:
     uv run python scripts/generate_formula.py [--version VERSION]
 
 Writes homebrew-tap/Formula/swival.rb with up-to-date resource stanzas and SHA256.
-Requires the sdist to exist in dist/ (run `make dist` first).
+Fetches the release tarball SHA256 from GitHub.
 """
 
 import hashlib
@@ -80,13 +80,6 @@ def pypi_url_and_sha(name, version):
     return data["urls"][0]["url"], data["urls"][0]["digests"]["sha256"]
 
 
-def sha256_file(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
 
 def format_resource(name, url, sha):
     is_wheel = url.endswith(".whl")
@@ -108,10 +101,20 @@ def main():
 
     print(f"Generating formula for swival {version}")
 
-    sdist = ROOT / "dist" / f"swival-{version}.tar.gz"
-    our_sha = sha256_file(sdist) if sdist.exists() else "PLACEHOLDER"
-    if our_sha == "PLACEHOLDER":
-        print(f"Warning: {sdist} not found, using PLACEHOLDER for sha256")
+    release_url = f"https://github.com/Swival/swival/archive/refs/tags/{version}.tar.gz"
+    print(f"Fetching SHA256 from {release_url}")
+    try:
+        req = urllib.request.Request(release_url, method="GET")
+        with urllib.request.urlopen(req) as resp:
+            h = hashlib.sha256()
+            for chunk in iter(lambda: resp.read(8192), b""):
+                h.update(chunk)
+            our_sha = h.hexdigest()
+        print(f"  SHA256: {our_sha}")
+    except Exception as e:
+        our_sha = "PLACEHOLDER"
+        print(f"Warning: could not fetch release tarball: {e}")
+        print(f"  Using PLACEHOLDER for sha256 — publish the release first")
 
     deps = resolve_deps()
     print(f"Resolved {len(deps)} dependencies")
@@ -135,8 +138,8 @@ def main():
 
     template = FORMULA.read_text()
     template = re.sub(
-        r'url "https://github.com/swival/swival/releases/download/v[^"]+/swival-[^"]+\.tar\.gz"',
-        f'url "https://github.com/swival/swival/releases/download/v{version}/swival-{version}.tar.gz"',
+        r'url "https://github.com/Swival/swival/archive/refs/tags/[^"]+\.tar\.gz"',
+        f'url "https://github.com/Swival/swival/archive/refs/tags/{version}.tar.gz"',
         template,
         count=1,
     )
