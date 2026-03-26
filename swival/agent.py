@@ -4978,79 +4978,88 @@ def run_agent_loop(
                 # chat completion.  The model loses all tool-calling ability
                 # but can at least produce a text answer.
                 _drop_tools_ok = False
-                if effective_tools is not None:
+                _had_tools = effective_tools is not None
+                if _had_tools:
                     fmt.warning(
                         "context window exceeded even after compaction — "
                         "dropping all tools and retrying as plain chat"
                     )
                     effective_tools = None
-                    # Truncate a bloated system prompt so the user's
-                    # actual question can fit in the remaining context.
-                    if (
-                        context_length
-                        and messages
-                        and _msg_role(messages[0]) == "system"
-                    ):
-                        sys_content = _msg_content(messages[0]) or ""
-                        max_sys_chars = context_length  # ~1 token/char, generous
-                        if len(sys_content) > max_sys_chars:
-                            _set_msg_content(
-                                messages[0],
-                                sys_content[:max_sys_chars]
-                                + "\n\n[system prompt truncated to fit context window]",
-                            )
-                    try:
-                        effective_max_output = clamp_output_tokens(
+                # Truncate a bloated system prompt so the user's
+                # actual question can fit in the remaining context.
+                if context_length and messages and _msg_role(messages[0]) == "system":
+                    sys_content = _msg_content(messages[0]) or ""
+                    max_sys_chars = context_length  # ~1 token/char, generous
+                    if len(sys_content) > max_sys_chars:
+                        _set_msg_content(
+                            messages[0],
+                            sys_content[:max_sys_chars]
+                            + "\n\n[system prompt truncated to fit context window]",
+                        )
+                # When context_length is unknown, progressively halve
+                # max_output_tokens until the LLM accepts the request.
+                _output_budgets = []
+                try:
+                    _output_budgets.append(
+                        clamp_output_tokens(
                             messages, None, context_length, max_output_tokens
                         )
+                    )
+                except ContextOverflowError:
+                    pass
+                if not _output_budgets and context_length is None:
+                    budget = max_output_tokens
+                    while budget >= MIN_OUTPUT_TOKENS:
+                        budget //= 2
+                        if budget >= MIN_OUTPUT_TOKENS:
+                            _output_budgets.append(budget)
+                for _try_max_output in _output_budgets:
+                    _llm_args = (
+                        api_base,
+                        model_id,
+                        messages,
+                        _try_max_output,
+                        temperature,
+                        top_p,
+                        seed,
+                        None,
+                        verbose,
+                    )
+                    t0 = time.monotonic()
+                    try:
+                        with (
+                            fmt.llm_spinner(
+                                f"Waiting for LLM (turn {turns}/{max_turns}, no tools)"
+                            )
+                            if verbose
+                            else nullcontext()
+                        ):
+                            _llm_result = call_llm(*_llm_args, **llm_kwargs)
+                            msg, finish_reason = _llm_result[0], _llm_result[1]
+                            cmd_activity = (
+                                _llm_result[2] if len(_llm_result) > 2 else []
+                            )
+                            _provider_retries = (
+                                _llm_result[3] if len(_llm_result) > 3 else 0
+                            )
                     except ContextOverflowError:
-                        pass
+                        continue
                     else:
-                        _llm_args = (
-                            api_base,
-                            model_id,
-                            messages,
-                            effective_max_output,
-                            temperature,
-                            top_p,
-                            seed,
-                            None,
-                            verbose,
-                        )
-                        t0 = time.monotonic()
-                        try:
-                            with (
-                                fmt.llm_spinner(
-                                    f"Waiting for LLM (turn {turns}/{max_turns}, no tools)"
-                                )
-                                if verbose
-                                else nullcontext()
-                            ):
-                                _llm_result = call_llm(*_llm_args, **llm_kwargs)
-                                msg, finish_reason = _llm_result[0], _llm_result[1]
-                                cmd_activity = (
-                                    _llm_result[2] if len(_llm_result) > 2 else []
-                                )
-                                _provider_retries = (
-                                    _llm_result[3] if len(_llm_result) > 3 else 0
-                                )
-                        except ContextOverflowError:
-                            pass
-                        else:
-                            elapsed = time.monotonic() - t0
-                            if verbose:
-                                fmt.llm_timing(elapsed, finish_reason)
-                            if report:
-                                report.record_llm_call(
-                                    turns + turn_offset,
-                                    elapsed,
-                                    estimate_tokens(messages, None),
-                                    finish_reason,
-                                    is_retry=True,
-                                    retry_reason="drop_tools",
-                                    provider_retries=_provider_retries,
-                                )
-                            _drop_tools_ok = True
+                        elapsed = time.monotonic() - t0
+                        if verbose:
+                            fmt.llm_timing(elapsed, finish_reason)
+                        if report:
+                            report.record_llm_call(
+                                turns + turn_offset,
+                                elapsed,
+                                estimate_tokens(messages, None),
+                                finish_reason,
+                                is_retry=True,
+                                retry_reason="drop_tools",
+                                provider_retries=_provider_retries,
+                            )
+                        _drop_tools_ok = True
+                        break
 
                 if not _drop_tools_ok:
                     if continue_here:
