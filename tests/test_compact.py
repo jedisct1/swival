@@ -750,7 +750,16 @@ class TestContextOverflowClassifier:
             )
             with pytest.raises(AgentError):
                 call_llm(
-                    "http://localhost", "model", [], 100, 0.1, 1.0, None, None, False
+                    "http://localhost",
+                    "model",
+                    [],
+                    100,
+                    0.1,
+                    1.0,
+                    None,
+                    None,
+                    False,
+                    max_retries=1,
                 )
 
     def test_call_llm_omits_tool_choice_when_tools_none(self):

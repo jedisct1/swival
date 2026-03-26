@@ -93,6 +93,7 @@ def server(_patch_session):
         session_kwargs={"provider": "lmstudio", "base_dir": "/tmp"},
         host="127.0.0.1",
         port=0,
+        heartbeat_interval=0.05,
     )
 
 
@@ -974,6 +975,7 @@ class TestSendStreamingMessage:
             session_kwargs={"provider": "lmstudio", "base_dir": "/tmp"},
             host="127.0.0.1",
             port=0,
+            heartbeat_interval=0.05,
         )
         from starlette.testclient import TestClient
 
@@ -1261,6 +1263,7 @@ class TestStreamingConcurrencyLimit:
             host="127.0.0.1",
             port=0,
             max_concurrent=1,
+            heartbeat_interval=0.05,
         )
         tc = TestClient(srv.app)
 
@@ -1307,6 +1310,7 @@ class TestNoDuplicateArtifact:
             session_kwargs={"provider": "lmstudio", "base_dir": "/tmp"},
             host="127.0.0.1",
             port=0,
+            heartbeat_interval=0.05,
         )
         tc = TestClient(srv.app)
         resp = _send_streaming_message(tc, "hello")
@@ -1338,6 +1342,7 @@ class TestNoDuplicateArtifact:
             session_kwargs={"provider": "lmstudio", "base_dir": "/tmp"},
             host="127.0.0.1",
             port=0,
+            heartbeat_interval=0.05,
         )
         tc = TestClient(srv.app)
         resp = _send_streaming_message(tc, "hello")
@@ -1388,6 +1393,7 @@ class TestStatusUpdateMetadata:
             session_kwargs={"provider": "lmstudio", "base_dir": "/tmp"},
             host="127.0.0.1",
             port=0,
+            heartbeat_interval=0.05,
         )
         tc = TestClient(srv.app)
         resp = _send_streaming_message(tc, "hello")
@@ -1555,6 +1561,7 @@ class TestDisconnectFinalizesTask:
             session_kwargs={"provider": "lmstudio", "base_dir": "/tmp"},
             host="127.0.0.1",
             port=0,
+            heartbeat_interval=0.05,
         )
         tc = TestClient(srv.app)
 
@@ -1731,6 +1738,7 @@ class TestActiveContextProtection:
             host="127.0.0.1",
             port=0,
             max_sessions=1,
+            heartbeat_interval=0.05,
         )
         # Pre-fill one active session
         srv._get_or_create_session("ctx-occupied")
