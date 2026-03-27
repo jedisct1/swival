@@ -30,6 +30,9 @@ from swival.agent import (
     _repl_snapshot_unsave,
     _repl_copy,
     _last_assistant_text,
+    _safe_agents_md_path,
+    remember_agents_fact,
+    _repl_remember,
 )
 from swival.snapshot import SnapshotState
 from swival.thinking import ThinkingState
@@ -2165,3 +2168,139 @@ class TestCopyCommand:
         """_last_assistant_text returns None when no assistant messages exist."""
         assert _last_assistant_text([{"role": "system", "content": "sys"}]) is None
         assert _last_assistant_text([]) is None
+
+
+class TestRemember:
+    """Tests for /remember — remember_agents_fact() and _repl_remember()."""
+
+    def test_creates_agents_md_from_scratch(self, tmp_path):
+        msg, changed, _err = remember_agents_fact(str(tmp_path), "Use ruff for linting")
+        assert changed is True
+        assert "Created AGENTS.md" in msg
+        assert "/init" in msg
+
+        content = (tmp_path / "AGENTS.md").read_text()
+        assert "## Workflow" in content
+        assert "## Conventions" in content
+        assert "- Use ruff for linting\n" in content
+
+        reason, _ = validate_agents_md(tmp_path / "AGENTS.md")
+        assert reason is None
+
+    def test_appends_to_existing_conventions(self, tmp_path):
+        agents = tmp_path / "AGENTS.md"
+        agents.write_text(
+            "## Workflow\n\n- test: pytest\n\n## Conventions\n\n- Existing fact\n"
+        )
+        msg, changed, _err = remember_agents_fact(str(tmp_path), "New fact")
+        assert changed is True
+        assert "Added to AGENTS.md" in msg
+
+        content = agents.read_text()
+        assert "- Existing fact\n" in content
+        assert "- New fact\n" in content
+        lines = content.splitlines()
+        assert lines.index("- Existing fact") < lines.index("- New fact")
+
+    def test_dedup_exact_match(self, tmp_path):
+        agents = tmp_path / "AGENTS.md"
+        agents.write_text("## Workflow\n\n## Conventions\n\n- Already here\n")
+        msg, changed, _err = remember_agents_fact(str(tmp_path), "Already here")
+        assert changed is False
+        assert "Already in AGENTS.md" in msg
+
+    def test_dedup_normalizes_whitespace_and_dash(self, tmp_path):
+        agents = tmp_path / "AGENTS.md"
+        agents.write_text(
+            "## Workflow\n\n## Conventions\n\n- Use  ruff   for linting\n"
+        )
+        msg, changed, _err = remember_agents_fact(
+            str(tmp_path), "- Use ruff for linting"
+        )
+        assert changed is False
+        assert "Already in AGENTS.md" in msg
+
+    def test_dedup_case_insensitive(self, tmp_path):
+        agents = tmp_path / "AGENTS.md"
+        agents.write_text("## Workflow\n\n## Conventions\n\n- use ruff\n")
+        msg, changed, _err = remember_agents_fact(str(tmp_path), "Use Ruff")
+        assert changed is False
+
+    def test_same_text_in_workflow_does_not_block(self, tmp_path):
+        agents = tmp_path / "AGENTS.md"
+        agents.write_text("## Workflow\n\n- Run pytest\n\n## Conventions\n\n- Other\n")
+        msg, changed, _err = remember_agents_fact(str(tmp_path), "Run pytest")
+        assert changed is True
+        content = agents.read_text()
+        conv_idx = content.index("## Conventions")
+        assert "- Run pytest\n" in content[conv_idx:]
+
+    def test_malformed_agents_md_rejected(self, tmp_path):
+        agents = tmp_path / "AGENTS.md"
+        agents.write_text("# Just some text\n")
+        msg, changed, is_error = remember_agents_fact(str(tmp_path), "fact")
+        assert changed is False
+        assert is_error is True
+        assert "malformed" in msg
+        assert "/init" in msg
+
+    def test_empty_input_rejected(self, tmp_path):
+        msg, changed, _err = remember_agents_fact(str(tmp_path), "")
+        assert changed is False
+        assert "usage" in msg.lower()
+
+    def test_dash_prefix_stripped(self, tmp_path):
+        msg, changed, _err = remember_agents_fact(str(tmp_path), "- My fact")
+        assert changed is True
+        content = (tmp_path / "AGENTS.md").read_text()
+        assert "- My fact\n" in content
+        assert "- - My fact" not in content
+
+    def test_path_escape_raises(self, tmp_path):
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "AGENTS.md").write_text("decoy")
+        inside = tmp_path / "project"
+        inside.mkdir()
+        (inside / "AGENTS.md").symlink_to(outside / "AGENTS.md")
+        with pytest.raises(ValueError, match="escapes"):
+            _safe_agents_md_path(str(inside))
+
+    def test_oversize_warning(self, tmp_path):
+        agents = tmp_path / "AGENTS.md"
+        big = "## Workflow\n\n## Conventions\n\n" + "- x" * 2000 + "\n"
+        agents.write_text(big)
+        msg, changed, _err = remember_agents_fact(str(tmp_path), "one more")
+        assert changed is True
+        assert "exceeds" in msg
+
+    def test_repeated_remember_no_duplicate(self, tmp_path):
+        remember_agents_fact(str(tmp_path), "fact A")
+        remember_agents_fact(str(tmp_path), "fact B")
+        msg, changed, _err = remember_agents_fact(str(tmp_path), "fact A")
+        assert changed is False
+        content = (tmp_path / "AGENTS.md").read_text()
+        assert content.count("- fact A") == 1
+
+    def test_inserts_before_next_section(self, tmp_path):
+        agents = tmp_path / "AGENTS.md"
+        agents.write_text(
+            "## Workflow\n\n- build: make\n\n"
+            "## Conventions\n\n- Old\n\n"
+            "## Notes\n\nSome notes.\n"
+        )
+        msg, changed, _err = remember_agents_fact(str(tmp_path), "New")
+        assert changed is True
+        content = agents.read_text()
+        notes_idx = content.index("## Notes")
+        new_idx = content.index("- New")
+        assert new_idx < notes_idx
+        assert "Some notes." in content
+
+    def test_repl_remember_empty_warns(self, capsys):
+        _repl_remember("", "/tmp")
+
+    def test_repl_remember_help_lists_command(self, capsys):
+        _repl_help()
+        captured = capsys.readouterr()
+        assert "/remember" in captured.err

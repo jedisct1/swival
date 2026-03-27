@@ -394,6 +394,87 @@ def _safe_memory_path(base_dir: str) -> Path:
     return memory_path
 
 
+def _safe_agents_md_path(base_dir: str) -> Path:
+    """Build project AGENTS.md path, verify it resolves inside base_dir."""
+    base = Path(base_dir).resolve()
+    agents_path = (base / "AGENTS.md").resolve()
+    if not agents_path.is_relative_to(base):
+        raise ValueError(f"AGENTS.md path {agents_path} escapes base directory {base}")
+    return agents_path
+
+
+_NORMALIZE_WS_RE = re.compile(r"\s+")
+
+
+def _normalize_fact(text: str) -> str:
+    """Normalize a convention entry for dedup comparison."""
+    text = text.strip().lstrip("-").strip()
+    return _NORMALIZE_WS_RE.sub(" ", text).lower()
+
+
+def remember_agents_fact(base_dir: str, text: str) -> tuple[str, bool, bool]:
+    """Add a convention bullet to project AGENTS.md if not already present.
+
+    Returns ``(message, changed, is_error)`` where *changed* is True only when
+    the file was written, and *is_error* is True for conditions that warrant a
+    warning.
+    """
+    text = text.strip()
+    if text.startswith("-"):
+        text = text[1:].strip()
+    if not text:
+        return "usage: /remember <fact>", False, True
+
+    agents_path = _safe_agents_md_path(base_dir)
+    bullet = f"- {text}\n"
+
+    reason, content = validate_agents_md(agents_path)
+    if content is None:
+        content = (
+            "## Workflow\n"
+            "\n"
+            "<!-- Consider running /init to populate this section. -->\n"
+            "\n"
+            "## Conventions\n"
+            "\n" + bullet
+        )
+        agents_path.write_text(content, encoding="utf-8")
+        msg = f"Created AGENTS.md with: {text}"
+        if len(content) > _INIT_AGENTS_MD_BUDGET:
+            msg += f"\nwarning: AGENTS.md now exceeds {_INIT_AGENTS_MD_BUDGET} character target"
+        return msg + "\ntip: run /init to populate the Workflow section", True, False
+
+    if reason:
+        return f"AGENTS.md is malformed ({reason}). Run /init first.", False, True
+
+    conv_match = _CONVENTIONS_HEADING_RE.search(content)
+    if not conv_match:
+        return "AGENTS.md has no ## Conventions section. Run /init first.", False, True
+    conv_start = conv_match.end()
+
+    next_h2 = _ANY_H2_RE.search(content, conv_start)
+    conv_end = next_h2.start() if next_h2 else len(content)
+    conv_body = content[conv_start:conv_end]
+
+    norm_input = _normalize_fact(text)
+    for line in conv_body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("-") and _normalize_fact(stripped) == norm_input:
+            return "Already in AGENTS.md, skipping.", False, False
+
+    insert_pos = conv_end
+    if not conv_body.endswith("\n") and conv_body.strip():
+        bullet = "\n" + bullet
+
+    new_content = content[:insert_pos] + bullet + content[insert_pos:]
+    agents_path.write_text(new_content, encoding="utf-8")
+
+    msg = f"Added to AGENTS.md: {text}"
+    if len(new_content) > _INIT_AGENTS_MD_BUDGET:
+        msg += f"\nwarning: AGENTS.md now exceeds {_INIT_AGENTS_MD_BUDGET} character target"
+    return msg, True, False
+
+
 def append_history(
     base_dir: str, question: str, answer: str, *, diagnostics: bool = True
 ) -> None:
@@ -5635,6 +5716,7 @@ def _repl_help() -> None:
         "  /help              Show this help message\n"
         "  /init              Scan project for build/test/lint workflow and conventions, write AGENTS.md\n"
         "  /learn             Review session for mistakes and persist to memory\n"
+        "  /remember <text>   Add a durable project fact to AGENTS.md\n"
         "  /restore           Summarize & collapse since checkpoint\n"
         "  /save [label]      Set a context checkpoint\n"
         "  /tools             List all available tools\n"
@@ -5931,6 +6013,19 @@ def _repl_snapshot_unsave(snapshot_state: "SnapshotState | None") -> None:
             fmt.info(f"checkpoint cancelled: {data.get('label', '?')}")
     except (json.JSONDecodeError, TypeError):
         fmt.info(result)
+
+
+def _repl_remember(text: str, base_dir: str) -> None:
+    """Handle /remember command: add a convention to project AGENTS.md."""
+    if not text.strip():
+        fmt.warning("/remember requires text. Usage: /remember <fact>")
+        return
+    try:
+        msg, _changed, is_error = remember_agents_fact(base_dir, text)
+    except ValueError as exc:
+        fmt.warning(str(exc))
+        return
+    (fmt.warning if is_error else fmt.info)(msg)
 
 
 def repl_loop(
@@ -6309,6 +6404,9 @@ def repl_loop(
             continue
         elif cmd == "/unsave":
             _repl_snapshot_unsave(snapshot_state)
+            continue
+        elif cmd == "/remember":
+            _repl_remember(cmd_arg, base_dir)
             continue
 
         messages.append({"role": "user", "content": line})

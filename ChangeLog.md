@@ -2,6 +2,12 @@
 
 All notable user-facing changes to Swival.
 
+## 0.9.7
+
+- `/remember <text>` REPL command has been added to persist a project fact
+  to `AGENTS.md` under `## Conventions`. Deduplicates by normalized text.
+  Creates a minimal `AGENTS.md` scaffold if the file does not exist yet.
+
 ## 0.9.6
 
 - Prompt caching has been added. When a provider supports it, the system
