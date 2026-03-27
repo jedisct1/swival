@@ -69,10 +69,9 @@ class SecretShield:
         encrypted = copy.deepcopy(messages)
         for msg in encrypted:
             role = msg.get("role", "")
-            if role in ("system", "user", "tool"):
+            if role in ("system", "user", "tool", "assistant"):
                 self._encrypt_content(msg)
-            elif role == "assistant":
-                self._encrypt_content(msg)
+            if role == "assistant":
                 self._encrypt_tool_calls(msg)
         return encrypted
 

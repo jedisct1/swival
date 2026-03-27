@@ -127,8 +127,6 @@ def replace(
     # --- Pass 1: exact ---
     exact_count = content.count(old_string)
     if exact_count == 1 or (exact_count > 0 and replace_all):
-        if exact_count > 1 and not replace_all:
-            raise ValueError("multiple matches")
         return (
             content.replace(old_string, new_string)
             if replace_all
