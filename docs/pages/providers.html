@@ -104,7 +104,7 @@ swival --provider huggingface --model zai-org/GLM-5 &quot;task&quot;
     --base-url https://tfg1ghx03o7xuv5p.us-east-1.aws.endpoints.huggingface.cloud
 </code></pre>
 <p>Most inference endpoints use vLLM as the serving backend. For tool calling to work, you must add the following to the <strong>Container Arguments</strong> field in your endpoint's configuration on HuggingFace:</p>
-<pre><code>--enable-auto-tool-choice --tool-call-parser qwen3_xml
+<pre><code class="language-text">--enable-auto-tool-choice --tool-call-parser qwen3_xml
 </code></pre>
 <p>The <code>--tool-call-parser</code> value depends on the model you deploy. For Qwen models use <code>qwen3_xml</code>, for other model families check the <a href="https://docs.vllm.ai/en/latest/features/tool_calling.html">vLLM tool calling documentation</a> for the correct parser name. Without these arguments, the endpoint will not return structured tool calls and Swival will not be able to use its tools.</p>
 <p>For recently released models, the default vLLM version configured in Inference Endpoints may not support them yet. If you hit errors during model loading, set the <strong>Engine URI</strong> in your endpoint configuration to <code>vllm/vllm-openai:latest</code> to use a more recent build.</p>
@@ -224,6 +224,50 @@ extra_body = { chat_template_kwargs = { enable_thinking = false } }
 model = &quot;codex exec --skip-git-repo-check --full-auto --ephemeral&quot;
 </code></pre>
 <p>Because the external program handles all model routing, there is no auto-discovery and no LiteLLM involvement. If you set <code>--max-context-tokens</code>, Swival will apply output clamping and graduated compaction as usual; otherwise context management is left to the command itself.</p>
+<h2 id="prompt-caching">Prompt Caching</h2>
+<p>For providers that support explicit cache annotations, Swival automatically marks the system message as cacheable each turn. This avoids re-processing the system prompt and tool schemas on every call, which typically saves 30–60% of input token costs in long sessions.</p>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Caching mechanism</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Anthropic (via OpenRouter)</td>
+<td>Explicit <code>cache_control</code> injected by Swival</td>
+<td>System message cached; tool schemas not cached in Phase 1</td>
+</tr>
+<tr>
+<td>Google Gemini</td>
+<td>Explicit <code>cache_control</code> injected by Swival</td>
+<td>Via <code>openrouter/google/...</code> or native <code>google</code> provider</td>
+</tr>
+<tr>
+<td>OpenAI / Deepseek</td>
+<td>Automatic (provider-side)</td>
+<td>No annotation needed; prompts &gt;1024 tokens cached automatically</td>
+</tr>
+<tr>
+<td>LM Studio</td>
+<td>None</td>
+<td>Local inference, no server-side cache</td>
+</tr>
+<tr>
+<td>Generic with custom base_url</td>
+<td>None</td>
+<td>LiteLLM cannot identify the upstream provider from the URL alone</td>
+</tr>
+</tbody>
+</table>
+<p>The injection is gated on <code>litellm.utils.supports_prompt_caching(model)</code> at runtime, so it activates only when the resolved model string is recognized. If the call succeeds with an unexpected provider, the extra annotation is silently dropped because <code>litellm.drop_params = True</code> is always set.</p>
+<p>When <code>--verbose</code> is active, Swival prints cache hit and write stats to stderr after each turn:</p>
+<pre><code class="language-text">Prompt cache: 4821 tokens cached
+Prompt cache: 6103 tokens written to cache
+</code></pre>
+<p>To opt out of explicit cache annotations, pass <code>--no-prompt-cache</code>. This only suppresses the injection; providers that cache automatically are unaffected.</p>
 <h2 id="adding-more-providers-later">Adding More Providers Later</h2>
 <p>Because API calls are already abstracted behind LiteLLM, adding a provider is mostly a matter of argument validation, model normalization, and credential wiring. The provider-specific branch in <code>call_llm()</code> is intentionally compact so new providers can be added without changing the rest of the agent loop.</p>
 <p>In practice, each provider branch is only about ten lines of routing logic.</p>

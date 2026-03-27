@@ -121,6 +121,7 @@ print(answer)
     reasoning_effort: str | None = None,
     continue_here: bool = True,
     sanitize_thinking: bool | None = None,
+    prompt_cache: bool = True,
     cache: bool = False,
     cache_dir: str | None = None,
     scratch_dir: str | None = None,
@@ -228,6 +229,10 @@ print(answer)
 <tr>
 <td><code>memory</code></td>
 <td>Load memory files (<code>.swival/memory/</code>) into the system prompt.</td>
+</tr>
+<tr>
+<td><code>prompt_cache</code></td>
+<td>Inject explicit <code>cache_control</code> annotations for Anthropic/Gemini/Bedrock. Default <code>True</code>. Set <code>False</code> to opt out.</td>
 </tr>
 <tr>
 <td><code>cache</code></td>

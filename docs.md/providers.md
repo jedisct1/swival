@@ -65,7 +65,7 @@ swival --provider huggingface \
 
 Most inference endpoints use vLLM as the serving backend. For tool calling to work, you must add the following to the **Container Arguments** field in your endpoint's configuration on HuggingFace:
 
-```
+```text
 --enable-auto-tool-choice --tool-call-parser qwen3_xml
 ```
 
@@ -263,6 +263,29 @@ model = "codex exec --skip-git-repo-check --full-auto --ephemeral"
 ```
 
 Because the external program handles all model routing, there is no auto-discovery and no LiteLLM involvement. If you set `--max-context-tokens`, Swival will apply output clamping and graduated compaction as usual; otherwise context management is left to the command itself.
+
+## Prompt Caching
+
+For providers that support explicit cache annotations, Swival automatically marks the system message as cacheable each turn. This avoids re-processing the system prompt and tool schemas on every call, which typically saves 30–60% of input token costs in long sessions.
+
+| Provider                     | Caching mechanism                           | Notes                                                            |
+| ---------------------------- | ------------------------------------------- | ---------------------------------------------------------------- |
+| Anthropic (via OpenRouter)   | Explicit `cache_control` injected by Swival | System message cached; tool schemas not cached in Phase 1        |
+| Google Gemini                | Explicit `cache_control` injected by Swival | Via `openrouter/google/...` or native `google` provider          |
+| OpenAI / Deepseek            | Automatic (provider-side)                   | No annotation needed; prompts >1024 tokens cached automatically  |
+| LM Studio                    | None                                        | Local inference, no server-side cache                            |
+| Generic with custom base_url | None                                        | LiteLLM cannot identify the upstream provider from the URL alone |
+
+The injection is gated on `litellm.utils.supports_prompt_caching(model)` at runtime, so it activates only when the resolved model string is recognized. If the call succeeds with an unexpected provider, the extra annotation is silently dropped because `litellm.drop_params = True` is always set.
+
+When `--verbose` is active, Swival prints cache hit and write stats to stderr after each turn:
+
+```text
+Prompt cache: 4821 tokens cached
+Prompt cache: 6103 tokens written to cache
+```
+
+To opt out of explicit cache annotations, pass `--no-prompt-cache`. This only suppresses the injection; providers that cache automatically are unaffected.
 
 ## Adding More Providers Later
 

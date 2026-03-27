@@ -161,7 +161,7 @@ class TestCompletionWithRetry:
 
 
 class TestCallLlmRetry:
-    def test_returns_4_tuple(self):
+    def test_returns_5_tuple(self):
         resp = _make_response()
         with patch("litellm.completion", return_value=resp):
             result = call_llm(
@@ -177,12 +177,13 @@ class TestCallLlmRetry:
                 provider="generic",
                 api_key="test",
             )
-        assert len(result) == 4
-        msg, finish_reason, cmd_activity, provider_retries = result
+        assert len(result) == 5
+        msg, finish_reason, cmd_activity, provider_retries, cache_stats = result
         assert msg.content == "hello"
         assert finish_reason == "stop"
         assert cmd_activity == []
         assert provider_retries == 0
+        assert cache_stats == (0, 0)
 
     def test_provider_retries_reported(self):
         import litellm
@@ -255,7 +256,7 @@ class TestCallLlmRetry:
                     api_key="test",
                 )
 
-    def test_command_provider_4_tuple(self):
+    def test_command_provider_5_tuple(self):
         result = call_llm(
             None,
             "echo hello",
@@ -268,7 +269,8 @@ class TestCallLlmRetry:
             False,
             provider="command",
         )
-        assert len(result) == 4
+        assert len(result) == 5
+        assert result[4] == (0, 0)  # no cache stats for command provider
         assert result[3] == 0  # provider_retries
 
     def test_sanitization_retry_also_retries_transient(self):

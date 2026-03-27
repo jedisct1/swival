@@ -281,7 +281,7 @@ json.dump({"messages": payload["messages"]}, sys.stdout)
         monkeypatch.setattr(litellm, "completion", _fake_completion)
         monkeypatch.setattr(litellm, "suppress_debug_info", True)
 
-        msg, reason, _, _ = agent.call_llm(
+        msg, reason, *_ = agent.call_llm(
             base_url="http://localhost",
             model_id="test",
             messages=_msgs(),

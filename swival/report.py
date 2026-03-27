@@ -32,6 +32,8 @@ class ReportCollector:
         self.truncated_responses = 0
         self.llm_calls = 0
         self.total_llm_time = 0.0
+        self.total_cached_tokens = 0
+        self.total_cache_write_tokens = 0
         self.total_tool_time = 0.0
         self.max_turn_seen = 0
         self.skills_used: list[str] = []
@@ -49,9 +51,13 @@ class ReportCollector:
         is_retry: bool = False,
         retry_reason: str | None = None,
         provider_retries: int = 0,
+        cached_tokens: int = 0,
+        cache_write_tokens: int = 0,
     ):
         self.llm_calls += 1
         self.total_llm_time += duration
+        self.total_cached_tokens += cached_tokens
+        self.total_cache_write_tokens += cache_write_tokens
         if turn > self.max_turn_seen:
             self.max_turn_seen = turn
         event = {
@@ -242,6 +248,16 @@ class ReportCollector:
                 "truncated_responses": self.truncated_responses,
                 "llm_calls": self.llm_calls,
                 "total_llm_time_s": round(self.total_llm_time, 3),
+                **(
+                    {
+                        "prompt_cache": {
+                            "cached_tokens": self.total_cached_tokens,
+                            "cache_write_tokens": self.total_cache_write_tokens,
+                        }
+                    }
+                    if self.total_cached_tokens or self.total_cache_write_tokens
+                    else {}
+                ),
                 "total_tool_time_s": round(self.total_tool_time, 3),
                 "skills_used": list(self.skills_used),
                 "review_rounds": review_rounds,

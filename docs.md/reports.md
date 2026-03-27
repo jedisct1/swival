@@ -94,11 +94,13 @@ A `success` outcome means the model produced a final non-tool response. An `exha
 
 `skills_used` records skill names successfully activated through `use_skill`. `review_rounds` records how many reviewer passes occurred when `--reviewer` is active. `todo` appears only when the `todo` tool was used and includes `added`, `completed`, and `remaining` counts. `snapshot` appears only when the `snapshot` tool was used and includes `saves`, `restores`, `cancels`, `blocked`, `force_restores`, and `tokens_saved` counts. `memory` appears when auto-memory was loaded and includes `total_entries`, `bootstrap_entries`, `retrievable_entries`, `bootstrap_tokens`, `retrieval_tokens`, `retrieved_ids`, and `mode` (either `budgeted` or `full`).
 
+`prompt_cache` appears when at least one LLM call in the run returned cache stats. It is an object with `cached_tokens` (tokens served from the provider's prompt cache across the whole run) and `cache_write_tokens` (tokens written to the cache, i.e. the first-call population cost). Both fields are integers. Absent means no cache activity was reported by the provider.
+
 ### `timeline`
 
 `timeline` is an ordered array of event objects. Each event includes `type`, and most include `turn` (the turn number when the event occurred). Review events are an exception — they include `round` instead of `turn` since they occur between agent loop iterations.
 
-For `llm_call`, fields include `duration_s`, `prompt_tokens_est`, `finish_reason`, `is_retry`, and optionally `provider_retries` (number of transient-error retries within this call; omitted when 0). Retry calls include `retry_reason`, which is one of `compact_messages`, `drop_middle_turns`, or `aggressive_drop`.
+For `llm_call`, fields include `duration_s`, `prompt_tokens_est`, `finish_reason`, `is_retry`, and optionally `provider_retries` (number of transient-error retries within this call; omitted when 0). Retry calls include `retry_reason`, which is one of `compact_messages`, `drop_middle_turns`, or `aggressive_drop`. When the provider returned prompt cache data, `cached_tokens` and `cache_write_tokens` are included (both integers; omitted when zero).
 
 For `tool_call`, fields include `name`, `arguments`, `succeeded`, `duration_s`, and `result_length`. If arguments were invalid JSON, `arguments` is `null`. Failed tool calls include `error`.
 

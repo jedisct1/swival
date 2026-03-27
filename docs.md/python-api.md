@@ -64,6 +64,7 @@ Session(
     reasoning_effort: str | None = None,
     continue_here: bool = True,
     sanitize_thinking: bool | None = None,
+    prompt_cache: bool = True,
     cache: bool = False,
     cache_dir: str | None = None,
     scratch_dir: str | None = None,
@@ -105,6 +106,7 @@ All parameters are keyword-only. The important ones:
 | `retries`               | Number of LLM call retries on transient failures. Must be >= 1.                                                         |
 | `history`               | Write `HISTORY.md` after successful runs.                                                                               |
 | `memory`                | Load memory files (`.swival/memory/`) into the system prompt.                                                           |
+| `prompt_cache`          | Inject explicit `cache_control` annotations for Anthropic/Gemini/Bedrock. Default `True`. Set `False` to opt out.       |
 | `cache`                 | Cache LLM responses to disk for deterministic replay.                                                                   |
 | `verbose`               | Print diagnostics to stderr.                                                                                            |
 

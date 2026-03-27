@@ -2298,6 +2298,22 @@ def _completion_with_retry(completion_kwargs, *, max_retries, verbose):
             time.sleep(delay)
 
 
+def _log_cache_stats(response, verbose) -> tuple[int, int]:
+    """Log prompt cache stats to stderr if verbose. Returns (cached_tokens, cache_write_tokens)."""
+    if not hasattr(response, "usage") or not response.usage:
+        return 0, 0
+    details = getattr(response.usage, "prompt_tokens_details", None)
+    cached = getattr(details, "cached_tokens", 0) if details else 0
+    written = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+    cached = cached or 0
+    if verbose:
+        if cached:
+            fmt.info(f"Prompt cache: {cached} tokens cached")
+        if written:
+            fmt.info(f"Prompt cache: {written} tokens written to cache")
+    return cached, written
+
+
 def call_llm(
     base_url,
     model_id,
@@ -2314,6 +2330,7 @@ def call_llm(
     extra_body=None,
     reasoning_effort=None,
     sanitize_thinking=None,
+    prompt_cache=True,
     cache=None,
     secret_shield=None,
     command_tool_kwargs=None,
@@ -2323,10 +2340,12 @@ def call_llm(
 ):
     """Call LiteLLM with the appropriate provider.
 
-    Returns (message, finish_reason, cmd_activity, provider_retries).
+    Returns (message, finish_reason, cmd_activity, provider_retries, cache_stats).
     cmd_activity is a list of {"name": str, "succeeded": bool} dicts
     (non-empty only for command provider with tool calls).
     provider_retries is the number of transient-error retries (0 = first attempt ok).
+    cache_stats is (cached_tokens, cache_write_tokens); both 0 for command provider
+    and SQLite cache-hit paths.
     """
     # --- Outbound: user-defined filter ---
     if llm_filter is not None:
@@ -2357,9 +2376,10 @@ def call_llm(
                     **command_tool_kwargs,
                 ),
                 0,
+                (0, 0),
             )
         msg, stop = _call_command(model_id, messages, verbose, max_output_tokens)
-        return msg, stop, [], 0
+        return msg, stop, [], 0, (0, 0)
 
     # --- Outbound: encrypt secrets ---
     if secret_shield is not None:
@@ -2444,6 +2464,22 @@ def call_llm(
     if reasoning_effort is not None and reasoning_effort != "default":
         completion_kwargs["reasoning_effort"] = reasoning_effort
 
+    # --- Prompt caching ---
+    # For providers that support explicit cache_control (Anthropic, Gemini,
+    # Bedrock), tell LiteLLM to auto-inject cache breakpoints on the system
+    # message. OpenAI/Deepseek cache automatically (>1024 token prompts).
+    # lmstudio is local — no caching benefit.
+    if prompt_cache and provider != "lmstudio" and tools is not None:
+        try:
+            from litellm.utils import supports_prompt_caching
+
+            if supports_prompt_caching(model=model_str):
+                completion_kwargs["cache_control_injection_points"] = [
+                    {"location": "message", "role": "system"},
+                ]
+        except Exception:
+            pass  # old LiteLLM version or unsupported model — skip silently
+
     # --- Cache lookup ---
     # Skip cache for vision requests — base64 payloads would bloat the DB
     if cache is not None and _has_image_content(messages):
@@ -2469,7 +2505,7 @@ def call_llm(
             # Note: cache is disabled when secret_shield is active, so no
             # decrypt needed here.  But guard defensively in case the logic
             # changes.
-            return msg, finish_reason, [], 0
+            return msg, finish_reason, [], 0, (0, 0)
 
     def _cache_store(choice):
         if cache is not None:
@@ -2536,6 +2572,7 @@ def call_llm(
                     ae._provider_retries = combined
                     _raise_with_retries(ae)
                 retries += first_retries
+                cache_stats = _log_cache_stats(response, verbose)
                 choice = _pick_best_choice(response.choices)
                 if sanitize_thinking:
                     _sanitize_assistant_message(choice.message)
@@ -2545,6 +2582,7 @@ def call_llm(
                     choice.finish_reason,
                     [],
                     retries,
+                    cache_stats,
                 )
         ae = AgentError(f"LLM call failed: {e}")
         ae._provider_retries = _retries_from_exc(e)
@@ -2554,11 +2592,12 @@ def call_llm(
         ae._provider_retries = _retries_from_exc(e)
         _raise_with_retries(ae)
 
+    cache_stats = _log_cache_stats(response, verbose)
     choice = _pick_best_choice(response.choices)
     if sanitize_thinking:
         _sanitize_assistant_message(choice.message)
     _cache_store(choice)
-    return _decrypt_msg(choice.message), choice.finish_reason, [], retries
+    return _decrypt_msg(choice.message), choice.finish_reason, [], retries, cache_stats
 
 
 # Provider → env var that resolve_provider() checks for that provider
@@ -2770,6 +2809,15 @@ def build_parser():
         action="store_true",
         default=_UNSET,
         help="Strip leaked <think> tags from assistant responses.",
+    )
+
+    provider_group.add_argument(
+        "--no-prompt-cache",
+        dest="prompt_cache",
+        action="store_false",
+        default=_UNSET,
+        help="Disable explicit cache_control annotations (Anthropic/Gemini/Bedrock). "
+        "Providers that auto-cache (OpenAI, Deepseek) are unaffected.",
     )
 
     behavior_group.add_argument(
@@ -4144,6 +4192,8 @@ def _run_main(args, report, _write_report, parser):
         llm_kwargs["reasoning_effort"] = args.reasoning_effort
     if getattr(args, "sanitize_thinking", False):
         llm_kwargs["sanitize_thinking"] = True
+    if not getattr(args, "prompt_cache", True):
+        llm_kwargs["prompt_cache"] = False
     llm_kwargs["max_retries"] = args.retries
 
     # Stash resolved model_id for error reporting
@@ -4854,6 +4904,7 @@ def run_agent_loop(
                 msg, finish_reason = _llm_result[0], _llm_result[1]
                 cmd_activity = _llm_result[2] if len(_llm_result) > 2 else []
                 _provider_retries = _llm_result[3] if len(_llm_result) > 3 else 0
+                _cache_stats = _llm_result[4] if len(_llm_result) > 4 else (0, 0)
         except ContextOverflowError as _coe:
             elapsed = time.monotonic() - t0
             if report:
@@ -4963,6 +5014,9 @@ def run_agent_loop(
                         _provider_retries = (
                             _llm_result[3] if len(_llm_result) > 3 else 0
                         )
+                        _cache_stats = (
+                            _llm_result[4] if len(_llm_result) > 4 else (0, 0)
+                        )
                 except ContextOverflowError as _coe:
                     elapsed = time.monotonic() - t0
                     if report:
@@ -5002,6 +5056,8 @@ def run_agent_loop(
                             is_retry=True,
                             retry_reason=level_name,
                             provider_retries=_provider_retries,
+                            cached_tokens=_cache_stats[0],
+                            cache_write_tokens=_cache_stats[1],
                         )
                     break  # success
             else:
@@ -5074,6 +5130,9 @@ def run_agent_loop(
                             _provider_retries = (
                                 _llm_result[3] if len(_llm_result) > 3 else 0
                             )
+                            _cache_stats = (
+                                _llm_result[4] if len(_llm_result) > 4 else (0, 0)
+                            )
                     except ContextOverflowError:
                         continue
                     else:
@@ -5089,6 +5148,8 @@ def run_agent_loop(
                                 is_retry=True,
                                 retry_reason="drop_tools",
                                 provider_retries=_provider_retries,
+                                cached_tokens=_cache_stats[0],
+                                cache_write_tokens=_cache_stats[1],
                             )
                         _drop_tools_ok = True
                         break
@@ -5144,6 +5205,8 @@ def run_agent_loop(
                     token_est,
                     finish_reason,
                     provider_retries=_provider_retries,
+                    cached_tokens=_cache_stats[0],
+                    cache_write_tokens=_cache_stats[1],
                 )
         # Handle empty assistant response (no content, no tool_calls).
         # Some providers return these occasionally; appending them as-is

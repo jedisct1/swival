@@ -186,6 +186,7 @@ cat prompts/review.md | swival --provider huggingface --model zai-org/GLM-5
 <h3 id="caching-flags">Caching Flags</h3>
 <p><code>--cache</code> enables LLM response caching. When an identical request is seen again, the cached response is returned without contacting the LLM. The cache is stored in a SQLite database at <code>.swival/cache.db</code> by default. Off by default.</p>
 <p><code>--cache-dir PATH</code> overrides the default cache database directory. Useful for sharing a cache across projects.</p>
+<p><code>--no-prompt-cache</code> disables the explicit <code>cache_control</code> annotations that Swival injects on the system message for Anthropic, Gemini, and Bedrock providers. Providers that cache automatically (OpenAI, Deepseek) are unaffected by this flag. Prompt caching is on by default.</p>
 <h3 id="configuration-flags">Configuration Flags</h3>
 <p><code>--init-config</code> generates a global config file at <code>~/.config/swival/config.toml</code> and exits. The file is a commented starter template covering the main settings and integrations.</p>
 <p><code>--init-config --project</code> generates a project-local config file at <code>swival.toml</code> in the current base directory instead.</p>

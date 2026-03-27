@@ -233,6 +233,8 @@ See [A2A](a2a.md) for full server documentation.
 
 `--cache-dir PATH` overrides the default cache database directory. Useful for sharing a cache across projects.
 
+`--no-prompt-cache` disables the explicit `cache_control` annotations that Swival injects on the system message for Anthropic, Gemini, and Bedrock providers. Providers that cache automatically (OpenAI, Deepseek) are unaffected by this flag. Prompt caching is on by default.
+
 ### Configuration Flags
 
 `--init-config` generates a global config file at `~/.config/swival/config.toml` and exits. The file is a commented starter template covering the main settings and integrations.
