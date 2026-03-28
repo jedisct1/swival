@@ -2776,8 +2776,7 @@ def build_parser():
         prog="swival",
         usage=(
             "%(prog)s [options] [task]\n"
-            "       %(prog)s [options] < task.md\n"
-            "       %(prog)s --repl [options] [task]"
+            "       %(prog)s [options] < task.md"
         ),
         description=(
             "A CLI coding agent with tool-calling, sandboxed file access, and "
