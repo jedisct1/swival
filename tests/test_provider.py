@@ -1580,6 +1580,214 @@ class TestResolveProviderChatGPT:
         assert llm_kwargs["provider"] == "chatgpt"
 
 
+# ---------------------------------------------------------------------------
+# Bedrock provider
+# ---------------------------------------------------------------------------
+
+
+class TestBedrockRouting:
+    """Verify that call_llm routes bedrock calls correctly."""
+
+    def _mock_response(self):
+        choice = MagicMock()
+        choice.message = MagicMock(content="ok", tool_calls=None)
+        choice.finish_reason = "stop"
+        resp = MagicMock()
+        resp.choices = [choice]
+        return resp
+
+    def test_bedrock_routing_no_base_url(self):
+        with patch("litellm.completion") as mock_comp:
+            mock_comp.return_value = self._mock_response()
+            call_llm(
+                None,
+                "anthropic.claude-3-sonnet-20240229-v1:0",
+                [],
+                100,
+                0.5,
+                1.0,
+                None,
+                None,
+                False,
+                provider="bedrock",
+                api_key=None,
+            )
+            mock_comp.assert_called_once()
+            kwargs = mock_comp.call_args[1]
+            assert kwargs["model"] == "bedrock/anthropic.claude-3-sonnet-20240229-v1:0"
+            assert "api_key" not in kwargs
+            assert "api_base" not in kwargs
+            assert "aws_region_name" not in kwargs
+            assert "aws_bedrock_runtime_endpoint" not in kwargs
+
+    def test_bedrock_routing_base_url_as_region(self):
+        with patch("litellm.completion") as mock_comp:
+            mock_comp.return_value = self._mock_response()
+            call_llm(
+                "us-west-2",
+                "anthropic.claude-3-sonnet-20240229-v1:0",
+                [],
+                100,
+                0.5,
+                1.0,
+                None,
+                None,
+                False,
+                provider="bedrock",
+                api_key=None,
+            )
+            mock_comp.assert_called_once()
+            kwargs = mock_comp.call_args[1]
+            assert kwargs["aws_region_name"] == "us-west-2"
+            assert "api_base" not in kwargs
+            assert "aws_bedrock_runtime_endpoint" not in kwargs
+
+    def test_bedrock_routing_base_url_as_endpoint(self):
+        endpoint = "https://bedrock-runtime.us-west-2.amazonaws.com"
+        with patch("litellm.completion") as mock_comp:
+            mock_comp.return_value = self._mock_response()
+            call_llm(
+                endpoint,
+                "anthropic.claude-3-sonnet-20240229-v1:0",
+                [],
+                100,
+                0.5,
+                1.0,
+                None,
+                None,
+                False,
+                provider="bedrock",
+                api_key=None,
+            )
+            mock_comp.assert_called_once()
+            kwargs = mock_comp.call_args[1]
+            assert kwargs["aws_bedrock_runtime_endpoint"] == endpoint
+            assert "aws_region_name" not in kwargs
+            assert "api_base" not in kwargs
+
+    def test_bedrock_routing_with_aws_profile(self):
+        with patch("litellm.completion") as mock_comp:
+            mock_comp.return_value = self._mock_response()
+            call_llm(
+                "us-west-2",
+                "anthropic.claude-3-sonnet-20240229-v1:0",
+                [],
+                100,
+                0.5,
+                1.0,
+                None,
+                None,
+                False,
+                provider="bedrock",
+                api_key=None,
+                aws_profile="bedrock",
+            )
+            mock_comp.assert_called_once()
+            kwargs = mock_comp.call_args[1]
+            assert kwargs["aws_profile_name"] == "bedrock"
+            assert kwargs["aws_region_name"] == "us-west-2"
+
+
+class TestResolveProviderBedrock:
+    """Direct unit tests for resolve_provider() with provider='bedrock'."""
+
+    def test_happy_path(self):
+        model_id, api_base, resolved_key, context_length, llm_kwargs = resolve_provider(
+            "bedrock",
+            "anthropic.claude-3-sonnet-20240229-v1:0",
+            None,
+            None,
+            None,
+            False,
+        )
+        assert model_id == "anthropic.claude-3-sonnet-20240229-v1:0"
+        assert resolved_key is None
+        assert llm_kwargs["provider"] == "bedrock"
+
+    def test_missing_model_raises(self):
+        from swival.config import ConfigError
+
+        with pytest.raises(ConfigError, match="--model is required"):
+            resolve_provider("bedrock", None, None, None, None, False)
+
+    def test_api_key_rejected(self):
+        from swival.config import ConfigError
+
+        with pytest.raises(ConfigError, match="--api-key is not supported for bedrock"):
+            resolve_provider(
+                "bedrock",
+                "anthropic.claude-3-sonnet-20240229-v1:0",
+                "some-key",
+                None,
+                None,
+                False,
+            )
+
+    def test_base_url_passthrough(self):
+        _, api_base, _, _, _ = resolve_provider(
+            "bedrock",
+            "anthropic.claude-3-sonnet-20240229-v1:0",
+            None,
+            "us-west-2",
+            None,
+            False,
+        )
+        assert api_base == "us-west-2"
+
+    def test_context_override(self):
+        _, _, _, context_length, _ = resolve_provider(
+            "bedrock",
+            "anthropic.claude-3-sonnet-20240229-v1:0",
+            None,
+            None,
+            200000,
+            False,
+        )
+        assert context_length == 200000
+
+    def test_aws_profile_in_llm_kwargs(self):
+        _, _, _, _, llm_kwargs = resolve_provider(
+            "bedrock",
+            "anthropic.claude-3-sonnet-20240229-v1:0",
+            None,
+            None,
+            None,
+            False,
+            aws_profile="my-profile",
+        )
+        assert llm_kwargs["aws_profile"] == "my-profile"
+
+    def test_aws_profile_omitted_when_none(self):
+        _, _, _, _, llm_kwargs = resolve_provider(
+            "bedrock",
+            "anthropic.claude-3-sonnet-20240229-v1:0",
+            None,
+            None,
+            None,
+            False,
+        )
+        assert "aws_profile" not in llm_kwargs
+
+
+class TestBedrockCLIParser:
+    """Verify that argparse accepts 'bedrock' as a provider."""
+
+    def test_parser_accepts_bedrock(self):
+        from swival.agent import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "--provider",
+                "bedrock",
+                "--model",
+                "anthropic.claude-3-sonnet-20240229-v1:0",
+                "task",
+            ]
+        )
+        assert args.provider == "bedrock"
+
+
 class TestPickBestChoice:
     """Verify that _pick_best_choice prefers tool_calls over text-only choices."""
 

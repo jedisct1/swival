@@ -2095,6 +2095,8 @@ def _resolve_model_str(provider: str, model_id: str) -> str:
     elif provider == "chatgpt":
         bare = model_id.removeprefix("chatgpt/").removeprefix("chatgpt/")
         return f"chatgpt/{bare}"
+    elif provider == "bedrock":
+        return f"bedrock/{model_id.removeprefix('bedrock/')}"
     elif provider == "command":
         return model_id
     else:
@@ -2528,6 +2530,7 @@ def call_llm(
     max_retries=5,
     llm_filter=None,
     call_kind="agent",
+    aws_profile=None,
 ):
     """Call LiteLLM with the appropriate provider.
 
@@ -2619,6 +2622,16 @@ def call_llm(
             kwargs["api_key"] = api_key
         if base_url:
             kwargs["api_base"] = base_url
+    elif provider == "bedrock":
+        kwargs = {}
+        litellm.modify_params = True
+        if base_url:
+            if base_url.startswith("http"):
+                kwargs["aws_bedrock_runtime_endpoint"] = base_url
+            else:
+                kwargs["aws_region_name"] = base_url
+        if aws_profile:
+            kwargs["aws_profile_name"] = aws_profile
     else:
         raise AgentError(f"unknown provider {provider!r}")
 
@@ -2779,7 +2792,16 @@ def call_llm(
         ae._provider_retries = _retries_from_exc(e)
         _raise_with_retries(ae)
     except Exception as e:
-        ae = AgentError(f"LLM call failed: {e}")
+        msg = f"LLM call failed: {e}"
+        if provider == "bedrock" and "credentials" in str(e).lower():
+            msg += (
+                "\n\nBedrock authentication requires valid AWS credentials. Example:\n"
+                "  swival --provider bedrock \\\n"
+                '    --model global.anthropic.claude-opus-4-6-v1 \\\n'
+                "    --base-url us-east-2 \\\n"
+                '    --aws-profile bedrock "task"'
+            )
+        ae = AgentError(msg)
         ae._provider_retries = _retries_from_exc(e)
         _raise_with_retries(ae)
 
@@ -2950,7 +2972,12 @@ def build_parser():
     provider_group.add_argument(
         "--base-url",
         default=_UNSET,
-        help="Server base URL (default: http://127.0.0.1:1234 for lmstudio).",
+        help="Server base URL (default: http://127.0.0.1:1234 for lmstudio). For bedrock: AWS region name (e.g. us-west-2) or Bedrock runtime endpoint URL.",
+    )
+    provider_group.add_argument(
+        "--aws-profile",
+        default=_UNSET,
+        help="AWS profile name for bedrock provider (from ~/.aws/config). Overrides AWS_PROFILE env var.",
     )
 
     color_group = output_group.add_mutually_exclusive_group()
@@ -3251,10 +3278,11 @@ def build_parser():
             "generic",
             "google",
             "chatgpt",
+            "bedrock",
             "command",
         ],
         default=_UNSET,
-        help="LLM provider: lmstudio (local), huggingface (HF API), openrouter (multi-provider API), generic (any OpenAI-compatible server), google (Gemini via OpenAI-compatible endpoint), chatgpt (ChatGPT Plus/Pro subscription via OAuth), command (external command as LLM, --model is the command to run).",
+        help="LLM provider: lmstudio (local), huggingface (HF API), openrouter (multi-provider API), generic (any OpenAI-compatible server), google (Gemini via OpenAI-compatible endpoint), chatgpt (ChatGPT Plus/Pro subscription via OAuth), bedrock (AWS Bedrock, auth via AWS credential chain), command (external command as LLM, --model is the command to run).",
     )
     output_group.add_argument(
         "-q",
@@ -3849,6 +3877,7 @@ def resolve_provider(
     base_url: str | None,
     max_context_tokens: int | None,
     verbose: bool,
+    aws_profile: str | None = None,
 ) -> tuple[str, str | None, str | None, int | None, dict]:
     """Validate provider args, discover model (LM Studio), return resolved config.
 
@@ -3977,6 +4006,29 @@ def resolve_provider(
             except Exception:
                 pass
 
+    elif provider == "bedrock":
+        if not model:
+            raise ConfigError("--model is required when --provider is bedrock")
+        if api_key:
+            raise ConfigError(
+                "--api-key is not supported for bedrock. "
+                "Use AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY + AWS_REGION_NAME "
+                "env vars, ~/.aws/credentials, or AWS_PROFILE instead."
+            )
+        model_id = model
+        api_base = base_url
+        resolved_key = None
+        context_length = max_context_tokens
+        if context_length is None:
+            try:
+                import litellm
+
+                _model_str = f"bedrock/{model_id.removeprefix('bedrock/')}"
+                info = litellm.get_model_info(_model_str)
+                context_length = info.get("max_input_tokens")
+            except Exception:
+                pass
+
     elif provider == "command":
         if not model or not model.strip():
             raise ConfigError(
@@ -4000,6 +4052,8 @@ def resolve_provider(
         "provider": llm_provider,
         "api_key": resolved_key,
     }
+    if aws_profile:
+        llm_kwargs["aws_profile"] = aws_profile
     return model_id, api_base, resolved_key, context_length, llm_kwargs
 
 
@@ -4387,6 +4441,7 @@ def _run_main(args, report, _write_report, parser):
             base_url=args.base_url,
             max_context_tokens=args.max_context_tokens,
             verbose=args.verbose,
+            aws_profile=args.aws_profile,
         )
     except ConfigError as e:
         parser.error(str(e))

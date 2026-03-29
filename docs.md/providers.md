@@ -1,6 +1,6 @@
 # Providers
 
-Swival supports LM Studio for local inference, HuggingFace Inference API for hosted inference, OpenRouter for multi-provider access through a single API, Google Gemini API for Google's models, a ChatGPT Plus/Pro provider for using OpenAI models through your existing subscription via OAuth, a generic provider for any OpenAI-compatible server, and a command provider for shelling out to an external program. All provider calls are normalized through [LiteLLM](https://docs.litellm.ai/), so the runtime loop stays consistent while credential and model routing change per provider.
+Swival supports LM Studio for local inference, HuggingFace Inference API for hosted inference, OpenRouter for multi-provider access through a single API, Google Gemini API for Google's models, a ChatGPT Plus/Pro provider for using OpenAI models through your existing subscription via OAuth, AWS Bedrock for models hosted on AWS, a generic provider for any OpenAI-compatible server, and a command provider for shelling out to an external program. All provider calls are normalized through [LiteLLM](https://docs.litellm.ai/), so the runtime loop stays consistent while credential and model routing change per provider.
 
 ## LM Studio
 
@@ -214,6 +214,41 @@ swival --provider chatgpt --model gpt-5.4 --reasoning-effort high "task"
 
 All OAuth handling happens inside LiteLLM. Swival normalizes the model to `chatgpt/<model_id>` and passes it through. No other configuration is needed.
 
+## AWS Bedrock
+
+The `bedrock` provider connects to AWS Bedrock. It uses your existing AWS credentials — `--api-key` is not supported.
+
+`--model` is required. Use the Bedrock model ID.
+
+```sh
+export AWS_ACCESS_KEY_ID=AKIA...
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_REGION_NAME=us-east-2
+swival --provider bedrock --model global.anthropic.claude-opus-4-6-v1 "task"
+```
+
+Swival picks up credentials from environment variables, `~/.aws/credentials`, `~/.aws/config`, IAM roles, and SSO. To use a named profile, pass `--aws-profile` or set `AWS_PROFILE`.
+
+```sh
+swival --provider bedrock --model global.anthropic.claude-opus-4-6-v1 \
+    --aws-profile bedrock "task"
+```
+
+Use `--base-url` to set the region, or pass a custom endpoint URL.
+
+```sh
+swival --provider bedrock --model global.anthropic.claude-opus-4-6-v1 \
+    --base-url us-east-2 "task"
+```
+
+Note: the region env var is `AWS_REGION_NAME`, not `AWS_DEFAULT_REGION`.
+
+For cross-region inference, use the regional prefix in the model ID (e.g. `us.`, `eu.`, `apac.`).
+
+```sh
+swival --provider bedrock --model us.anthropic.claude-opus-4-6-v1 "task"
+```
+
 ## Extra Provider Parameters
 
 Some models and servers accept parameters that go beyond the standard OpenAI API. Use `--extra-body` to pass them through. The value is a JSON object that gets forwarded directly to the API call.
@@ -272,6 +307,7 @@ For providers that support explicit cache annotations, Swival automatically mark
 | ---------------------------- | ------------------------------------------- | ---------------------------------------------------------------- |
 | Anthropic (via OpenRouter)   | Explicit `cache_control` injected by Swival | System message cached; tool schemas not cached in Phase 1        |
 | Google Gemini                | Explicit `cache_control` injected by Swival | Via `openrouter/google/...` or native `google` provider          |
+| AWS Bedrock                  | Explicit `cache_control` injected by Swival | Supported for Anthropic models on Bedrock                        |
 | OpenAI / Deepseek            | Automatic (provider-side)                   | No annotation needed; prompts >1024 tokens cached automatically  |
 | LM Studio                    | None                                        | Local inference, no server-side cache                            |
 | Generic with custom base_url | None                                        | LiteLLM cannot identify the upstream provider from the URL alone |

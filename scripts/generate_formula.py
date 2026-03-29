@@ -41,7 +41,9 @@ def get_version():
 def resolve_deps():
     result = subprocess.run(
         ["uv", "pip", "compile", "pyproject.toml", "--no-header"],
-        capture_output=True, text=True, cwd=ROOT,
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
     )
     if result.returncode != 0:
         raise SystemExit(f"uv pip compile failed:\n{result.stderr}")
@@ -80,16 +82,10 @@ def pypi_url_and_sha(name, version):
     return data["urls"][0]["url"], data["urls"][0]["digests"]["sha256"]
 
 
-
 def format_resource(name, url, sha):
     is_wheel = url.endswith(".whl")
     url_line = f'    url "{url}", using: :nounzip' if is_wheel else f'    url "{url}"'
-    return (
-        f'  resource "{name}" do\n'
-        f'{url_line}\n'
-        f'    sha256 "{sha}"\n'
-        f"  end\n"
-    )
+    return f'  resource "{name}" do\n{url_line}\n    sha256 "{sha}"\n  end\n'
 
 
 def main():
@@ -114,14 +110,14 @@ def main():
     except Exception as e:
         our_sha = "PLACEHOLDER"
         print(f"Warning: could not fetch release tarball: {e}")
-        print(f"  Using PLACEHOLDER for sha256 — publish the release first")
+        print("  Using PLACEHOLDER for sha256 — publish the release first")
 
     deps = resolve_deps()
     print(f"Resolved {len(deps)} dependencies")
 
     def fetch_one(item):
         i, (name, ver) = item
-        print(f"  [{i+1}/{len(deps)}] {name}=={ver}")
+        print(f"  [{i + 1}/{len(deps)}] {name}=={ver}")
         try:
             url, sha = pypi_url_and_sha(name, ver)
         except Exception as e:

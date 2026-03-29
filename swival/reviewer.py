@@ -137,6 +137,7 @@ def run_as_reviewer(args, base_dir: str) -> int:
             base_url=args.base_url,
             max_context_tokens=args.max_context_tokens,
             verbose=args.verbose,
+            aws_profile=getattr(args, "aws_profile", None),
         )
     except (AgentError, SystemExit) as e:
         print(f"reviewer error: provider resolution failed: {e}", file=sys.stderr)

@@ -68,7 +68,7 @@
         </aside>
         <article class="docs-content">
             <h1 id="providers">Providers</h1>
-<p>Swival supports LM Studio for local inference, HuggingFace Inference API for hosted inference, OpenRouter for multi-provider access through a single API, Google Gemini API for Google's models, a ChatGPT Plus/Pro provider for using OpenAI models through your existing subscription via OAuth, a generic provider for any OpenAI-compatible server, and a command provider for shelling out to an external program. All provider calls are normalized through <a href="https://docs.litellm.ai/">LiteLLM</a>, so the runtime loop stays consistent while credential and model routing change per provider.</p>
+<p>Swival supports LM Studio for local inference, HuggingFace Inference API for hosted inference, OpenRouter for multi-provider access through a single API, Google Gemini API for Google's models, a ChatGPT Plus/Pro provider for using OpenAI models through your existing subscription via OAuth, AWS Bedrock for models hosted on AWS, a generic provider for any OpenAI-compatible server, and a command provider for shelling out to an external program. All provider calls are normalized through <a href="https://docs.litellm.ai/">LiteLLM</a>, so the runtime loop stays consistent while credential and model routing change per provider.</p>
 <h2 id="lm-studio">LM Studio</h2>
 <p>LM Studio is the default provider and usually requires no flags when the local server is already running with a loaded model.</p>
 <p>At startup, Swival calls <code>http://127.0.0.1:1234/api/v1/models</code> unless you override <code>--base-url</code>. It looks for the first model entry with <code>type: "llm"</code> and a non-empty <code>loaded_instances</code> array, then extracts the model identifier and current context length from that payload. If no loaded model is found, Swival exits and asks you to load a model or pass <code>--model</code> explicitly.</p>
@@ -195,6 +195,26 @@ swival --provider chatgpt --model gpt-5.4 &quot;task&quot;
 <pre><code class="language-sh">swival --provider chatgpt --model gpt-5.4 --reasoning-effort high &quot;task&quot;
 </code></pre>
 <p>All OAuth handling happens inside LiteLLM. Swival normalizes the model to <code>chatgpt/&lt;model_id&gt;</code> and passes it through. No other configuration is needed.</p>
+<h2 id="aws-bedrock">AWS Bedrock</h2>
+<p>The <code>bedrock</code> provider connects to AWS Bedrock. It uses your existing AWS credentials — <code>--api-key</code> is not supported.</p>
+<p><code>--model</code> is required. Use the Bedrock model ID.</p>
+<pre><code class="language-sh">export AWS_ACCESS_KEY_ID=AKIA...
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_REGION_NAME=us-east-2
+swival --provider bedrock --model global.anthropic.claude-opus-4-6-v1 &quot;task&quot;
+</code></pre>
+<p>Swival picks up credentials from environment variables, <code>~/.aws/credentials</code>, <code>~/.aws/config</code>, IAM roles, and SSO. To use a named profile, pass <code>--aws-profile</code> or set <code>AWS_PROFILE</code>.</p>
+<pre><code class="language-sh">swival --provider bedrock --model global.anthropic.claude-opus-4-6-v1 \
+    --aws-profile bedrock &quot;task&quot;
+</code></pre>
+<p>Use <code>--base-url</code> to set the region, or pass a custom endpoint URL.</p>
+<pre><code class="language-sh">swival --provider bedrock --model global.anthropic.claude-opus-4-6-v1 \
+    --base-url us-east-2 &quot;task&quot;
+</code></pre>
+<p>Note: the region env var is <code>AWS_REGION_NAME</code>, not <code>AWS_DEFAULT_REGION</code>.</p>
+<p>For cross-region inference, use the regional prefix in the model ID (e.g. <code>us.</code>, <code>eu.</code>, <code>apac.</code>).</p>
+<pre><code class="language-sh">swival --provider bedrock --model us.anthropic.claude-opus-4-6-v1 &quot;task&quot;
+</code></pre>
 <h2 id="extra-provider-parameters">Extra Provider Parameters</h2>
 <p>Some models and servers accept parameters that go beyond the standard OpenAI API. Use <code>--extra-body</code> to pass them through. The value is a JSON object that gets forwarded directly to the API call.</p>
 <p>For example, Qwen models served through vLLM can disable internal thinking mode:</p>
@@ -244,6 +264,11 @@ model = &quot;codex exec --skip-git-repo-check --full-auto --ephemeral&quot;
 <td>Google Gemini</td>
 <td>Explicit <code>cache_control</code> injected by Swival</td>
 <td>Via <code>openrouter/google/...</code> or native <code>google</code> provider</td>
+</tr>
+<tr>
+<td>AWS Bedrock</td>
+<td>Explicit <code>cache_control</code> injected by Swival</td>
+<td>Supported for Anthropic models on Bedrock</td>
 </tr>
 <tr>
 <td>OpenAI / Deepseek</td>

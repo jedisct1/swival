@@ -30,6 +30,7 @@ CONFIG_KEYS: dict[str, type | tuple[type, ...]] = {
     "model": str,
     "api_key": str,
     "base_url": str,
+    "aws_profile": str,
     "max_output_tokens": int,
     "max_context_tokens": int,
     "temperature": (int, float),
@@ -160,6 +161,7 @@ _ARGPARSE_DEFAULTS: dict[str, Any] = {
     "lifecycle_timeout": 300,
     "lifecycle_fail_closed": False,
     "no_lifecycle": False,
+    "aws_profile": None,
 }
 
 
@@ -923,10 +925,11 @@ def generate_config(project: bool = False) -> str:
         "# CLI flags override these values. Only uncomment what you need.",
         "",
         "# --- Provider / model ---",
-        '# provider = "lmstudio"          # "lmstudio" | "huggingface" | "openrouter" | "google" | "generic" | "chatgpt" | "command"',
+        '# provider = "lmstudio"          # "lmstudio" | "huggingface" | "openrouter" | "google" | "generic" | "chatgpt" | "bedrock" | "command"',
         '# model = "qwen/qwen3-coder-next"',
         '# api_key = "sk-or-..."            # prefer env vars; this is a fallback',
-        '# base_url = "https://..."',
+        '# base_url = "https://..."         # server URL; for bedrock: region name or endpoint URL',
+        '# aws_profile = "bedrock"          # AWS profile name for bedrock provider (from ~/.aws/config)',
         "",
         "# --- Generation parameters ---",
         "# max_output_tokens = 32768",

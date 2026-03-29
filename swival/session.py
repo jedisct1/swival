@@ -101,6 +101,7 @@ class Session:
         lifecycle_timeout: int = 300,
         lifecycle_fail_closed: bool = False,
         lifecycle_enabled: bool = True,
+        aws_profile: str | None = None,
     ):
         self.base_dir = base_dir
         self.scratch_dir = scratch_dir
@@ -156,6 +157,7 @@ class Session:
         self.lifecycle_timeout = lifecycle_timeout
         self.lifecycle_fail_closed = lifecycle_fail_closed
         self.lifecycle_enabled = lifecycle_enabled
+        self.aws_profile = aws_profile
 
         # Streaming / cancellation hooks (set externally, e.g. by A2A server).
         # event_callback receives (kind, data) where kind is one of the
@@ -241,6 +243,7 @@ class Session:
             base_url=self.base_url,
             max_context_tokens=self.max_context_tokens,
             verbose=self.verbose,
+            aws_profile=self.aws_profile,
         )
         if self.extra_body is not None:
             self._llm_kwargs["extra_body"] = self.extra_body
