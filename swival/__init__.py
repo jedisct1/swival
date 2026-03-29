@@ -10,10 +10,11 @@ def run(question: str, *, base_dir: str = ".", **kwargs) -> str:
     """One-call convenience. Returns the answer string or raises AgentError."""
     session = Session(base_dir=base_dir, **kwargs)
     result = session.run(question)
-    if result.answer is None:
+    answer = result.answer
+    if answer is None:
         raise AgentError(
             "Agent exhausted max turns without producing an answer"
             if result.exhausted
             else "Agent returned no answer"
         )
-    return result.answer
+    return answer

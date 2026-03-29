@@ -477,5 +477,7 @@ class SnapshotState:
         total = self.stats["restores"] + self.stats["saves"]
         if total == 0:
             return None
-        saved = self.stats["tokens_saved"]
-        return f"snapshot: {self.stats['restores']} restore(s), ~{saved} tokens saved"
+        return (
+            f"snapshot: {self.stats['restores']} restore(s), "
+            f"~{self.stats['tokens_saved']} tokens saved"
+        )

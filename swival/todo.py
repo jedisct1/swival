@@ -281,5 +281,7 @@ class TodoState:
         """One-line usage summary, or None if todo was never called."""
         if self._total_actions == 0:
             return None
-        remaining = self.remaining_count
-        return f"todo: {self.add_count} added, {self.done_count} done, {remaining} remaining"
+        return (
+            f"todo: {self.add_count} added, {self.done_count} done, "
+            f"{self.remaining_count} remaining"
+        )
