@@ -85,7 +85,6 @@ def completion(turns: int, exit_code: str) -> None:
         _console.print(
             Text(f"  Agent finished: {turns} turns, exit={exit_code}", style="bold red")
         )
-    _console.print()
 
 
 # -- Tool calls --------------------------------------------------------------
