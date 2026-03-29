@@ -2298,7 +2298,7 @@ class TestRemember:
         assert "Some notes." in content
 
     def test_repl_remember_empty_warns(self, capsys):
-        _repl_remember("", "/tmp")
+        _repl_remember("", "/tmp", [])
 
     def test_repl_remember_help_lists_command(self, capsys):
         _repl_help()

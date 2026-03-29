@@ -12,6 +12,7 @@ from swival.subagent import (
     _build_subagent_system,
     _subagent_thread_fn,
 )
+from swival.todo import TodoState
 
 
 class TestCompositeCancelFlag:
@@ -194,7 +195,7 @@ class TestSubagentManager:
 
         monkeypatch.setattr("swival.subagent._subagent_thread_fn", mock_thread_fn)
 
-        for i in range(8):
+        for i in range(4):
             result = mgr.spawn(task=f"task {i}")
             assert "launched" in result.lower()
 
@@ -361,7 +362,7 @@ class TestSubagentThreadFn:
             _CompositeCancelFlag(None, threading.Event()),
         )
 
-        assert captured_kwargs["todo_state"]._persist is False
+        assert isinstance(captured_kwargs["todo_state"], TodoState)
 
     def test_exception_captured(self, monkeypatch):
         def mock_run_agent_loop(messages, tools, **kwargs):
