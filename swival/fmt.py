@@ -291,7 +291,9 @@ def repl_answer(text: str) -> None:
     if _stdout_console.is_terminal and not _stdout_console.no_color:
         from rich.syntax import Syntax
 
-        highlighted = Syntax(text, "markdown", background_color="default")
+        highlighted = Syntax(
+            text, "markdown", background_color="default", word_wrap=True
+        )
         _stdout_console.print(highlighted)
     else:
         print(text)
