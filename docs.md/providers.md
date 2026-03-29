@@ -2,6 +2,17 @@
 
 Swival supports LM Studio for local inference, HuggingFace Inference API for hosted inference, OpenRouter for multi-provider access through a single API, Google Gemini API for Google's models, a ChatGPT Plus/Pro provider for using OpenAI models through your existing subscription via OAuth, AWS Bedrock for models hosted on AWS, a generic provider for any OpenAI-compatible server, and a command provider for shelling out to an external program.
 
+- [LM Studio](#lm-studio)
+- [HuggingFace Inference API](#huggingface-inference-api)
+- [OpenRouter](#openrouter)
+- [Generic (OpenAI-compatible)](#generic-openai-compatible)
+- [Google Gemini API](#google-gemini-api)
+- [ChatGPT Plus/Pro](#chatgpt-pluspro)
+- [AWS Bedrock](#aws-bedrock)
+- [Extra Provider Parameters](#extra-provider-parameters)
+- [Command (External Program)](#command-external-program)
+- [Prompt Caching](#prompt-caching)
+
 ## LM Studio
 
 LM Studio is the default provider and usually requires no flags when the local server is already running with a loaded model.
