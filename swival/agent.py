@@ -6075,17 +6075,49 @@ def _repl_snapshot_unsave(snapshot_state: "SnapshotState | None") -> None:
         fmt.info(result)
 
 
-def _repl_remember(text: str, base_dir: str) -> None:
+def _patch_system_instructions(messages: list, base_dir: str) -> None:
+    """Re-read AGENTS.md from disk and replace the live <agent-instructions> block.
+
+    Only acts when the system message already contains the block — sessions
+    started with --system-prompt, --no-instructions, or the command provider
+    intentionally omit it and must not gain one mid-session.
+    """
+    if not messages or _msg_role(messages[0]) != "system":
+        return
+    old = _msg_content(messages[0]) or ""
+    import re
+
+    tag_re = r"<agent-instructions>.*?</agent-instructions>"
+    if not re.search(tag_re, old, re.DOTALL):
+        return
+    from .config import global_config_dir
+
+    new_instructions, _ = load_instructions(
+        base_dir,
+        config_dir=global_config_dir(),
+        verbose=False,
+    )
+    new_tag = (
+        re.search(tag_re, new_instructions, re.DOTALL) if new_instructions else None
+    )
+    replacement = new_tag.group(0) if new_tag else ""
+    updated = re.sub(tag_re, replacement, old, count=1, flags=re.DOTALL)
+    _set_msg_content(messages[0], updated)
+
+
+def _repl_remember(text: str, base_dir: str, messages: list) -> None:
     """Handle /remember command: add a convention to project AGENTS.md."""
     if not text.strip():
         fmt.warning("/remember requires text. Usage: /remember <fact>")
         return
     try:
-        msg, _changed, is_error = remember_agents_fact(base_dir, text)
+        msg, changed, is_error = remember_agents_fact(base_dir, text)
     except ValueError as exc:
         fmt.warning(str(exc))
         return
     (fmt.warning if is_error else fmt.info)(msg)
+    if changed:
+        _patch_system_instructions(messages, base_dir)
 
 
 def repl_loop(
@@ -6485,7 +6517,7 @@ def repl_loop(
             _repl_snapshot_unsave(snapshot_state)
             continue
         elif cmd == "/remember":
-            _repl_remember(cmd_arg, base_dir)
+            _repl_remember(cmd_arg, base_dir, messages)
             continue
 
         messages.append({"role": "user", "content": line})
