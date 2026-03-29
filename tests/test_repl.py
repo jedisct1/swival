@@ -366,6 +366,18 @@ class TestReplLoop:
             return_value=mock_session,
         )
 
+    def test_repl_prompt_session_receives_style(self, tmp_path):
+        """Verify PromptSession is created with a style kwarg."""
+        inputs = ["/exit"]
+        mock_session = self._mock_session(inputs)
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session) as mock_cls,
+            patch("swival.agent.run_agent_loop"),
+        ):
+            repl_loop([], [], **_loop_kwargs(tmp_path))
+        _, kwargs = mock_cls.call_args
+        assert "style" in kwargs
+
     def test_exit_command(self, tmp_path):
         """Feeding /exit exits the loop without error."""
         messages = [_sys("system")]
