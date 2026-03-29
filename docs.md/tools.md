@@ -60,7 +60,7 @@ The tool applies tolerant coercion so models that send extra or contradictory fi
 
 ## `todo`
 
-`todo` tracks work items during a run. The list is stored in `.swival/todo.md`, so the agent can recover state even after context compaction. Actions include `add`, `done`, `remove`, `clear`, and `list`, and each action returns the full current list.
+`todo` tracks work items during a run. The list lives in memory for the duration of the session, surviving context compaction because the state object exists outside the message history. Actions include `add`, `done`, `remove`, `clear`, and `list`, and each action returns the full current list.
 
 Matching for `done` and `remove` is fuzzy in a controlled way, so exact wording is not required every time. Swival tries exact matching first, then prefix matching, then substring matching. The list allows up to 50 items, and each item can be up to 500 characters.
 

@@ -339,12 +339,7 @@ def _subagent_thread_fn(
         from .agent import run_agent_loop
 
         thinking_state = ThinkingState(verbose=False)
-        todo_state = TodoState(
-            notes_dir=template["base_dir"],
-            verbose=False,
-            todo_dir=template.get("scratch_dir"),
-            persist=False,
-        )
+        todo_state = TodoState(verbose=False)
         snapshot_state = SnapshotState(verbose=False)
         file_tracker = FileAccessTracker()
 

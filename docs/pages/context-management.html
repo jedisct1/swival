@@ -137,7 +137,7 @@
 <h3 id="thinking-state">Thinking State</h3>
 <p>The <code>think</code> tool maintains a history of numbered reasoning steps in memory. These steps support revision (correcting earlier conclusions) and branching (exploring alternatives). The thinking history lives entirely outside the message list — compaction doesn't touch it. Thinking turns also get a score bonus during Level 2 compaction, making them more likely to be retained than ordinary file reads.</p>
 <h3 id="todo-state">Todo State</h3>
-<p>The <code>todo</code> tool tracks work items both in memory and on disk (<code>.swival/todo.md</code>). When aggressive compaction drops the turns where the agent planned its work, the todo list still exists.</p>
+<p>The <code>todo</code> tool tracks work items in memory for the duration of the session. When aggressive compaction drops the turns where the agent planned its work, the todo list still exists because the state object lives outside the message history.</p>
 <p>Swival also injects periodic reminders — if the agent hasn't checked its todo list for 3 turns and there are unfinished items, a reminder surfaces the list back into the conversation.</p>
 <h3 id="snapshot-history">Snapshot History</h3>
 <p>As described above, completed snapshot summaries are injected directly into the system prompt. This is the most durable persistence channel — the system prompt survives every compaction level, so investigation conclusions are never lost.</p>

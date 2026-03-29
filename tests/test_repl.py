@@ -93,7 +93,7 @@ def _loop_kwargs(tmp_path, **overrides):
         verbose=False,
         llm_kwargs={"provider": "lmstudio", "api_key": None},
         file_tracker=None,
-        todo_state=TodoState(notes_dir=str(tmp_path), verbose=False),
+        todo_state=TodoState(verbose=False),
     )
     defaults.update(overrides)
     return defaults

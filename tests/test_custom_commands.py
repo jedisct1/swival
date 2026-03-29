@@ -361,7 +361,7 @@ def _repl_kwargs(tmp_path, **overrides):
         context_length=100_000,
         base_dir=str(tmp_path),
         thinking_state=ThinkingState(verbose=False),
-        todo_state=TodoState(notes_dir=str(tmp_path), verbose=False),
+        todo_state=TodoState(verbose=False),
         snapshot_state=SnapshotState(),
         resolved_commands={},
         skills_catalog={},

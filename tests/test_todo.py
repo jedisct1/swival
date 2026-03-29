@@ -1,7 +1,6 @@
 """Tests for the todo tool: TodoState, dispatch integration, and agent logging."""
 
 import json
-import os
 import sys
 import types
 
@@ -207,83 +206,6 @@ class TestMatching:
 
 
 # ---------------------------------------------------------------------------
-# Persistence tests
-# ---------------------------------------------------------------------------
-
-
-class TestPersistence:
-    def test_add_creates_file(self, tmp_path):
-        todo_path = tmp_path / ".swival" / "todo.md"
-        state = TodoState(notes_dir=str(tmp_path))
-        state.process({"action": "add", "task": "Read the test suite"})
-        assert todo_path.exists()
-        content = todo_path.read_text()
-        assert "- [ ] Read the test suite" in content
-
-    def test_done_updates_file(self, tmp_path):
-        todo_path = tmp_path / ".swival" / "todo.md"
-        state = TodoState(notes_dir=str(tmp_path))
-        state.process({"action": "add", "task": "Read the test suite"})
-        state.process({"action": "done", "task": "Read the test suite"})
-        content = todo_path.read_text()
-        assert "- [x] Read the test suite" in content
-
-    def test_clear_empties_file(self, tmp_path):
-        todo_path = tmp_path / ".swival" / "todo.md"
-        state = TodoState(notes_dir=str(tmp_path))
-        state.process({"action": "add", "task": "Task"})
-        state.process({"action": "clear"})
-        content = todo_path.read_text()
-        assert content == ""
-
-    def test_session_isolation(self, tmp_path):
-        """Stale items are preserved on disk (for concurrent sessions) but
-        not absorbed into self.items (session isolation)."""
-        todo_path = tmp_path / ".swival" / "todo.md"
-        todo_path.parent.mkdir(parents=True, exist_ok=True)
-        todo_path.write_text("- [ ] Old stale task\n")
-        state = TodoState(notes_dir=str(tmp_path))
-        assert todo_path.exists()
-        state.process({"action": "add", "tasks": "fresh"})
-        from swival.todo import _parse_todo_file
-
-        on_disk = {i.text for i in _parse_todo_file(todo_path)}
-        assert "fresh" in on_disk
-        assert "Old stale task" in on_disk  # preserved on disk for concurrent sessions
-        assert not any(i.text == "Old stale task" for i in state.items)  # not absorbed
-
-    def test_init_cleanup_ignores_missing_file(self, tmp_path):
-        # No .swival/ directory at all — should not raise
-        state = TodoState(notes_dir=str(tmp_path))
-        assert state.add_count == 0
-
-    def test_no_notes_dir_no_crash(self):
-        """Without notes_dir, items work in memory but no file is created."""
-        state = TodoState()
-        result = json.loads(state.process({"action": "add", "task": "Memory only"}))
-        assert result["total"] == 1
-        # No file created anywhere
-
-    def test_symlinked_swival_disables_persistence(self, tmp_path):
-        """If .swival is a symlink escaping base_dir, persistence is disabled (no crash)."""
-        outside = tmp_path / "outside"
-        outside.mkdir()
-        target_file = outside / "todo.md"
-        target_file.write_text("external data")
-
-        scratch = tmp_path / "base" / ".swival"
-        scratch.parent.mkdir()
-        os.symlink(str(outside), str(scratch))
-
-        # Should not raise — just disables persistence
-        state = TodoState(notes_dir=str(tmp_path / "base"))
-        assert state.notes_dir is None
-        # Items still work in memory
-        result = json.loads(state.process({"action": "add", "task": "In-memory only"}))
-        assert result["total"] == 1
-
-
-# ---------------------------------------------------------------------------
 # Caps tests
 # ---------------------------------------------------------------------------
 
@@ -367,8 +289,8 @@ class TestUsageCounters:
         state.process({"action": "done", "task": "A"})
         assert state.summary_line() == "todo: 3 added, 1 done, 2 remaining"
 
-    def test_reset(self, tmp_path):
-        state = TodoState(notes_dir=str(tmp_path))
+    def test_reset(self):
+        state = TodoState()
         state.process({"action": "add", "task": "A"})
         state.process({"action": "done", "task": "A"})
         state.reset()
@@ -377,8 +299,6 @@ class TestUsageCounters:
         assert state.done_count == 0
         assert state._total_actions == 0
         assert state.summary_line() is None
-        todo_path = tmp_path / ".swival" / "todo.md"
-        assert todo_path.read_text() == ""
 
     def test_summary_line_all_done(self):
         state = TodoState()
@@ -742,45 +662,6 @@ class TestInputNormalization:
         state.process({"action": "add", "tasks": "A"})
         result = json.loads(state.process({"action": "clear", "tasks": "ignored"}))
         assert result["total"] == 0
-
-
-class TestBatchPersistence:
-    def test_save_called_once_on_batch_add(self, tmp_path, monkeypatch):
-        state = TodoState(notes_dir=str(tmp_path))
-        save_calls = []
-        original_save = state._save
-
-        def counting_save():
-            save_calls.append(1)
-            original_save()
-
-        monkeypatch.setattr(state, "_save", counting_save)
-        state.process({"action": "add", "tasks": ["A", "B", "C"]})
-        assert len(save_calls) == 1
-
-    def test_save_called_once_on_partial_failure(self, tmp_path, monkeypatch):
-        state = TodoState(notes_dir=str(tmp_path))
-        state.process({"action": "add", "tasks": ["Exists"]})
-        save_calls = []
-        original_save = state._save
-
-        def counting_save():
-            save_calls.append(1)
-            original_save()
-
-        monkeypatch.setattr(state, "_save", counting_save)
-        # "Exists" will be skipped, "New" will be added, "Ghost" done will fail
-        state.process({"action": "add", "tasks": ["Exists", "New"]})
-        assert len(save_calls) == 1
-
-    def test_batch_add_persists_all_items(self, tmp_path):
-        todo_path = tmp_path / ".swival" / "todo.md"
-        state = TodoState(notes_dir=str(tmp_path))
-        state.process({"action": "add", "tasks": ["First", "Second", "Third"]})
-        content = todo_path.read_text()
-        assert "- [ ] First" in content
-        assert "- [ ] Second" in content
-        assert "- [ ] Third" in content
 
 
 class TestBatchVerbose:

@@ -4499,7 +4499,7 @@ def _run_main(args, report, _write_report, parser):
     atexit.register(cleanup_old_cmd_outputs, base_dir)
 
     thinking_state = ThinkingState(verbose=args.verbose)
-    todo_state = TodoState(notes_dir=base_dir, verbose=args.verbose)
+    todo_state = TodoState(verbose=args.verbose)
     snapshot_state = SnapshotState(verbose=args.verbose)
     file_tracker = (
         None if getattr(args, "no_read_guard", False) else FileAccessTracker()

@@ -430,9 +430,7 @@ class Session:
 
         state = {
             "thinking_state": ThinkingState(verbose=self.verbose),
-            "todo_state": TodoState(
-                notes_dir=self.base_dir, verbose=self.verbose, todo_dir=self.scratch_dir
-            ),
+            "todo_state": TodoState(verbose=self.verbose),
             "snapshot_state": SnapshotState(verbose=self.verbose),
             "file_tracker": FileAccessTracker() if self.read_guard else None,
             "skill_read_roots": list(self._allowed_dir_ro_paths),

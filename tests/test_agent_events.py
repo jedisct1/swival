@@ -60,7 +60,7 @@ def _loop_kwargs(tmp_path, **overrides):
         context_length=None,
         base_dir=str(tmp_path),
         thinking_state=ThinkingState(),
-        todo_state=TodoState(notes_dir=str(tmp_path)),
+        todo_state=TodoState(),
         resolved_commands={},
         skills_catalog={},
         skill_read_roots=[],

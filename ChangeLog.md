@@ -4,6 +4,9 @@ All notable user-facing changes to Swival.
 
 ## 0.9.7
 
+- The todo list is now session-scoped and purely in-memory. It no longer
+  persists to `.swival/todo.md` or uses file locking. Concurrent sessions
+  get fully independent todo lists with no cross-session interference.
 - `/remember <text>` REPL command has been added to persist a project fact
   to `AGENTS.md` under `## Conventions`. Deduplicates by normalized text.
   Creates a minimal `AGENTS.md` scaffold if the file does not exist yet.
@@ -133,7 +136,7 @@ All notable user-facing changes to Swival.
   templates can now be stripped. This can be controlled with `sanitize_thinking`
   in config or `--sanitize-thinking`.
 - Race conditions when multiple A2A contexts run concurrently have been fixed by
-  isolating per-context temporary files (todo, cmd_output) and adding file locks.
+  isolating per-context temporary files (cmd_output) and adding file locks.
 - SQLite cross-thread error when `--serve` and `--cache` are combined has been
   fixed.
 

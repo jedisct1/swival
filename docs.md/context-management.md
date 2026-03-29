@@ -113,7 +113,7 @@ The `think` tool maintains a history of numbered reasoning steps in memory. Thes
 
 ### Todo State
 
-The `todo` tool tracks work items both in memory and on disk (`.swival/todo.md`). When aggressive compaction drops the turns where the agent planned its work, the todo list still exists.
+The `todo` tool tracks work items in memory for the duration of the session. When aggressive compaction drops the turns where the agent planned its work, the todo list still exists because the state object lives outside the message history.
 
 Swival also injects periodic reminders — if the agent hasn't checked its todo list for 3 turns and there are unfinished items, a reminder surfaces the list back into the conversation.
 
