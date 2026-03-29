@@ -34,7 +34,7 @@ dependencies = [
     "httpx>=0.28.1",
     "starlette>=1.0.0",
     "uvicorn>=0.42.0",
-    "fast-cipher>=0.2.0",
+    "fast-cipher>=0.2.1",
 ]
 
 [project.urls]

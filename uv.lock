@@ -332,14 +332,11 @@ wheels = [
 
 [[package]]
 name = "fast-cipher"
-version = "0.2.0"
+version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "cryptography" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/61/ab/be43b72c508a7abba9ae9d8938b32d66f780d88a5f91a9d309764a605c91/fast_cipher-0.2.0.tar.gz", hash = "sha256:f7c6128de8216478bbb2fc087088fc9b1220000d2f7b612029a01ed6a2016c45", size = 15872, upload-time = "2026-03-19T17:33:21.414Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8e/b4/4bbc975c6f86b6b8a4e8b763bf12b3c62847d6db48a6323fde2cfb86269c/fast_cipher-0.2.1.tar.gz", hash = "sha256:0f16046e3ba52f5e7dcce706c0c9575b52a0cbb636690f0429d1454ab41498c0", size = 17385, upload-time = "2026-03-29T19:46:27.825Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9a/cf/0c2c21b757b61cfac34bab9a3df9c70ab3c39f5534a1239c5d6bd2c2c443/fast_cipher-0.2.0-py3-none-any.whl", hash = "sha256:5cc483fc9e493929596f3733a73da24c197dccfcd4db8f0cf9e75a3e4de84d74", size = 21599, upload-time = "2026-03-19T17:33:20.478Z" },
+    { url = "https://files.pythonhosted.org/packages/83/18/e8309e15611a454df1b617e142ff0200b57470213fe3e40a247f21667d59/fast_cipher-0.2.1-py3-none-any.whl", hash = "sha256:36122c0626132cf49852c36080f5309212075f9046f44b8543a2f82d3cb93641", size = 23344, upload-time = "2026-03-29T19:46:28.832Z" },
 ]
 
 [[package]]
@@ -1615,7 +1612,7 @@ website = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fast-cipher", specifier = ">=0.2.0" },
+    { name = "fast-cipher", specifier = ">=0.2.1" },
     { name = "html-to-markdown", specifier = ">=2.29" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "litellm", specifier = "==1.82.6" },
