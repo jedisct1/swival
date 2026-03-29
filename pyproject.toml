@@ -67,7 +67,7 @@ packages = ["swival"]
 
 [tool.uv]
 package = true
-constraint-dependencies = ["requests>=2.33.0"]
+constraint-dependencies = ["requests>=2.33.0", "cryptography>=46.0.6"]
 
 [dependency-groups]
 dev = [
