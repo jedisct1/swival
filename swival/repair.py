@@ -182,11 +182,7 @@ def _fill_defaults(
     properties = schema.get("properties", {})
     required = set(schema.get("required", []))
     for field, prop in properties.items():
-        if field in result:
-            continue
-        if field in required:
-            continue
-        if "default" not in prop:
+        if field in result or field in required or "default" not in prop:
             continue
         default = prop["default"]
         result[field] = default
