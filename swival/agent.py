@@ -2072,6 +2072,11 @@ def _pick_best_choice(choices):
     take priority — the text is merged into the tool-call choice so it isn't
     lost.
     """
+    if choices is None:
+        raise AgentError(
+            "Provider returned a response with choices=None "
+            "(invalid payload — the model may not support this request)"
+        )
     if not choices:
         raise AgentError("LLM returned an empty choices list")
     if len(choices) == 1:
@@ -2808,7 +2813,7 @@ def call_llm(
         ae._provider_retries = _retries_from_exc(e)
         _raise_with_retries(ae)
     except Exception as e:
-        msg = f"LLM call failed: {e}"
+        msg = f"LLM call failed (model: {model_id}): {e}"
         if provider == "bedrock" and "credentials" in str(e).lower():
             msg += (
                 "\n\nBedrock authentication requires valid AWS credentials. Example:\n"

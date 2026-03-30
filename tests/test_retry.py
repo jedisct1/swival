@@ -480,6 +480,106 @@ class TestCallLlmRetry:
                     max_retries=0,
                 )
 
+    def test_null_choices_normal_path(self):
+        """choices=None in response raises AgentError through normal call_llm path."""
+        resp = types.SimpleNamespace(choices=None)
+        with patch("litellm.completion", return_value=resp):
+            with pytest.raises(AgentError, match="choices=None"):
+                call_llm(
+                    "http://localhost:8080/v1",
+                    "my-model",
+                    [{"role": "user", "content": "hi"}],
+                    100,
+                    0.5,
+                    1.0,
+                    None,
+                    None,
+                    False,
+                    provider="generic",
+                    api_key="test",
+                )
+
+    def test_null_choices_post_sanitization_path(self):
+        """choices=None after empty-assistant sanitization raises AgentError."""
+        import litellm
+
+        bad_req = litellm.BadRequestError(
+            message="must have either content or tool_calls",
+            llm_provider="openai",
+            model="x",
+        )
+        null_resp = types.SimpleNamespace(choices=None)
+        mock = MagicMock(side_effect=[bad_req, null_resp])
+
+        messages = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant"},
+            {"role": "user", "content": "continue"},
+        ]
+        with patch("litellm.completion", mock):
+            with pytest.raises(AgentError, match="choices=None"):
+                call_llm(
+                    "http://localhost:8080/v1",
+                    "my-model",
+                    messages,
+                    100,
+                    0.5,
+                    1.0,
+                    None,
+                    None,
+                    False,
+                    provider="generic",
+                    api_key="test",
+                )
+
+    def test_empty_choices_list(self):
+        """choices=[] raises AgentError with 'empty choices list' (distinct from None)."""
+        resp = types.SimpleNamespace(choices=[])
+        with patch("litellm.completion", return_value=resp):
+            with pytest.raises(AgentError, match="empty choices list"):
+                call_llm(
+                    "http://localhost:8080/v1",
+                    "my-model",
+                    [{"role": "user", "content": "hi"}],
+                    100,
+                    0.5,
+                    1.0,
+                    None,
+                    None,
+                    False,
+                    provider="generic",
+                    api_key="test",
+                )
+
+    def test_null_choices_retry_exhaustion_message(self):
+        """InternalServerError from null choices retries 5 times; final error includes model_id."""
+        import litellm
+
+        exc = litellm.InternalServerError(
+            message="Invalid response object: choices is None",
+            llm_provider="openai",
+            model="x",
+        )
+        mock = MagicMock(side_effect=[exc] * 5)
+        with patch("litellm.completion", mock), patch("time.sleep"):
+            with pytest.raises(AgentError, match=r"model: my-model") as exc_info:
+                call_llm(
+                    "http://localhost:8080/v1",
+                    "my-model",
+                    [{"role": "user", "content": "hi"}],
+                    100,
+                    0.5,
+                    1.0,
+                    None,
+                    None,
+                    False,
+                    provider="generic",
+                    api_key="test",
+                    max_retries=5,
+                )
+        assert exc_info.value._provider_retries == 4
+        assert mock.call_count == 5
+
     def test_session_rejects_retries_zero(self):
         """Session(retries=0) raises ValueError."""
         from swival.session import Session
