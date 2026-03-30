@@ -3585,6 +3585,29 @@ def build_parser():
     return parser
 
 
+def _should_try_onboarding(args, base_dir: Path) -> bool:
+    """Quick pre-check for first-run onboarding without importing onboarding.py."""
+    from .config import global_config_dir
+
+    if (global_config_dir() / "config.toml").exists():
+        return False
+    if (base_dir / "swival.toml").exists():
+        return False
+    if getattr(args, "provider", _UNSET) is not _UNSET:
+        return False
+    if getattr(args, "profile", None) is not None:
+        return False
+    if not sys.stdin.isatty() or not sys.stderr.isatty():
+        return False
+    if getattr(args, "reviewer_mode", False):
+        return False
+    if getattr(args, "serve", False):
+        return False
+    if (global_config_dir() / ".onboarding-skipped").exists():
+        return False
+    return True
+
+
 def _handle_init_config(args):
     """Generate a config file template and write it."""
     from .config import generate_config, global_config_dir
@@ -3727,6 +3750,18 @@ def main():
         file_config = load_config(base_dir)
     except _ConfigError as e:
         parser.error(str(e))
+
+    # First-run onboarding: offer interactive setup if no config exists
+    if _should_try_onboarding(args, base_dir):
+        from .onboarding import run_onboarding
+
+        fmt.init(color=args.color, no_color=args.no_color)
+        created = run_onboarding()
+        if created:
+            try:
+                file_config = load_config(base_dir)
+            except _ConfigError as e:
+                parser.error(str(e))
 
     # Handle --list-profiles before profile resolution
     if getattr(args, "list_profiles", False):
