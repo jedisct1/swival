@@ -116,10 +116,15 @@ cat prompts/review.md | swival --provider huggingface --model zai-org/GLM-5
 <h2 id="cli-flags">CLI Flags</h2>
 <p><code>swival --help</code> uses the same grouping below and ends with copy-paste examples.</p>
 <h3 id="model-and-provider-flags">Model And Provider Flags</h3>
+<p><code>--profile NAME</code> selects a named LLM profile from config. Profiles bundle provider, model, and related settings under a short name so you can switch setups without retyping flags. See <a href="customization.html#profiles">Profiles</a> for how to define them.</p>
+<pre><code class="language-sh">swival --profile gpt5 &quot;review this patch&quot;
+</code></pre>
+<p><code>--list-profiles</code> prints available profiles and exits. The active profile is marked with an arrow and shows which layer selected it (CLI flag, project config, or global config).</p>
 <p><code>--provider</code> chooses the backend provider and defaults to <code>lmstudio</code>. Valid values are <code>lmstudio</code>, <code>huggingface</code>, <code>openrouter</code>, <code>generic</code>, <code>google</code>, <code>chatgpt</code> (for ChatGPT Plus/Pro subscriptions), and <code>command</code> (shells out to an external program).</p>
 <p><code>--model</code> overrides auto-discovery with a fixed model identifier.</p>
 <p><code>--base-url</code> sets a custom API base URL. For LM Studio, the default base URL is <code>http://127.0.0.1:1234</code> when <code>--base-url</code> is not set.</p>
 <p><code>--api-key</code> provides a key directly on the command line and takes precedence over provider environment variables (<code>HF_TOKEN</code> for huggingface, <code>OPENROUTER_API_KEY</code> for openrouter, <code>OPENAI_API_KEY</code> for generic, <code>GEMINI_API_KEY</code> for google, or <code>CHATGPT_API_KEY</code> for chatgpt).</p>
+<p>When <code>--profile</code> is combined with explicit flags like <code>--provider</code> or <code>--model</code>, the explicit flags win on a per-key basis.</p>
 <h3 id="behavior-tuning-flags">Behavior Tuning Flags</h3>
 <p><code>--max-turns</code> sets the maximum number of loop iterations and defaults to <code>100</code>.</p>
 <p><code>--max-output-tokens</code> sets the model output budget per call and defaults to <code>32768</code>.</p>

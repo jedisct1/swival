@@ -138,9 +138,67 @@ model = &quot;gpt-5.4&quot;
 </code></pre>
 <p>Relative paths in <code>allowed_dirs</code>, <code>allowed_dirs_ro</code>, <code>skills_dir</code>, <code>cache_dir</code>, <code>objective</code>, and <code>verify</code> resolve against the config file's parent directory, not the working directory. Tilde paths like <code>~/projects</code> expand to the home directory.</p>
 <p>The <code>reviewer</code>, <code>llm_filter</code>, and <code>lifecycle_command</code> values are shell-split; only path-like first tokens (<code>./</code>, <code>../</code>, <code>~</code>, <code>/</code>) are resolved against the config directory, while bare command names like <code>swival</code> are left for PATH lookup at runtime. The same resolution applies to <code>model</code> when <code>provider = "command"</code>.</p>
-<p>If a project config contains <code>api_key</code> inside a git repository, Swival prints a warning because the key could be committed accidentally. Prefer environment variables for credentials.</p>
+<p>If a project config contains <code>api_key</code> — at the top level or inside a profile — inside a git repository, Swival prints a warning because the key could be committed accidentally. Prefer environment variables for credentials.</p>
 <p>The <code>--system-prompt</code> and <code>no_system_prompt</code> settings are mutually exclusive in config files, just as they are on the command line.</p>
 <p>The library API (<code>Session</code> class) does not auto-load config files. If you want config file support in library code, call <code>load_config()</code> and <code>config_to_session_kwargs()</code> explicitly.</p>
+<h2 id="profiles">Profiles</h2>
+<p>If you switch between multiple model setups — a local LM Studio model for quick tasks, a ChatGPT model for hard problems, an OpenRouter model for long-context work — profiles let you define each setup once and switch with a single flag.</p>
+<pre><code class="language-toml">active_profile = &quot;fast-local&quot;
+
+[profiles.fast-local]
+provider = &quot;lmstudio&quot;
+model = &quot;qwen3-coder-next&quot;
+max_context_tokens = 65536
+
+[profiles.gpt5]
+provider = &quot;chatgpt&quot;
+model = &quot;gpt-5.4&quot;
+reasoning_effort = &quot;high&quot;
+
+[profiles.router-main]
+provider = &quot;openrouter&quot;
+model = &quot;z-ai/glm-5&quot;
+max_context_tokens = 131072
+
+[profiles.ollama]
+provider = &quot;generic&quot;
+base_url = &quot;http://127.0.0.1:11434&quot;
+model = &quot;qwen3:32b&quot;
+</code></pre>
+<p>Switch with <code>--profile</code>:</p>
+<pre><code class="language-sh">swival --profile gpt5 &quot;review this patch&quot;
+swival --profile fast-local &quot;write tests&quot;
+</code></pre>
+<p>Set <code>active_profile</code> in config to pick a default without typing <code>--profile</code> every time. Project config overrides global config, and <code>--profile</code> on the CLI overrides both.</p>
+<p>List available profiles with <code>--list-profiles</code>:</p>
+<pre><code class="language-sh">swival --list-profiles
+</code></pre>
+<p>Each profile requires <code>provider</code>. The allowed keys are: <code>provider</code>, <code>model</code>, <code>api_key</code>, <code>base_url</code>, <code>aws_profile</code>, <code>max_output_tokens</code>, <code>max_context_tokens</code>, <code>temperature</code>, <code>top_p</code>, <code>seed</code>, <code>extra_body</code>, <code>reasoning_effort</code>, and <code>sanitize_thinking</code>. Keys outside this set — like <code>files</code>, <code>commands</code>, or <code>reviewer</code> — are rejected with an error listing the allowed keys. Profiles are for choosing a model stack, not for changing agent behavior.</p>
+<p>If <code>--profile</code> is combined with explicit flags like <code>--provider</code> or <code>--model</code>, the explicit flags win on a per-key basis, just like CLI flags override config everywhere else in Swival.</p>
+<pre><code class="language-sh">swival --profile gpt5 --reasoning-effort medium &quot;task&quot;
+</code></pre>
+<p>This is particularly useful with <code>--model</code>. A profile can lock down the provider, base URL, API key, and other settings for a given service, while <code>--model</code> lets you swap models on the fly without duplicating the rest of the configuration. For example, with a HuggingFace profile:</p>
+<pre><code class="language-toml">active_profile = &quot;hf&quot;
+
+[profiles.hf]
+provider = &quot;huggingface&quot;
+</code></pre>
+<p>You get the default model most of the time, and override it for a specific task:</p>
+<pre><code class="language-sh">swival &quot;everyday task&quot;
+swival --model &quot;Qwen/Qwen3-Coder&quot; &quot;task needing a different model&quot;
+</code></pre>
+<p>Any model supported by the inference endpoint works — no extra profile needed.</p>
+<p>Profiles defined in global config and project config merge per-key for the same profile name. A project can refine a global profile by overriding just one or two keys without copying the whole table.</p>
+<pre><code class="language-toml"># In global config: defines the base profile
+[profiles.shared]
+provider = &quot;openrouter&quot;
+model = &quot;z-ai/glm-5&quot;
+max_context_tokens = 131072
+
+# In project swival.toml: overrides just the model
+[profiles.shared]
+model = &quot;z-ai/glm-5-mini&quot;
+</code></pre>
 <h2 id="instruction-files">Instruction Files</h2>
 <p>Swival loads instruction files during startup and appends them to the system prompt. <code>CLAUDE.md</code> provides project rules (<code>&lt;project-instructions&gt;</code>), while <code>AGENTS.md</code> provides agent workflow commands and conventions (<code>&lt;agent-instructions&gt;</code>). Use <code>/init</code> in the REPL to auto-generate a project-level <code>AGENTS.md</code>, or <code>/remember &lt;text&gt;</code> to add individual facts to its <code>## Conventions</code> section.</p>
 <h3 id="claudemd">CLAUDE.md</h3>

@@ -79,6 +79,22 @@
 <li><a href="#aws-bedrock">AWS Bedrock</a> — models hosted on AWS</li>
 <li><a href="#command-external-program">Command (External Program)</a> — shell out to an external program</li>
 </ul>
+<h2 id="switching-between-providers">Switching Between Providers</h2>
+<p>If you use more than one provider regularly, define named profiles in your config instead of retyping flags each time. See <a href="customization.html#profiles">Profiles</a> for the full syntax.</p>
+<pre><code class="language-toml">[profiles.local]
+provider = &quot;lmstudio&quot;
+model = &quot;qwen3-coder-next&quot;
+
+[profiles.gpt5]
+provider = &quot;chatgpt&quot;
+model = &quot;gpt-5.4&quot;
+reasoning_effort = &quot;high&quot;
+</code></pre>
+<p>Then switch with <code>--profile</code>:</p>
+<pre><code class="language-sh">swival --profile local &quot;quick task&quot;
+swival --profile gpt5 &quot;hard task&quot;
+</code></pre>
+<p>The sections below document each provider's flags, authentication, and behavior in detail.</p>
 <h2 id="lm-studio">LM Studio</h2>
 <p>LM Studio is the default provider and usually requires no flags when the local server is already running with a loaded model.</p>
 <p>At startup, Swival calls <code>http://127.0.0.1:1234/api/v1/models</code> unless you override <code>--base-url</code>. It looks for the first model entry with <code>type: "llm"</code> and a non-empty <code>loaded_instances</code> array, then extracts the model identifier and current context length from that payload. If no loaded model is found, Swival exits and asks you to load a model or pass <code>--model</code> explicitly.</p>
