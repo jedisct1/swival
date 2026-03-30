@@ -62,7 +62,9 @@ from .tools import (
     _memory_path,
     dispatch,
     cleanup_old_cmd_outputs,
+    get_tool_schema,
 )
+from .repair import repair_tool_args
 
 DEFAULT_SYSTEM_PROMPT_FILE = Path(__file__).parent / "system_prompt.txt"
 MAX_ARG_LOG = 1000
@@ -372,6 +374,14 @@ _EMPTY_ASSISTANT_RE = re.compile(
     re.IGNORECASE,
 )
 
+_ORPHANED_TOOL_CALL_RE = re.compile(
+    r"[Nn]o tool output found for function call"
+    r"|tool_call_id .* not found"
+    r"|tool results? .* missing"
+    r"|missing tool result",
+    re.IGNORECASE,
+)
+
 _TRANSIENT_PATTERNS = re.compile(
     r"Connection reset by peer|Connection refused|timed out"
     r"|RemoteDisconnected|Temporary failure in name resolution"
@@ -457,6 +467,55 @@ def _sanitize_assistant_messages(messages: list) -> bool:
         if not has_content and not has_tools:
             _set_msg_content(msg, "")
             fixed = True
+    return fixed
+
+
+def _fix_orphaned_tool_calls(messages: list) -> bool:
+    """Remove assistant tool_calls that have no matching tool result message.
+
+    Providers like ChatGPT reject conversations where an assistant message has
+    tool_calls but the corresponding tool-role result message is missing (e.g.
+    after context compaction drops it).  This function strips the orphaned
+    tool_calls entries and, if the assistant message ends up with neither
+    content nor tool_calls, sets content to an empty string.
+
+    Returns True if any messages were fixed.
+    """
+    result_ids: set[str] = set()
+    for msg in messages:
+        tc_id = _msg_tool_call_id(msg)
+        if _msg_role(msg) == "tool" and tc_id:
+            result_ids.add(tc_id)
+
+    fixed = False
+    for msg in messages:
+        if _msg_role(msg) != "assistant":
+            continue
+        tool_calls = _msg_tool_calls(msg)
+        if not tool_calls:
+            continue
+        kept = [
+            tc
+            for tc in tool_calls
+            if (tc.id if hasattr(tc, "id") else tc["id"]) in result_ids
+        ]
+        if len(kept) == len(tool_calls):
+            continue
+        fixed = True
+        if isinstance(msg, dict):
+            if kept:
+                msg["tool_calls"] = kept
+            else:
+                msg.pop("tool_calls", None)
+                if not _msg_content(msg):
+                    msg["content"] = ""
+        else:
+            if kept:
+                msg.tool_calls = kept
+            else:
+                msg.tool_calls = None
+                if not _msg_content(msg):
+                    msg.content = ""
     return fixed
 
 
@@ -1936,6 +1995,11 @@ def handle_tool_call(
             {"name": name, "arguments": None, "elapsed": 0.0, "succeeded": False},
         )
 
+    schema = get_tool_schema(name)
+    parsed_args, repairs = repair_tool_args(parsed_args, schema)
+    if repairs and verbose:
+        fmt.tool_repair(name, repairs)
+
     _skip_generic_log = name in ("think", "todo", "snapshot")
     if not _skip_generic_log and verbose:
         pretty = json.dumps(parsed_args, indent=2)
@@ -1996,6 +2060,7 @@ def handle_tool_call(
             "arguments": parsed_args,
             "elapsed": elapsed,
             "succeeded": succeeded,
+            "repairs": repairs,
         },
     )
 
@@ -2794,6 +2859,48 @@ def call_llm(
                         coe._provider_retries = combined
                         raise coe
                     ae = AgentError(f"LLM call failed after message sanitization: {e2}")
+                    ae._provider_retries = combined
+                    _raise_with_retries(ae)
+                retries += first_retries
+                cache_stats = _log_cache_stats(response, verbose)
+                choice = _pick_best_choice(response.choices)
+                if sanitize_thinking:
+                    _sanitize_assistant_message(choice.message)
+                _cache_store(choice)
+                return (
+                    _decrypt_msg(choice.message),
+                    choice.finish_reason,
+                    [],
+                    retries,
+                    cache_stats,
+                )
+        if _ORPHANED_TOOL_CALL_RE.search(msg_text):
+            first_retries = _retries_from_exc(e)
+            if _fix_orphaned_tool_calls(messages):
+                if verbose:
+                    fmt.warning("Fixed orphaned tool calls in history, retrying...")
+                try:
+                    response, retries = _completion_with_retry(
+                        completion_kwargs,
+                        max_retries=max_retries,
+                        verbose=verbose,
+                    )
+                except ContextOverflowError as coe2:
+                    coe2._provider_retries = first_retries + getattr(
+                        coe2, "_provider_retries", 0
+                    )
+                    raise
+                except Exception as e2:
+                    combined = first_retries + _retries_from_exc(e2)
+                    if _CONTEXT_OVERFLOW_RE.search(str(e2)):
+                        coe = ContextOverflowError(
+                            f"context window exceeded (inferred, post-orphan-fix): {e2}"
+                        )
+                        coe._provider_retries = combined
+                        raise coe
+                    ae = AgentError(
+                        f"LLM call failed after orphaned-tool-call fix: {e2}"
+                    )
                     ae._provider_retries = combined
                     _raise_with_retries(ae)
                 retries += first_retries
