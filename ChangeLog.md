@@ -2,7 +2,7 @@
 
 All notable user-facing changes to Swival.
 
-## 0.10.0
+## 0.10.1
 
 - Filesystem access controls have been decoupled from `--yolo`:
   `--files` (`all`, `some`, `none`) controls file access independently, and
