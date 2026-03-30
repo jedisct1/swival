@@ -2,6 +2,12 @@
 
 All notable user-facing changes to Swival.
 
+## 0.10.3
+
+- An interactive onboarding wizard has been added: on first run with no config
+  file, Swival guides the user through provider selection, API key entry, and
+  config file creation.
+
 ## 0.10.2
 
 - Named LLM profiles have been added: `[profiles.NAME]` tables can be defined
