@@ -92,13 +92,15 @@ def _repair_types(
 
         coerced = _coerce_scalar(value, expected)
         if coerced is not _SKIP:
-            repairs.append({
-                "type": "coerce_type",
-                "field": field,
-                "from": repr(value),
-                "to": repr(coerced),
-                "expected_type": expected,
-            })
+            repairs.append(
+                {
+                    "type": "coerce_type",
+                    "field": field,
+                    "from": repr(value),
+                    "to": repr(coerced),
+                    "expected_type": expected,
+                }
+            )
             result[field] = coerced
 
 

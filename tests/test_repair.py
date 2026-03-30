@@ -418,9 +418,7 @@ class TestAgentLoopIntegration:
             {"role": "system", "content": "test"},
             {"role": "user", "content": "read the file"},
         ]
-        answer, exhausted = run_agent_loop(
-            messages, [], **_loop_kwargs(tmp_path)
-        )
+        answer, exhausted = run_agent_loop(messages, [], **_loop_kwargs(tmp_path))
         assert answer == "done"
         assert not exhausted
         tool_msgs = [

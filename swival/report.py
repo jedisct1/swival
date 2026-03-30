@@ -91,10 +91,7 @@ class ReportCollector:
             if skill_name and skill_name not in self.skills_used:
                 self.skills_used.append(skill_name)
         stats = self.tool_stats.setdefault(name, {"succeeded": 0, "failed": 0})
-        if succeeded:
-            stats["succeeded"] += 1
-        else:
-            stats["failed"] += 1
+        stats["succeeded" if succeeded else "failed"] += 1
         if repairs:
             stats["repairs"] = stats.get("repairs", 0) + len(repairs)
         event: dict = {
