@@ -1912,6 +1912,7 @@ def _post_tool_bookkeeping(
             tool_meta["elapsed"],
             len(tool_msg["content"]),
             error=tool_msg["content"] if not tool_meta["succeeded"] else None,
+            repairs=tool_meta.get("repairs"),
         )
 
     if snapshot_state is not None:
@@ -1975,7 +1976,7 @@ def handle_tool_call(
     """Execute a single tool call and return (tool_msg, metadata).
 
     tool_msg is the message dict for the LLM conversation.
-    metadata has stable keys: name, arguments, elapsed, succeeded.
+    metadata has stable keys: name, arguments, elapsed, succeeded, repairs.
     """
     name = tool_call.function.name
     raw_args = tool_call.function.arguments

@@ -23,6 +23,7 @@ from swival.agent import (
     clamp_output_tokens,
     ContextOverflowError,
     call_llm,
+    _fix_orphaned_tool_calls,
 )
 from swival.report import AgentError
 
@@ -1566,3 +1567,61 @@ class TestGraduatedCompaction:
                 else getattr(result[0], "role", None)
             )
             assert first_role == "system"
+
+
+# ---------------------------------------------------------------------------
+# _fix_orphaned_tool_calls
+# ---------------------------------------------------------------------------
+
+
+class TestFixOrphanedToolCalls:
+    def test_removes_orphaned_tool_calls(self):
+        tc = _assistant_tc([("tc1", "read_file", "{}"), ("tc2", "grep", "{}")])
+        tr1 = _tool("tc1", "content1")
+        # tc2 result is missing
+        msgs = [_user("q"), tc, tr1, _assistant("done")]
+        assert _fix_orphaned_tool_calls(msgs) is True
+        # tc should now only have tc1
+        remaining = tc.tool_calls
+        assert len(remaining) == 1
+        assert remaining[0].id == "tc1"
+
+    def test_removes_all_tool_calls_sets_content(self):
+        tc = _assistant_tc([("tc1", "read_file", "{}")])
+        # No tool result at all
+        msgs = [_user("q"), tc, _assistant("done")]
+        assert _fix_orphaned_tool_calls(msgs) is True
+        assert tc.tool_calls is None
+        assert tc.content == ""
+
+    def test_noop_when_all_results_present(self):
+        tc = _assistant_tc([("tc1", "read_file", "{}")])
+        tr = _tool("tc1", "ok")
+        msgs = [_user("q"), tc, tr, _assistant("done")]
+        assert _fix_orphaned_tool_calls(msgs) is False
+
+    def test_dict_messages(self):
+        tc = {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"id": "tc1", "function": {"name": "f", "arguments": "{}"}}],
+        }
+        msgs = [_user("q"), tc, _assistant("done")]
+        assert _fix_orphaned_tool_calls(msgs) is True
+        assert "tool_calls" not in tc
+        assert tc["content"] == ""
+
+    def test_preserves_content_when_tool_calls_removed(self):
+        tc = SimpleNamespace(
+            role="assistant",
+            content="I'll read the file",
+            tool_calls=[
+                SimpleNamespace(
+                    id="tc1", function=SimpleNamespace(name="f", arguments="{}")
+                )
+            ],
+        )
+        msgs = [_user("q"), tc, _assistant("done")]
+        assert _fix_orphaned_tool_calls(msgs) is True
+        assert tc.tool_calls is None
+        assert tc.content == "I'll read the file"

@@ -648,6 +648,30 @@ _TOOL_NAMES = [t["function"]["name"] for t in TOOLS] + [
     RUN_COMMAND_TOOL["function"]["name"],
 ]
 
+_TOOL_SCHEMA_INDEX: dict[str, dict] = {}
+
+
+def _build_schema_index() -> None:
+    """Populate the name→parameters lookup for all built-in tools."""
+    for tool in TOOLS:
+        fn = tool["function"]
+        _TOOL_SCHEMA_INDEX[fn["name"]] = fn.get("parameters", {})
+    _TOOL_SCHEMA_INDEX[USE_SKILL_TOOL["function"]["name"]] = USE_SKILL_TOOL[
+        "function"
+    ].get("parameters", {})
+    _TOOL_SCHEMA_INDEX[RUN_COMMAND_TOOL["function"]["name"]] = RUN_COMMAND_TOOL[
+        "function"
+    ].get("parameters", {})
+
+
+_build_schema_index()
+
+
+def get_tool_schema(name: str) -> dict | None:
+    """Return the parameters schema for a built-in tool, or None."""
+    return _TOOL_SCHEMA_INDEX.get(name)
+
+
 MAX_OUTPUT_BYTES = 50 * 1024  # 50 KB
 MAX_LINE_LENGTH = 2000
 BINARY_CHECK_BYTES = 8 * 1024  # 8 KB

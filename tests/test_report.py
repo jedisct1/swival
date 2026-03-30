@@ -220,7 +220,7 @@ class TestHandleToolCallTuple:
         assert msg["tool_call_id"] == "tc1"
         assert "hello" in msg["content"]
         assert meta["name"] == "read_file"
-        assert meta["arguments"] == {"file_path": "test.txt"}
+        assert meta["arguments"]["file_path"] == "test.txt"
         assert meta["succeeded"] is True
         assert meta["elapsed"] >= 0
 

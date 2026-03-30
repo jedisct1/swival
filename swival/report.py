@@ -83,6 +83,7 @@ class ReportCollector:
         duration: float,
         result_length: int,
         error: str | None = None,
+        repairs: list[dict] | None = None,
     ):
         self.total_tool_time += duration
         if name == "use_skill" and succeeded and arguments:
@@ -94,6 +95,8 @@ class ReportCollector:
             stats["succeeded"] += 1
         else:
             stats["failed"] += 1
+        if repairs:
+            stats["repairs"] = stats.get("repairs", 0) + len(repairs)
         event: dict = {
             "turn": turn,
             "type": "tool_call",
@@ -105,6 +108,8 @@ class ReportCollector:
         }
         if error is not None:
             event["error"] = error
+        if repairs:
+            event["repairs"] = repairs
         self.events.append(event)
 
     def record_compaction(

@@ -166,6 +166,14 @@ def tool_error(name: str, msg: str) -> None:
     _console.print(header)
 
 
+def tool_repair(name: str, repairs: list[dict]) -> None:
+    for r in repairs:
+        line = Text()
+        line.append(f"  ~ {name}", style="bold yellow")
+        line.append(f"  repaired: {r['type']} on {r.get('field', '?')}", style="yellow")
+        _console.print(line)
+
+
 def guardrail(tool_name: str, count: int, error: str) -> None:
     line = Text()
     line.append("  \u26a0 Guardrail: ", style="bold yellow")
