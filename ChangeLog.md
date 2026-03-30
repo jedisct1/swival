@@ -2,6 +2,21 @@
 
 All notable user-facing changes to Swival.
 
+## 0.10.0
+
+- Filesystem access controls have been decoupled from `--yolo`:
+  `--files` (`all`, `some`, `none`) controls file access independently, and
+  `--commands` (`all`, `none`, or a comma-separated whitelist) controls which
+  shell commands the agent may run. `--yolo` is now shorthand for
+`--files all --commands all`.
+- AWS Bedrock has been added as a provider.
+- `/simplify` REPL command has been added: runs a review pass over recently
+  changed code, checking for reuse opportunities, quality issues, and
+  inefficiencies, then fixes any problems found.
+- REPL answers are now rendered as Markdown on TTYs.
+- Project-level MCP configuration has been moved from `.mcp.json` to
+  `.swival/mcp.json`.
+
 ## 0.9.7
 
 - Parallel subagents have been added: `spawn_subagent` launches an independent
