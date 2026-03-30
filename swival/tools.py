@@ -747,7 +747,7 @@ def safe_resolve(
 
     raise ValueError(
         f"Path {file_path!r} resolves to {resolved}, "
-        f"which is outside base directory {base}"
+        f"which is outside base directory {base}. You are not allowed to access that directory."
     )
 
 
