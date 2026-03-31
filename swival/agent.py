@@ -4188,6 +4188,7 @@ def resolve_provider(
     provider_name = provider
     llm_provider = provider
     if provider == "lmstudio":
+        os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
         api_base = base_url or "http://127.0.0.1:1234"
         if model:
             model_id = model
