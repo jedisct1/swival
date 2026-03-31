@@ -4799,7 +4799,15 @@ def _run_main(args, report, _write_report, parser):
                 skill_read_roots.append(skill.path)
     args._resolved_skills = skills_catalog
 
-    _subagents = getattr(args, "subagents", False) is True
+    _sa_val = getattr(args, "subagents", None)
+    if _sa_val is True:
+        _subagents = True
+    elif _sa_val is False:
+        _subagents = False
+    else:
+        _subagents = args.provider in ("google", "chatgpt", "bedrock") or (
+            context_length is not None and context_length >= 100_000
+        )
     tools = build_tools(
         resolved_commands,
         skills_catalog,
