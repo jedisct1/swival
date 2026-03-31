@@ -4,31 +4,73 @@ Guides the user through provider selection and config creation on first run.
 All output goes to stderr via Rich. Never writes to stdout.
 """
 
+import sys
 from pathlib import Path
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.output import create_output
 from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
 from .config import global_config_dir
 
 _console = Console(stderr=True)
-_session = PromptSession()
+_session = PromptSession(output=create_output(sys.stderr))
 
-# Provider definitions: (internal_name, display_label, description)
 _PROVIDERS = [
-    ("lmstudio", "LM Studio", "Local models on your machine"),
-    ("chatgpt", "ChatGPT", "Use your ChatGPT Plus or Pro subscription"),
-    ("openrouter", "OpenRouter", "Hosted models with one API key"),
-    ("google", "Google Gemini", "Gemini through Google's API"),
-    ("generic", "OpenAI-compatible", "A local or remote server you already run"),
-    ("huggingface", "HuggingFace", "Hosted inference API"),
-    ("bedrock", "AWS Bedrock", "Models through AWS"),
-    ("command", "Command", "Use an external program as the backend (advanced)"),
+    (
+        "lmstudio",
+        "LM Studio",
+        "Local models on your machine",
+        "fast local runs and low-cost experimentation",
+    ),
+    (
+        "chatgpt",
+        "ChatGPT",
+        "Use your ChatGPT Plus or Pro subscription",
+        "getting started fast with an existing subscription",
+    ),
+    (
+        "openrouter",
+        "OpenRouter",
+        "Hosted models with one API key",
+        "easy model sampling and cost/performance tradeoffs",
+    ),
+    (
+        "google",
+        "Google Gemini",
+        "Gemini through Google's API",
+        "Gemini models with a Google API key",
+    ),
+    (
+        "generic",
+        "OpenAI-compatible",
+        "A local or remote server you already run",
+        "ollama, llama.cpp, vLLM, or any OpenAI-compatible server",
+    ),
+    (
+        "huggingface",
+        "HuggingFace",
+        "Hosted inference API",
+        "HuggingFace-hosted models and endpoints",
+    ),
+    (
+        "bedrock",
+        "AWS Bedrock",
+        "Models through AWS",
+        "enterprise setups with AWS credentials",
+    ),
+    (
+        "command",
+        "Command",
+        "Use an external program as the backend",
+        "advanced: piping through another CLI",
+    ),
 ]
 
-# Ordered keys for minimal config output
 _CONFIG_KEY_ORDER = [
     "provider",
     "model",
@@ -44,6 +86,61 @@ _CONFIG_KEY_ORDER = [
 ]
 
 _SKIP_MARKER = ".onboarding-skipped"
+
+_SUCCESS_SECTIONS = [
+    (
+        "Start here",
+        [
+            ("swival", "Open the REPL"),
+            ('swival "summarize this repo"', "Run a one-shot task"),
+        ],
+    ),
+    (
+        "Want stronger review?",
+        [
+            ('swival --self-review "fix the login bug"', "Extra quality pass"),
+            ('swival --reviewer ./review.sh "add tests"', "Your own review script"),
+        ],
+    ),
+    (
+        "Want privacy controls?",
+        [
+            ('swival --encrypt-secrets "refactor auth"', "Protect secrets in context"),
+            ("llm_filter in config", "Filter outbound LLM requests"),
+        ],
+    ),
+    (
+        "Want the REPL superpowers?",
+        [
+            ("/init", "Generate an AGENTS.md for your project"),
+            ("/learn", "Review mistakes and persist notes for future sessions"),
+            ("/remember", "Add a convention to your project's AGENTS.md"),
+            ("/simplify", "Clean up recently changed code"),
+            ("/copy", "Copy the last assistant output to clipboard"),
+            ("/save", "Set a context checkpoint"),
+            ("/restore", "Collapse context back to the last checkpoint"),
+        ],
+    ),
+    (
+        "Want to switch model stacks quickly?",
+        [
+            ('swival --profile gpt5 "review this patch"', "Named profile"),
+            ("swival --list-profiles", "See configured profiles"),
+            ("swival --init-config --project", "Project-local config template"),
+        ],
+    ),
+    (
+        "Want agent-to-agent collaboration?",
+        [("See the A2A section at https://swival.dev/", None)],
+    ),
+    (
+        "Want the docs?",
+        [
+            ("https://swival.dev/", None),
+            ("Start with Getting Started, then Providers and Customization.", None),
+        ],
+    ),
+]
 
 
 def _skip_marker_path() -> Path:
@@ -69,12 +166,21 @@ def run_onboarding() -> Path | None:
         return None
 
 
+def _step(current: int, total: int) -> str:
+    return f"[dim]\\[{current}/{total}][/dim]"
+
+
 def _onboarding_flow() -> Path | None:
     """The main onboarding flow. Raises KeyboardInterrupt/EOFError on Ctrl-C."""
 
-    # Step 1: Welcome
     _console.print()
-    _console.print(Text("Hey there! Welcome to Swival.", style="bold"))
+    _console.print(
+        Panel(
+            "[bold cyan]Swival[/bold cyan] [dim]-- a coding agent for any model[/dim]",
+            style="cyan",
+            expand=False,
+        )
+    )
     _console.print()
     _console.print(
         "Swival is a coding agent that lives in your terminal. It can dig through\n"
@@ -82,51 +188,127 @@ def _onboarding_flow() -> Path | None:
     )
     _console.print()
     _console.print(
-        "Looks like this is your first time here, so let's get you set up!\n"
-        "I'll create a global config so Swival works in every project on your machine."
+        Text(
+            "Looks like this is your first time here. How would you like to start?",
+            style="bold",
+        )
     )
     _console.print()
 
-    choice = _prompt_choice("Sound good?", ["Let's go!", "Not right now"])
-    if choice == 1:
+    entry = _prompt_choice(
+        "Start",
+        [
+            "Guided tour + setup [bold green](recommended)[/bold green]",
+            "Quick setup",
+            "Not right now",
+            "Don't show this again",
+        ],
+        rich_labels=True,
+    )
+
+    if entry == 2:
+        return None
+    if entry == 3:
+        _write_skip_marker()
         return None
 
-    # Steps 2-4 loop (Start over returns here)
+    guided = entry == 0
+
+    if guided:
+        _show_guided_intro()
+
+    total = 4 if guided else 3
+    offset = 1 if guided else 0
+
     while True:
+        _console.print()
+        _console.print(
+            f"  {_step(1 + offset, total)}  [bold]Pick your LLM provider[/bold]"
+        )
         settings = _collect_settings()
         if settings is None:
             return None
 
+        _console.print()
+        _console.print(f"  {_step(2 + offset, total)}  [bold]Review your config[/bold]")
         result = _preview_and_confirm(settings)
         if result == "yes":
-            return _write_config(settings)
+            return _write_config(settings, step_label=_step(3 + offset, total))
         elif result == "start_over":
             continue
         else:
-            _write_skip_marker()
             return None
 
 
+def _show_guided_intro() -> None:
+    _console.print()
+    _console.print(f"  {_step(1, 4)}  [bold]Why Swival feels different[/bold]")
+    _console.print()
+    _console.print(
+        "  Many coding agents optimize for speed and plausible output.\n"
+        "  Swival leans toward [bold]correctness[/bold]: review loops, workflow capture,\n"
+        "  and context discipline are part of the product, not bolted on afterward."
+    )
+    _console.print()
+    _console.print(
+        "  Even with the same model, you may get a different result here:\n"
+        "  better review feedback, better use of context, or a clearer path\n"
+        "  through a messy codebase."
+    )
+    _console.print()
+
+    table = Table(
+        show_header=True,
+        header_style="bold",
+        show_edge=False,
+        pad_edge=False,
+        padding=(0, 2),
+    )
+    table.add_column("What makes it different", style="white")
+    table.add_column("Try it", style="green")
+    table.add_row(
+        "Favors correctness over plausible output", "--self-review, --reviewer"
+    )
+    table.add_row("Works well across many model stacks", "providers, profiles")
+    table.add_row(
+        "Privacy controls at the provider boundary", "llm_filter, --encrypt-secrets"
+    )
+    table.add_row(
+        "The REPL is a workspace, not a chat box", "/learn, /remember, /simplify"
+    )
+
+    _console.print(table)
+    _console.print()
+    _console.print(Text("  Press Enter to continue to setup...", style="dim"))
+    _session.prompt("")
+
+
 def _collect_settings() -> dict | None:
-    """Steps 2-3: provider selection + provider-specific questions.
+    """Provider selection + provider-specific questions.
 
     Returns a settings dict or None if canceled.
     """
     _console.print()
-    _console.print(Text("Pick your LLM provider:", style="bold"))
+    _console.print(
+        Text(
+            "  You can switch later with profiles. Setup first, tune later.",
+            style="dim",
+        )
+    )
     _console.print()
 
     labels = []
-    for _, display, desc in _PROVIDERS:
+    for _, display, desc, _ in _PROVIDERS:
         labels.append(f"{display:<20s}{desc}")
 
     idx = _prompt_choice("Provider", labels)
-    provider_name, provider_display, _ = _PROVIDERS[idx]
+    provider_name, provider_display, _, best_for = _PROVIDERS[idx]
 
     settings = {"provider": provider_name}
 
     _console.print()
     _console.print(Text(f"Nice! Let's configure {provider_display}.", style="bold"))
+    _console.print(Text(f"  Best for: {best_for}.", style="dim"))
     _console.print()
 
     if provider_name == "lmstudio":
@@ -150,16 +332,14 @@ def _collect_settings() -> dict | None:
 
 
 def _preview_and_confirm(settings: dict) -> str:
-    """Step 4: Show preview and ask for confirmation.
+    """Show preview and ask for confirmation.
 
     Returns "yes", "start_over", or "cancel".
     """
     _console.print()
-    _console.print(Text("Here's what I'll write:", style="bold"))
-    _console.print()
 
     dest = _global_config_path()
-    _console.print(f"  Location: {dest}")
+    _console.print(f"  [dim]Location:[/dim] {dest}")
     for key in _CONFIG_KEY_ORDER:
         if key not in settings:
             continue
@@ -167,7 +347,7 @@ def _preview_and_confirm(settings: dict) -> str:
         display_key = key.replace("_", " ").title()
         if key == "api_key":
             val = _mask_secret(val)
-        _console.print(f"  {display_key}: {val}")
+        _console.print(f"  [dim]{display_key}:[/dim] {val}")
     _console.print()
 
     idx = _prompt_choice(
@@ -181,8 +361,8 @@ def _preview_and_confirm(settings: dict) -> str:
         return "cancel"
 
 
-def _write_config(settings: dict) -> Path | None:
-    """Step 5: Write the config file and show success screen."""
+def _write_config(settings: dict, *, step_label: str) -> Path | None:
+    """Write the config file and show the success screen."""
     dest = _global_config_path()
 
     if dest.exists():
@@ -196,29 +376,54 @@ def _write_config(settings: dict) -> Path | None:
         return None
 
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(render_minimal_config(settings))
+    try:
+        fd = dest.open("x")
+    except FileExistsError:
+        _console.print()
+        _console.print(
+            Text(
+                f"A config file already exists at {dest}. Not overwriting.",
+                style="yellow",
+            )
+        )
+        return None
+    with fd:
+        fd.write(render_minimal_config(settings))
 
     _console.print()
-    _console.print(Text("You're all set!", style="bold green"))
-    _console.print()
-    _console.print(f"Config saved to:\n  {dest}")
-    _console.print()
-    _console.print("Give it a spin:")
-    _console.print('  swival "summarize this repository"')
-    _console.print("  swival")
+    _console.print(
+        Panel(
+            f"  {step_label}  [bold green]You're all set![/bold green]\n\n"
+            f"  Config saved to: [bold]{dest}[/bold]",
+            style="green",
+            expand=False,
+        )
+    )
+
+    _render_success_screen()
+
+    return dest
+
+
+def _render_success_screen() -> None:
+    for heading, items in _SUCCESS_SECTIONS:
+        _console.print()
+        _console.print(f"[bold]{heading}[/bold]")
+        for cmd, desc in items:
+            if desc:
+                _console.print(f"  [green]{cmd}[/green]  {desc}")
+            else:
+                _console.print(f"  {cmd}")
+
     _console.print()
     _console.print(
         Text(
-            "Tip: run swival with no arguments to open the REPL. Try --self-review\n"
-            "for an extra quality pass, or --yolo when you want full autonomy.",
+            "You don't need to switch tools completely.\n"
+            "Swival is worth trying alongside whatever you already use.",
             style="dim",
         )
     )
     _console.print()
-    _console.print("Happy building!")
-    _console.print()
-
-    return dest
 
 
 def _write_skip_marker() -> None:
@@ -229,11 +434,6 @@ def _write_skip_marker() -> None:
         marker.write_text("")
     except OSError:
         pass
-
-
-# ---------------------------------------------------------------------------
-# Provider-specific question flows
-# ---------------------------------------------------------------------------
 
 
 def _ask_lmstudio(s: dict) -> None:
@@ -370,11 +570,6 @@ def _ask_api_key(s: dict, *, env_var: str, label: str = "API key") -> None:
             s["api_key"] = key
 
 
-# ---------------------------------------------------------------------------
-# Config rendering
-# ---------------------------------------------------------------------------
-
-
 def render_minimal_config(settings: dict) -> str:
     """Render a minimal TOML config string from onboarding settings."""
     lines = [
@@ -392,7 +587,7 @@ def render_minimal_config(settings: dict) -> str:
             lines.append(f"{key} = {val}")
         else:
             lines.append(f'{key} = "{_toml_escape(val)}"')
-    lines.append("")  # trailing newline
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -408,15 +603,13 @@ def _mask_secret(val: str) -> str:
     return "*" * (len(val) - 4) + val[-4:]
 
 
-# ---------------------------------------------------------------------------
-# Prompt helpers (prompt_toolkit-based, output to stderr)
-# ---------------------------------------------------------------------------
-
-
-def _prompt_choice(label: str, choices: list[str]) -> int:
+def _prompt_choice(label: str, choices: list[str], *, rich_labels: bool = False) -> int:
     """Present a numbered list and return the 0-based index of the selection."""
     for i, c in enumerate(choices, 1):
-        _console.print(f"  {i}. {c}")
+        if rich_labels:
+            _console.print(f"  [bold]{i}.[/bold] {c}")
+        else:
+            _console.print(f"  {i}. {c}")
     _console.print()
 
     while True:

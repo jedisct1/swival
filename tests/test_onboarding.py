@@ -1,6 +1,7 @@
-"""Tests for swival.onboarding — first-run interactive setup wizard."""
+"""Tests for swival.onboarding -- first-run interactive setup wizard."""
 
 import argparse
+import io
 import types
 from swival.onboarding import (
     run_onboarding,
@@ -10,11 +11,6 @@ from swival.onboarding import (
 )
 from swival.agent import _should_try_onboarding
 from swival.config import _UNSET
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_args(**overrides):
@@ -29,9 +25,14 @@ def _make_args(**overrides):
     return argparse.Namespace(**defaults)
 
 
-# ---------------------------------------------------------------------------
-# _should_try_onboarding
-# ---------------------------------------------------------------------------
+def _capture_stderr(monkeypatch):
+    """Redirect Rich console output to a StringIO for assertions."""
+    from rich.console import Console
+
+    buf = io.StringIO()
+    console = Console(file=buf, no_color=True, width=120)
+    monkeypatch.setattr("swival.onboarding._console", console)
+    return buf
 
 
 class TestShouldTryOnboarding:
@@ -113,11 +114,6 @@ class TestShouldTryOnboarding:
         assert _should_try_onboarding(args, tmp_path) is False
 
 
-# ---------------------------------------------------------------------------
-# render_minimal_config
-# ---------------------------------------------------------------------------
-
-
 class TestRenderMinimalConfig:
     def test_basic_provider_only(self):
         result = render_minimal_config({"provider": "lmstudio"})
@@ -163,11 +159,6 @@ class TestRenderMinimalConfig:
         assert result.endswith("\n")
 
 
-# ---------------------------------------------------------------------------
-# _mask_secret / _toml_escape
-# ---------------------------------------------------------------------------
-
-
 class TestHelpers:
     def test_mask_secret_long(self):
         assert _mask_secret("sk-abcdef1234") == "*********1234"
@@ -183,11 +174,6 @@ class TestHelpers:
 
     def test_toml_escape_newline(self):
         assert _toml_escape("a\nb") == "a\\nb"
-
-
-# ---------------------------------------------------------------------------
-# run_onboarding integration tests
-# ---------------------------------------------------------------------------
 
 
 class TestRunOnboarding:
@@ -206,42 +192,41 @@ class TestRunOnboarding:
 
         monkeypatch.setattr("swival.onboarding._session.prompt", fake_prompt)
 
-    def test_cancel_at_welcome(self, tmp_path, monkeypatch):
+    def test_not_right_now_no_skip_marker(self, tmp_path, monkeypatch):
         cfg_dir = tmp_path / "cfg"
         monkeypatch.setattr("swival.onboarding.global_config_dir", lambda: cfg_dir)
-        self._patch_prompts(
-            monkeypatch,
-            [
-                "2",  # Cancel at welcome
-            ],
-        )
+        self._patch_prompts(monkeypatch, ["3"])
         result = run_onboarding()
         assert result is None
         assert not (cfg_dir / "config.toml").exists()
         assert not (cfg_dir / ".onboarding-skipped").exists()
 
-    def test_ctrl_c_exits_cleanly(self, tmp_path, monkeypatch):
+    def test_dont_show_again_writes_skip_marker(self, tmp_path, monkeypatch):
         cfg_dir = tmp_path / "cfg"
         monkeypatch.setattr("swival.onboarding.global_config_dir", lambda: cfg_dir)
-        self._patch_prompts(
-            monkeypatch,
-            [
-                "1",  # Continue at welcome
-                KeyboardInterrupt,
-            ],
-        )
+        self._patch_prompts(monkeypatch, ["4"])
+        result = run_onboarding()
+        assert result is None
+        assert not (cfg_dir / "config.toml").exists()
+        assert (cfg_dir / ".onboarding-skipped").exists()
+
+    def test_ctrl_c_exits_cleanly_no_skip_marker(self, tmp_path, monkeypatch):
+        cfg_dir = tmp_path / "cfg"
+        monkeypatch.setattr("swival.onboarding.global_config_dir", lambda: cfg_dir)
+        self._patch_prompts(monkeypatch, ["2", KeyboardInterrupt])
         result = run_onboarding()
         assert result is None
         assert not (cfg_dir / "config.toml").exists()
         assert not (cfg_dir / ".onboarding-skipped").exists()
 
-    def test_successful_lmstudio_onboarding(self, tmp_path, monkeypatch):
+    def test_quick_setup_lmstudio(self, tmp_path, monkeypatch):
         cfg_dir = tmp_path / "cfg"
         monkeypatch.setattr("swival.onboarding.global_config_dir", lambda: cfg_dir)
+        buf = _capture_stderr(monkeypatch)
         self._patch_prompts(
             monkeypatch,
             [
-                "1",  # Continue at welcome
+                "2",  # Quick setup
                 "1",  # LM Studio provider
                 "y",  # Use default server
                 "",  # Model blank (auto-discovery)
@@ -254,6 +239,97 @@ class TestRunOnboarding:
         content = result.read_text()
         assert 'provider = "lmstudio"' in content
         assert "model" not in content
+        output = buf.getvalue()
+        assert "You're all set" in output
+
+    def test_guided_path_lmstudio(self, tmp_path, monkeypatch):
+        cfg_dir = tmp_path / "cfg"
+        monkeypatch.setattr("swival.onboarding.global_config_dir", lambda: cfg_dir)
+        buf = _capture_stderr(monkeypatch)
+        self._patch_prompts(
+            monkeypatch,
+            [
+                "1",  # Guided tour + setup
+                "",  # Press Enter to continue past intro screen
+                "1",  # LM Studio provider
+                "y",  # Use default server
+                "",  # Model blank
+                "1",  # Yes, write config
+            ],
+        )
+        result = run_onboarding()
+        assert result is not None
+        assert result.exists()
+        content = result.read_text()
+        assert 'provider = "lmstudio"' in content
+        output = buf.getvalue()
+        assert "Why Swival feels different" in output
+        assert "correctness" in output.lower()
+
+    def test_guided_path_shows_differentiators(self, tmp_path, monkeypatch):
+        cfg_dir = tmp_path / "cfg"
+        monkeypatch.setattr("swival.onboarding.global_config_dir", lambda: cfg_dir)
+        buf = _capture_stderr(monkeypatch)
+        self._patch_prompts(
+            monkeypatch,
+            [
+                "1",  # Guided tour
+                "",  # Continue past intro
+                "1",  # LM Studio
+                "y",  # Default server
+                "",  # No model
+                "1",  # Write config
+            ],
+        )
+        run_onboarding()
+        output = buf.getvalue()
+        assert "--self-review" in output
+        assert "--reviewer" in output
+        assert "llm_filter" in output
+        assert "--encrypt-secrets" in output
+        assert "/learn" in output
+
+    def test_success_screen_has_next_steps(self, tmp_path, monkeypatch):
+        cfg_dir = tmp_path / "cfg"
+        monkeypatch.setattr("swival.onboarding.global_config_dir", lambda: cfg_dir)
+        buf = _capture_stderr(monkeypatch)
+        self._patch_prompts(
+            monkeypatch,
+            [
+                "2",  # Quick setup
+                "1",  # LM Studio
+                "y",  # Default
+                "",  # No model
+                "1",  # Write config
+            ],
+        )
+        run_onboarding()
+        output = buf.getvalue()
+        assert "Start here" in output
+        assert "Want stronger review?" in output
+        assert "swival --self-review" in output
+        assert "swival --reviewer" in output
+        assert "Want privacy controls?" in output
+        assert "swival --encrypt-secrets" in output
+        assert "Want the REPL superpowers?" in output
+        assert "/init" in output
+        assert "/learn" in output
+        assert "/remember" in output
+        assert "AGENTS.md" in output
+        assert "/simplify" in output
+        assert "/copy" in output
+        assert "/save" in output
+        assert "/restore" in output
+        assert "checkpoint" in output
+        assert "Want to switch model stacks quickly?" in output
+        assert "swival --profile" in output
+        assert "swival --list-profiles" in output
+        assert "swival --init-config --project" in output
+        assert "Want agent-to-agent collaboration?" in output
+        assert "A2A" in output
+        assert "Want the docs?" in output
+        assert "swival.dev" in output
+        assert "alongside" in output
 
     def test_successful_openrouter_with_env_var(self, tmp_path, monkeypatch):
         cfg_dir = tmp_path / "cfg"
@@ -261,7 +337,7 @@ class TestRunOnboarding:
         self._patch_prompts(
             monkeypatch,
             [
-                "1",  # Continue at welcome
+                "2",  # Quick setup
                 "3",  # OpenRouter
                 "openai/gpt-4.1",  # model
                 "1",  # I'll set OPENROUTER_API_KEY myself
@@ -282,7 +358,7 @@ class TestRunOnboarding:
         self._patch_prompts(
             monkeypatch,
             [
-                "1",  # Continue at welcome
+                "2",  # Quick setup
                 "5",  # Generic OpenAI-compatible
                 "http://localhost:11434",  # base URL
                 "qwen3:32b",  # model
@@ -300,13 +376,13 @@ class TestRunOnboarding:
         assert 'model = "qwen3:32b"' in content
         assert 'api_key = "sk-test-key"' in content
 
-    def test_cancel_at_confirmation_writes_skip_marker(self, tmp_path, monkeypatch):
+    def test_cancel_at_confirmation_no_skip_marker(self, tmp_path, monkeypatch):
         cfg_dir = tmp_path / "cfg"
         monkeypatch.setattr("swival.onboarding.global_config_dir", lambda: cfg_dir)
         self._patch_prompts(
             monkeypatch,
             [
-                "1",  # Continue at welcome
+                "2",  # Quick setup
                 "1",  # LM Studio
                 "y",  # Default server
                 "",  # No model
@@ -316,7 +392,7 @@ class TestRunOnboarding:
         result = run_onboarding()
         assert result is None
         assert not (cfg_dir / "config.toml").exists()
-        assert (cfg_dir / ".onboarding-skipped").exists()
+        assert not (cfg_dir / ".onboarding-skipped").exists()
 
     def test_start_over_loops_back(self, tmp_path, monkeypatch):
         cfg_dir = tmp_path / "cfg"
@@ -324,7 +400,7 @@ class TestRunOnboarding:
         self._patch_prompts(
             monkeypatch,
             [
-                "1",  # Continue at welcome
+                "2",  # Quick setup
                 "1",  # LM Studio (first attempt)
                 "y",  # Default server
                 "",  # No model
@@ -350,7 +426,7 @@ class TestRunOnboarding:
         self._patch_prompts(
             monkeypatch,
             [
-                "1",  # Continue at welcome
+                "2",  # Quick setup
                 "2",  # ChatGPT
                 "gpt-4.1",
                 "",
@@ -360,3 +436,58 @@ class TestRunOnboarding:
         result = run_onboarding()
         assert result is None
         assert existing.read_text() == 'provider = "lmstudio"\n'
+
+    def test_provider_list_shows_best_for(self, tmp_path, monkeypatch):
+        cfg_dir = tmp_path / "cfg"
+        monkeypatch.setattr("swival.onboarding.global_config_dir", lambda: cfg_dir)
+        buf = _capture_stderr(monkeypatch)
+        self._patch_prompts(
+            monkeypatch,
+            [
+                "2",  # Quick setup
+                "1",  # LM Studio
+                "y",
+                "",
+                "1",  # Write config
+            ],
+        )
+        run_onboarding()
+        output = buf.getvalue()
+        assert "Best for:" in output
+
+    def test_profiles_microcopy_shown(self, tmp_path, monkeypatch):
+        cfg_dir = tmp_path / "cfg"
+        monkeypatch.setattr("swival.onboarding.global_config_dir", lambda: cfg_dir)
+        buf = _capture_stderr(monkeypatch)
+        self._patch_prompts(
+            monkeypatch,
+            [
+                "2",  # Quick setup
+                "1",  # LM Studio
+                "y",
+                "",
+                "1",  # Write config
+            ],
+        )
+        run_onboarding()
+        output = buf.getvalue()
+        assert "switch later with profiles" in output
+
+    def test_no_stdout_output(self, tmp_path, monkeypatch, capsys):
+        cfg_dir = tmp_path / "cfg"
+        monkeypatch.setattr("swival.onboarding.global_config_dir", lambda: cfg_dir)
+        _capture_stderr(monkeypatch)
+        self._patch_prompts(
+            monkeypatch,
+            [
+                "1",  # Guided tour
+                "",  # Continue
+                "1",  # LM Studio
+                "y",
+                "",
+                "1",
+            ],
+        )
+        run_onboarding()
+        captured = capsys.readouterr()
+        assert captured.out == ""
