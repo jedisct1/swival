@@ -247,30 +247,9 @@ class TestNearMissFields:
         result, repairs = repair_tool_args(args, SCHEMA_READ_FILE)
         rename_repairs = [r for r in repairs if r["type"] == "rename_field"]
         assert rename_repairs == []
-        assert "xyz_totally_wrong" not in result
-
-
-class TestFillDefaults:
-    def test_fill_missing_optional_with_default(self):
-        args = {"file_path": "f.py"}
-        result, repairs = repair_tool_args(args, SCHEMA_READ_FILE)
-        assert result["offset"] == 1
-        assert result["limit"] == 2000
-        default_repairs = [r for r in repairs if r["type"] == "fill_default"]
-        assert len(default_repairs) == 2
-
-    def test_no_fill_when_present(self):
-        args = {"file_path": "f.py", "offset": 5, "limit": 100}
-        result, repairs = repair_tool_args(args, SCHEMA_READ_FILE)
-        assert result["offset"] == 5
-        assert result["limit"] == 100
-        default_repairs = [r for r in repairs if r["type"] == "fill_default"]
-        assert default_repairs == []
-
-    def test_no_fill_required_fields(self):
-        args = {}
-        result, repairs = repair_tool_args(args, SCHEMA_READ_FILE)
-        assert "file_path" not in result
+        # All fields are unknown so _strip_unknown preserves them to avoid
+        # destroying the entire call.
+        assert "xyz_totally_wrong" in result
 
 
 class TestStripUnknown:
@@ -309,15 +288,14 @@ class TestCombinedRepairs:
         assert "rename_field" in types
         assert "coerce_type" in types
 
-    def test_coerce_fill_and_strip(self):
+    def test_coerce_and_strip(self):
         args = {"file_path": "f.py", "offset": "5", "junk": True}
         result, repairs = repair_tool_args(args, SCHEMA_READ_FILE)
         assert result["offset"] == 5
         assert "junk" not in result
-        assert result["limit"] == 2000
+        assert "limit" not in result
         types = [r["type"] for r in repairs]
         assert "coerce_type" in types
-        assert "fill_default" in types
         assert "strip_unknown" in types
 
     def test_input_not_mutated(self):

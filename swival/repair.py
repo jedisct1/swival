@@ -48,7 +48,6 @@ def repair_tool_args(
 
     _repair_near_miss_fields(result, properties, repairs)
     _repair_types(result, properties, repairs)
-    _fill_defaults(result, schema, repairs)
     _strip_unknown(result, properties, repairs)
 
     return result, repairs
@@ -143,22 +142,6 @@ def _coerce_scalar(value: Any, expected: str) -> Any:
         return int(value)
 
     return _SKIP
-
-
-def _fill_defaults(
-    result: dict[str, Any],
-    schema: dict[str, Any],
-    repairs: list[dict[str, Any]],
-) -> None:
-    """Fill omitted optional fields that have schema defaults."""
-    properties = schema.get("properties", {})
-    required = set(schema.get("required", []))
-    for field, prop in properties.items():
-        if field in result or field in required or "default" not in prop:
-            continue
-        default = prop["default"]
-        result[field] = default
-        repairs.append({"type": "fill_default", "field": field, "value": repr(default)})
 
 
 def _strip_unknown(
