@@ -5309,6 +5309,7 @@ def run_agent_loop(
     llm_filter=None,
     event_callback: "Callable[[str, dict], None] | None" = None,
     cancel_flag: "threading.Event | None" = None,
+    turn_state: dict | None = None,
 ) -> tuple[str | None, bool]:
     """Run the tool-calling loop until a final answer or max turns.
 
@@ -5340,6 +5341,10 @@ def run_agent_loop(
             if secret_shield is not None:
                 kwargs.setdefault("secret_shield", secret_shield)
             return call_llm(*args, **kwargs)
+
+    def _write_turns():
+        if turn_state is not None:
+            turn_state["turns_used"] = turns
 
     consecutive_errors: dict[str, tuple[str, int]] = {}
     turns = 0
@@ -5484,6 +5489,7 @@ def run_agent_loop(
             if verbose:
                 fmt.info("Task cancelled by external request.")
             _emit(EVENT_STATUS_UPDATE, {"turn": turns, "cancelled": True})
+            _write_turns()
             return None, True
 
         _emit(
@@ -5937,6 +5943,7 @@ def run_agent_loop(
             if verbose:
                 fmt.completion(turns, "ok")
                 _show_state_summaries(thinking_state, todo_state, snapshot_state)
+            _write_turns()
             return msg.content or "", False
 
         interventions: list[str] = []
@@ -5948,6 +5955,7 @@ def run_agent_loop(
                 if verbose:
                     fmt.info("Task cancelled by external request.")
                 _emit(EVENT_STATUS_UPDATE, {"turn": turns, "cancelled": True})
+                _write_turns()
                 return None, True
 
             _tc_name = tool_call.function.name
@@ -6136,6 +6144,7 @@ def run_agent_loop(
             provider=llm_kwargs.get("provider"),
         )
 
+    _write_turns()
     return last_text, True
 
 
@@ -6275,7 +6284,6 @@ def _repl_help() -> None:
         "  /clear, /new       Reset conversation to initial state\n"
         "  /compact [--drop]  Compress context (--drop removes middle turns)\n"
         "  /continue          Reset turn counter and continue the agent loop\n"
-        "  /continue-status   Show if a continue file exists from a prior session\n"
         "  /copy              Copy last output to clipboard\n"
         "  /exit, /quit       Exit the REPL\n"
         "  /extend [N]        Double max turns, or set to N\n"
@@ -6286,11 +6294,86 @@ def _repl_help() -> None:
         "  /restore           Summarize & collapse since checkpoint\n"
         "  /save [label]      Set a context checkpoint\n"
         "  /simplify [focus]  Simplify codebase (optionally scoped to focus area)\n"
+        "  /status            Show session stats (model, context, turns, state)\n"
         "  /tools             List all available tools\n"
         "  /unsave            Cancel active checkpoint\n"
         "\n"
         "  !command [args]    Run <config_dir>/commands/command; output becomes your next prompt"
     )
+
+
+def _repl_status(
+    messages: list,
+    tools: list,
+    model_id: str,
+    api_base: str,
+    context_length: int | None,
+    turn_state: dict,
+    files_mode: str,
+    commands_unrestricted: bool,
+    verbose: bool,
+    base_dir: str,
+    thinking_state,
+    todo_state,
+    snapshot_state,
+    file_tracker,
+    compaction_state,
+) -> None:
+    """Print a compact session overview."""
+    from .continue_here import load_continue_file
+
+    tokens = estimate_tokens(messages, tools)
+    msg_count = sum(1 for m in messages if _msg_role(m) != "system")
+    turns_used = turn_state.get("turns_used", 0)
+    max_turns = turn_state["max_turns"]
+
+    lines = []
+    lines.append(f"model: {model_id}")
+    lines.append(f"endpoint: {api_base}")
+
+    if context_length:
+        pct = tokens * 100 // context_length
+        lines.append(f"context: {tokens:,} / {context_length:,} tokens ({pct}%)")
+    else:
+        lines.append(f"context: {tokens:,} tokens")
+
+    lines.append(f"messages: {msg_count}  |  turns: {turns_used} / {max_turns}")
+
+    file_info = None
+    if file_tracker:
+        nr = len(file_tracker.read_files)
+        nw = len(file_tracker.written_files)
+        if nr or nw:
+            file_info = f"{nr} read, {nw} written"
+    tool_count = len(tools)
+    lines.append(f"files: {file_info or 'none'}  |  tools: {tool_count} available")
+
+    cmd_mode = "all" if commands_unrestricted else "restricted"
+    lines.append(
+        f"mode: files={files_mode}  commands={cmd_mode}"
+        f"  verbose={'on' if verbose else 'off'}"
+    )
+
+    state_lines = []
+    for obj in (thinking_state, todo_state, snapshot_state):
+        if obj:
+            s = obj.summary_line()
+            if s:
+                state_lines.append(s)
+    if compaction_state and compaction_state.summaries:
+        state_lines.append(f"checkpoints: {len(compaction_state.summaries)}")
+
+    if state_lines:
+        lines.append("")
+        lines.extend(state_lines)
+
+    content = load_continue_file(base_dir, delete=False)
+    if content:
+        lines.append("")
+        lines.append(f"continue file: yes ({len(content):,} chars)")
+
+    for line in lines:
+        fmt.info(line)
 
 
 def _repl_tools(tools: list, mcp_manager=None, a2a_manager=None) -> None:
@@ -6696,7 +6779,7 @@ def repl_loop(
             if _subagent_holder is not None:
                 _subagent_holder[0] = subagent_manager
 
-    turn_state = {"max_turns": max_turns}
+    turn_state = {"max_turns": max_turns, "turns_used": 0}
     _repl_loop_kwargs = dict(
         api_base=api_base,
         model_id=model_id,
@@ -6724,6 +6807,7 @@ def repl_loop(
         subagent_manager=subagent_manager,
         cache=cache,
         secret_shield=secret_shield,
+        turn_state=turn_state,
     )
 
     while True:
@@ -6855,17 +6939,24 @@ def repl_loop(
                     "max turns reached for this question. Use /continue to resume."
                 )
             continue
-        elif cmd == "/continue-status":
-            from .continue_here import load_continue_file
-
-            content = load_continue_file(base_dir, delete=False)
-            if content:
-                preview = content[:500]
-                if len(content) > 500:
-                    preview += "\n... (truncated)"
-                fmt.info(f"Continue file exists ({len(content)} chars):\n{preview}")
-            else:
-                fmt.info("No continue file found.")
+        elif cmd == "/status":
+            _repl_status(
+                messages=messages,
+                tools=tools,
+                model_id=model_id,
+                api_base=api_base,
+                context_length=context_length,
+                turn_state=turn_state,
+                files_mode=files_mode,
+                commands_unrestricted=commands_unrestricted,
+                verbose=verbose,
+                base_dir=base_dir,
+                thinking_state=thinking_state,
+                todo_state=todo_state,
+                snapshot_state=snapshot_state,
+                file_tracker=file_tracker,
+                compaction_state=compaction_state,
+            )
             continue
         elif cmd == "/copy":
             _repl_copy(_last_assistant_text(messages))

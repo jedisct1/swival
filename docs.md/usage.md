@@ -69,7 +69,7 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 
 `/continue` restarts the agent loop for the existing conversation without adding a new user message.
 
-`/continue-status` shows whether a continue file exists from a prior interrupted session and previews its contents.
+`/status` shows a compact session overview: model, endpoint, context usage, message/turn counts, file access, mode flags, and state summaries (thinking, todo, snapshot, checkpoints, continue file).
 
 `/learn` reviews the current session for mistakes and confusions, then persists notes to `.swival/memory/MEMORY.md` for future sessions to learn from. On subsequent runs, memory entries are parsed by heading and selectively injected into the prompt using BM25 retrieval keyed from the user's question, keeping memory token cost bounded.
 

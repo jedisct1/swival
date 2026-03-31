@@ -127,7 +127,7 @@ When a session ends abnormally — Ctrl+C, max turns exhausted, compaction failu
 
 The file is always written deterministically first (no network call). On the max-turns path only, Swival optionally enhances it with an LLM-generated summary. If the LLM call fails, the deterministic version is already on disk.
 
-Continue-here files are capped at 4,000 characters. Files older than 24 hours trigger a staleness warning but are still loaded. Use `--no-continue` to disable both writing and reading. The `/continue-status` REPL command previews an existing continue file without consuming it.
+Continue-here files are capped at 4,000 characters. Files older than 24 hours trigger a staleness warning but are still loaded. Use `--no-continue` to disable both writing and reading. The `/status` REPL command includes continue file presence in its session overview.
 
 Together, these four channels mean that even after nuclear compaction wipes the conversation to nearly nothing, the agent still has its reasoning chain, its task list, a record of what it learned during investigation, and — if the session was interrupted — a structured resume plan for the next run.
 

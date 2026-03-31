@@ -34,6 +34,8 @@ from swival.agent import (
     _safe_agents_md_path,
     remember_agents_fact,
     _repl_remember,
+    _repl_status,
+    CompactionState,
 )
 from swival.snapshot import SnapshotState
 from swival.thinking import ThinkingState
@@ -2414,3 +2416,179 @@ class TestRemember:
         _repl_help()
         captured = capsys.readouterr()
         assert "/remember" in captured.err
+
+
+class TestStatusCommand:
+    """Tests for the /status REPL command."""
+
+    def _status_kwargs(self, tmp_path, **overrides):
+        defaults = dict(
+            messages=[_sys("system"), {"role": "user", "content": "hi"}],
+            tools=[{"type": "function", "function": {"name": "t", "parameters": {}}}],
+            model_id="test-model",
+            api_base="http://127.0.0.1:1234",
+            context_length=131072,
+            turn_state={"max_turns": 20, "turns_used": 0},
+            files_mode="some",
+            commands_unrestricted=False,
+            verbose=False,
+            base_dir=str(tmp_path),
+            thinking_state=ThinkingState(verbose=False),
+            todo_state=TodoState(verbose=False),
+            snapshot_state=SnapshotState(verbose=False),
+            file_tracker=None,
+            compaction_state=None,
+        )
+        defaults.update(overrides)
+        return defaults
+
+    def test_basic_output(self, tmp_path, capsys):
+        _repl_status(**self._status_kwargs(tmp_path))
+        out = capsys.readouterr().err
+        assert "model: test-model" in out
+        assert "endpoint: http://127.0.0.1:1234" in out
+        assert "131,072" in out
+        assert "messages:" in out
+        assert "turns: 0 / 20" in out
+        assert "files=" in out
+        assert "commands=" in out
+        assert "verbose=" in out
+
+    def test_context_percentage(self, tmp_path, capsys):
+        _repl_status(**self._status_kwargs(tmp_path, context_length=100000))
+        out = capsys.readouterr().err
+        assert "%" in out
+        assert "100,000" in out
+
+    def test_unknown_context_length(self, tmp_path, capsys):
+        _repl_status(**self._status_kwargs(tmp_path, context_length=None))
+        out = capsys.readouterr().err
+        assert "%" not in out
+        assert "tokens" in out
+
+    def test_state_summaries_appear(self, tmp_path, capsys):
+        from swival.todo import TodoItem
+
+        ts = ThinkingState(verbose=False)
+        ts.think_calls = 3
+        td = TodoState(verbose=False)
+        td.add_count = 5
+        td.done_count = 3
+        td._total_actions = 8
+        td.items = [
+            TodoItem("a", done=True),
+            TodoItem("b", done=True),
+            TodoItem("c", done=True),
+            TodoItem("d", done=False),
+            TodoItem("e", done=False),
+        ]
+        _repl_status(
+            **self._status_kwargs(
+                tmp_path,
+                thinking_state=ts,
+                todo_state=td,
+            )
+        )
+        out = capsys.readouterr().err
+        assert "think: 3 calls" in out
+        assert "todo: 5 added, 3 done, 2 remaining" in out
+
+    def test_snapshot_summary(self, tmp_path, capsys):
+        ss = SnapshotState(verbose=False)
+        ss.stats["restores"] = 1
+        ss.stats["tokens_saved"] = 4200
+        _repl_status(**self._status_kwargs(tmp_path, snapshot_state=ss))
+        out = capsys.readouterr().err
+        assert "snapshot: 1 restore(s)" in out
+        assert "4200" in out
+
+    def test_checkpoints_shown(self, tmp_path, capsys):
+        cs = CompactionState()
+        cs.summaries = ["s1", "s2"]
+        _repl_status(**self._status_kwargs(tmp_path, compaction_state=cs))
+        out = capsys.readouterr().err
+        assert "checkpoints: 2" in out
+
+    def test_no_state_lines_when_empty(self, tmp_path, capsys):
+        _repl_status(**self._status_kwargs(tmp_path))
+        out = capsys.readouterr().err
+        assert "think:" not in out
+        assert "todo:" not in out
+        assert "snapshot:" not in out
+        assert "checkpoints:" not in out
+
+    def test_turn_state_integration(self, tmp_path, capsys):
+        ts = {"max_turns": 20, "turns_used": 5}
+        _repl_status(**self._status_kwargs(tmp_path, turn_state=ts))
+        out = capsys.readouterr().err
+        assert "turns: 5 / 20" in out
+
+    def test_fresh_session_zero_turns(self, tmp_path, capsys):
+        ts = {"max_turns": 20, "turns_used": 0}
+        _repl_status(**self._status_kwargs(tmp_path, turn_state=ts))
+        out = capsys.readouterr().err
+        assert "turns: 0 / 20" in out
+
+    def test_continue_file_present(self, tmp_path, capsys):
+        swival_dir = tmp_path / ".swival"
+        swival_dir.mkdir()
+        (swival_dir / "continue.md").write_text("resume from here")
+        _repl_status(**self._status_kwargs(tmp_path))
+        out = capsys.readouterr().err
+        assert "continue file: yes" in out
+        assert "16 chars" in out
+
+    def test_continue_file_absent(self, tmp_path, capsys):
+        _repl_status(**self._status_kwargs(tmp_path))
+        out = capsys.readouterr().err
+        assert "continue file" not in out
+
+    def test_file_tracker_counts(self, tmp_path, capsys):
+        from swival.tracker import FileAccessTracker
+
+        ft = FileAccessTracker()
+        ft.record_read("a.py")
+        ft.record_read("b.py")
+        ft.record_write("c.py")
+        _repl_status(**self._status_kwargs(tmp_path, file_tracker=ft))
+        out = capsys.readouterr().err
+        assert "2 read, 1 written" in out
+
+    def test_file_tracker_reset_clears_counts(self, tmp_path, capsys):
+        from swival.tracker import FileAccessTracker
+
+        ft = FileAccessTracker()
+        ft.record_read("a.py")
+        ft.record_write("b.py")
+        ft.reset()
+        _repl_status(**self._status_kwargs(tmp_path, file_tracker=ft))
+        out = capsys.readouterr().err
+        assert "files: none" in out
+
+    def test_no_system_messages(self, tmp_path, capsys):
+        _repl_status(**self._status_kwargs(tmp_path, messages=[]))
+        out = capsys.readouterr().err
+        assert "messages: 0" in out
+        assert "turns: 0 / 20" in out
+
+    def test_help_lists_status(self, capsys):
+        _repl_help()
+        out = capsys.readouterr().err
+        assert "/status" in out
+        assert "/continue-status" not in out
+
+    def test_status_in_repl(self, tmp_path):
+        messages = [_sys("system")]
+        mock_session = MagicMock()
+        mock_session.prompt.side_effect = ["/status", "/exit"]
+
+        with (
+            patch("prompt_toolkit.PromptSession", return_value=mock_session),
+            patch("swival.agent.run_agent_loop") as mock_loop,
+            patch("swival.agent._repl_status") as mock_status,
+        ):
+            repl_loop(messages, [], **_loop_kwargs(tmp_path))
+
+        assert mock_loop.call_count == 0
+        assert mock_status.call_count == 1
+        assert len(messages) == 1
