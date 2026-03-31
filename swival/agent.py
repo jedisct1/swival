@@ -390,6 +390,12 @@ _TRANSIENT_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_SSO_TOKEN_ERROR_RE = re.compile(
+    r"Token has expired and refresh failed"
+    r"|Error loading SSO Token:.*does not exist",
+    re.IGNORECASE,
+)
+
 
 def _is_transient(exc):
     """Return True if the exception looks like a transient network/server error."""
@@ -404,6 +410,8 @@ def _is_transient(exc):
             _lt.ContextWindowExceededError,
         ),
     ):
+        return False
+    if _SSO_TOKEN_ERROR_RE.search(str(exc)):
         return False
     if isinstance(
         exc,
@@ -2922,7 +2930,14 @@ def call_llm(
         _raise_with_retries(ae)
     except Exception as e:
         msg = f"LLM call failed (model: {model_id}): {e}"
-        if provider == "bedrock" and "credentials" in str(e).lower():
+        if provider == "bedrock" and _SSO_TOKEN_ERROR_RE.search(str(e)):
+            profile = aws_profile or os.environ.get("AWS_PROFILE", "default")
+            msg = (
+                "AWS SSO token is missing or expired.\n\n"
+                "Run this command to log in, then re-run swival:\n\n"
+                f"  aws sso login --profile={profile}\n"
+            )
+        elif provider == "bedrock" and "credentials" in str(e).lower():
             msg += (
                 "\n\nBedrock authentication requires valid AWS credentials. Example:\n"
                 "  swival --provider bedrock \\\n"

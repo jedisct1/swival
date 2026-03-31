@@ -98,6 +98,37 @@ class TestIsTransient:
         exc = ValueError("something unrelated")
         assert _is_transient(exc) is False
 
+    def test_sso_token_expired_not_transient(self):
+        import litellm
+
+        exc = litellm.APIConnectionError(
+            message="Error when retrieving token from sso: "
+            "Token has expired and refresh failed",
+            llm_provider="bedrock",
+            model="x",
+        )
+        assert _is_transient(exc) is False
+
+    def test_sso_token_missing_not_transient(self):
+        import litellm
+
+        exc = litellm.APIConnectionError(
+            message="Error loading SSO Token: Token for fastly does not exist",
+            llm_provider="bedrock",
+            model="x",
+        )
+        assert _is_transient(exc) is False
+
+    def test_sso_retrieval_network_error_is_transient(self):
+        import litellm
+
+        exc = litellm.APIConnectionError(
+            message="Error when retrieving token from sso: Connection reset by peer",
+            llm_provider="bedrock",
+            model="x",
+        )
+        assert _is_transient(exc) is True
+
 
 class TestCompletionWithRetry:
     def test_succeeds_first_try(self):
@@ -166,6 +197,26 @@ class TestCompletionWithRetry:
                 _completion_with_retry(
                     {"model": "x", "messages": []}, max_retries=5, verbose=False
                 )
+
+    def test_sso_token_expired_no_retry_no_sleep(self):
+        import litellm
+
+        exc = litellm.APIConnectionError(
+            message="Error when retrieving token from sso: "
+            "Token has expired and refresh failed",
+            llm_provider="bedrock",
+            model="x",
+        )
+        with patch("litellm.completion", side_effect=exc):
+            with patch("time.sleep") as mock_sleep:
+                with pytest.raises(litellm.APIConnectionError) as exc_info:
+                    _completion_with_retry(
+                        {"model": "x", "messages": []},
+                        max_retries=5,
+                        verbose=True,
+                    )
+                assert exc_info.value._provider_retries == 0
+                mock_sleep.assert_not_called()
 
 
 class TestCallLlmRetry:
@@ -579,6 +630,117 @@ class TestCallLlmRetry:
                 )
         assert exc_info.value._provider_retries == 4
         assert mock.call_count == 5
+
+    def test_sso_expiry_error_message_includes_profile(self):
+        import litellm
+
+        exc = litellm.APIConnectionError(
+            message="Error when retrieving token from sso: "
+            "Token has expired and refresh failed",
+            llm_provider="bedrock",
+            model="x",
+        )
+        with patch("litellm.completion", side_effect=exc):
+            with pytest.raises(
+                AgentError, match=r"aws sso login --profile=myprofile"
+            ) as exc_info:
+                call_llm(
+                    None,
+                    "anthropic.claude-opus-4-6-v1",
+                    [{"role": "user", "content": "hi"}],
+                    4096,
+                    None,
+                    None,
+                    None,
+                    None,
+                    False,
+                    provider="bedrock",
+                    aws_profile="myprofile",
+                )
+            assert exc_info.value._provider_retries == 0
+
+    def test_sso_expiry_uses_aws_profile_env(self, monkeypatch):
+        import litellm
+
+        monkeypatch.setenv("AWS_PROFILE", "envprofile")
+        exc = litellm.APIConnectionError(
+            message="Error when retrieving token from sso: "
+            "Token has expired and refresh failed",
+            llm_provider="bedrock",
+            model="x",
+        )
+        with patch("litellm.completion", side_effect=exc):
+            with pytest.raises(
+                AgentError, match=r"aws sso login --profile=envprofile"
+            ) as exc_info:
+                call_llm(
+                    None,
+                    "anthropic.claude-opus-4-6-v1",
+                    [{"role": "user", "content": "hi"}],
+                    4096,
+                    None,
+                    None,
+                    None,
+                    None,
+                    False,
+                    provider="bedrock",
+                )
+            assert exc_info.value._provider_retries == 0
+
+    def test_sso_missing_token_error_message(self):
+        import litellm
+
+        exc = litellm.APIConnectionError(
+            message="Error loading SSO Token: Token for fastly does not exist",
+            llm_provider="bedrock",
+            model="x",
+        )
+        with patch("litellm.completion", side_effect=exc):
+            with pytest.raises(
+                AgentError, match=r"aws sso login --profile=myprofile"
+            ) as exc_info:
+                call_llm(
+                    None,
+                    "anthropic.claude-opus-4-6-v1",
+                    [{"role": "user", "content": "hi"}],
+                    4096,
+                    None,
+                    None,
+                    None,
+                    None,
+                    False,
+                    provider="bedrock",
+                    aws_profile="myprofile",
+                )
+            assert exc_info.value._provider_retries == 0
+
+    def test_sso_expiry_defaults_to_default_profile(self, monkeypatch):
+        import litellm
+
+        monkeypatch.delenv("AWS_PROFILE", raising=False)
+        exc = litellm.APIConnectionError(
+            message="Error when retrieving token from sso: "
+            "Token has expired and refresh failed",
+            llm_provider="bedrock",
+            model="x",
+        )
+        with patch("litellm.completion", side_effect=exc):
+            with pytest.raises(
+                AgentError, match=r"aws sso login --profile=default"
+            ) as exc_info:
+                call_llm(
+                    None,
+                    "anthropic.claude-opus-4-6-v1",
+                    [{"role": "user", "content": "hi"}],
+                    4096,
+                    None,
+                    None,
+                    None,
+                    None,
+                    False,
+                    provider="bedrock",
+                )
+            assert exc_info.value._provider_retries == 0
 
     def test_session_rejects_retries_zero(self):
         """Session(retries=0) raises ValueError."""
