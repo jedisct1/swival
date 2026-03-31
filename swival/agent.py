@@ -3609,7 +3609,14 @@ def _should_try_onboarding(args, base_dir: Path) -> bool:
 
 
 def _handle_init_config(args):
-    """Generate a config file template and write it."""
+    """Generate a config file template and write it.
+
+    When the destination already exists (e.g. from onboarding), the existing
+    settings are preserved in the generated template and written to a ``.new``
+    sibling so the user can review before replacing.
+    """
+    import tomllib
+
     from .config import generate_config, global_config_dir
 
     project = getattr(args, "project", False)
@@ -3619,16 +3626,44 @@ def _handle_init_config(args):
     else:
         dest = global_config_dir() / "config.toml"
 
+    existing = None
+    existing_raw = None
+    malformed = False
     if dest.exists():
-        print(
-            f"Error: {dest} already exists. Remove it first to regenerate.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        raw = dest.read_text(encoding="utf-8")
+        try:
+            existing = tomllib.loads(raw)
+            existing_raw = raw
+        except tomllib.TOMLDecodeError:
+            malformed = True
+            print(
+                f"Warning: {dest} has syntax errors; generating plain template.",
+                file=sys.stderr,
+            )
 
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(generate_config(project=project), encoding="utf-8")
-    print(f"Created {dest}")
+        out = dest.with_suffix(dest.suffix + ".new")
+        if out.exists():
+            print(
+                f"Error: {out} already exists. Remove it first.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    else:
+        out = dest
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        generate_config(project=project, existing=existing, existing_raw=existing_raw),
+        encoding="utf-8",
+    )
+    if dest != out:
+        if malformed:
+            print(f"Created {out} (plain template — could not parse {dest})")
+        else:
+            print(f"Created {out} (preserving settings from {dest})")
+        print(f"Review the new file, then: mv {out} {dest}")
+    else:
+        print(f"Created {out}")
 
 
 def _handle_list_profiles(config: dict, args) -> None:

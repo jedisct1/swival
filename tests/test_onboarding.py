@@ -7,10 +7,9 @@ from swival.onboarding import (
     run_onboarding,
     render_minimal_config,
     _mask_secret,
-    _toml_escape,
 )
 from swival.agent import _should_try_onboarding
-from swival.config import _UNSET
+from swival.config import _UNSET, _toml_escape
 
 
 def _make_args(**overrides):

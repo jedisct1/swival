@@ -1084,9 +1084,101 @@ def config_to_session_kwargs(config: dict) -> dict:
     return kwargs
 
 
-def generate_config(project: bool = False) -> str:
-    """Return a commented-out template config string."""
-    lines = [
+_NESTED_KEYS = frozenset(
+    {
+        "profiles",
+        "mcp_servers",
+        "a2a_servers",
+        "serve_skills",
+        "encrypt_secrets_patterns",
+    }
+)
+
+_KNOWN_SPECIAL_KEYS = _NESTED_KEYS | {"active_profile", "_active_profile_source"}
+
+
+def _toml_escape(s: str) -> str:
+    """Escape a string for TOML double-quoted values."""
+    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def _toml_format(val) -> str:
+    """Format a Python value as a TOML literal."""
+    if isinstance(val, bool):
+        return "true" if val else "false"
+    if isinstance(val, int):
+        return str(val)
+    if isinstance(val, float):
+        return str(val)
+    if isinstance(val, list):
+        items = ", ".join(_toml_format(v) for v in val)
+        return f"[{items}]"
+    if isinstance(val, dict):
+        pairs = ", ".join(f"{k} = {_toml_format(v)}" for k, v in val.items())
+        return f"{{ {pairs} }}"
+    return f'"{_toml_escape(str(val))}"'
+
+
+_COMMENTED_KV_RE = re.compile(r"^# (\w+)\s*=\s*")
+
+
+def _uncomment_line(line: str, key: str, value) -> str:
+    """Replace a commented template line with the user's existing value."""
+    value_str = _toml_format(value)
+    after_eq = line.split("=", 1)[1] if "=" in line else ""
+    parts = after_eq.split("#", 1)
+    if len(parts) == 2 and parts[1].strip():
+        return f"{key} = {value_str}  # {parts[1].strip()}"
+    return f"{key} = {value_str}"
+
+
+def _extract_raw_tables(raw: str, keys_present: set[str]) -> str:
+    """Extract nested table blocks from raw TOML text for the given root keys."""
+    collected: list[str] = []
+    current_root: str | None = None
+    current_block: list[str] = []
+
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[[") and stripped.endswith("]]"):
+            root = stripped[2:-2].strip().split(".")[0]
+        elif stripped.startswith("[") and stripped.endswith("]"):
+            root = stripped[1:-1].strip().split(".")[0]
+        else:
+            root = None
+
+        if root is not None:
+            if current_root is not None and current_block:
+                collected.append("\n".join(current_block))
+            if root in _NESTED_KEYS and root in keys_present:
+                current_root = root
+                current_block = [line]
+            else:
+                current_root = None
+                current_block = []
+            continue
+
+        if current_root is not None:
+            current_block.append(line)
+
+    if current_root is not None and current_block:
+        collected.append("\n".join(current_block))
+
+    return "\n\n".join(collected)
+
+
+def generate_config(
+    project: bool = False,
+    existing: dict | None = None,
+    existing_raw: str | None = None,
+) -> str:
+    """Return a config template string.
+
+    If *existing* is provided, matching keys are emitted uncommented with the
+    user's actual values.  Nested tables are extracted verbatim from
+    *existing_raw* and appended after all scalar keys.
+    """
+    template_lines = [
         "# Swival configuration file",
         f"# {'Project' if project else 'Global'} config — "
         f"{'<project>/swival.toml' if project else '~/.config/swival/config.toml'}",
@@ -1206,4 +1298,43 @@ def generate_config(project: bool = False) -> str:
         '# headers = { Authorization = "Bearer token123" }',
         "",
     ]
+
+    lines: list[str] = []
+    in_example_section = False
+    for tl in template_lines:
+        if tl.startswith("# --- ") and "examples" in tl.lower():
+            in_example_section = True
+        elif tl.startswith("# --- "):
+            in_example_section = False
+        if existing is not None and not in_example_section:
+            m = _COMMENTED_KV_RE.match(tl)
+            if m:
+                key = m.group(1)
+                if key in existing and key not in _NESTED_KEYS:
+                    lines.append(_uncomment_line(tl, key, existing[key]))
+                    continue
+        lines.append(tl)
+
+    if existing is not None:
+        unknown = [
+            k
+            for k in existing
+            if k not in CONFIG_KEYS
+            and k not in _KNOWN_SPECIAL_KEYS
+            and not k.startswith("_")
+        ]
+        if unknown:
+            lines.append("# --- Other settings ---")
+            for k in unknown:
+                lines.append(f"{k} = {_toml_format(existing[k])}")
+            lines.append("")
+
+    if existing_raw is not None and existing is not None:
+        keys_present = set(existing) & _NESTED_KEYS
+        if keys_present:
+            raw_tables = _extract_raw_tables(existing_raw, keys_present)
+            if raw_tables:
+                lines.append(raw_tables)
+                lines.append("")
+
     return "\n".join(lines)

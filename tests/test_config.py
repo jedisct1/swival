@@ -237,6 +237,137 @@ class TestLoadConfig:
 
 
 # ===========================================================================
+# generate_config with existing settings
+# ===========================================================================
+
+
+class TestGenerateConfigExisting:
+    def test_preserves_existing_scalars(self):
+        existing = {
+            "provider": "openrouter",
+            "model": "qwen/qwen3",
+            "temperature": 0.7,
+            "top_p": 0.95,
+            "max_output_tokens": 16384,
+            "yolo": True,
+        }
+        content = generate_config(existing=existing)
+        assert 'provider = "openrouter"' in content
+        assert "temperature = 0.7" in content
+        assert "top_p = 0.95" in content
+        assert "max_output_tokens = 16384" in content
+        assert "yolo = true" in content
+        assert "# max_turns" in content
+        assert "# retries" in content
+        lines = []
+        for line in content.splitlines():
+            stripped = line.lstrip("# ").strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                lines.append(stripped)
+            elif "=" in stripped and not stripped.startswith("--"):
+                lines.append(stripped)
+        tomllib.loads("\n".join(lines))
+
+    def test_preserves_active_profile(self):
+        existing = {"provider": "generic", "active_profile": "fast-local"}
+        content = generate_config(existing=existing)
+        matches = [
+            line
+            for line in content.splitlines()
+            if "active_profile" in line and not line.strip().startswith("#")
+        ]
+        assert len(matches) == 1
+        assert 'active_profile = "fast-local"' in matches[0]
+
+    def test_preserves_nested_tables(self):
+        existing = {
+            "provider": "generic",
+            "profiles": {"fast": {"provider": "lmstudio", "model": "local"}},
+            "mcp_servers": {"search": {"command": "npx"}},
+        }
+        raw = (
+            'provider = "generic"\n'
+            "\n"
+            "[profiles.fast]\n"
+            'provider = "lmstudio"\n'
+            'model = "local"\n'
+            "\n"
+            "[mcp_servers.search]\n"
+            'command = "npx"\n'
+        )
+        content = generate_config(existing=existing, existing_raw=raw)
+        assert "[profiles.fast]" in content
+        assert '[mcp_servers.search]\ncommand = "npx"' in content
+
+    def test_preserves_array_tables(self):
+        existing = {
+            "provider": "generic",
+            "serve_skills": [{"id": "ask", "name": "Ask"}],
+        }
+        raw = 'provider = "generic"\n\n[[serve_skills]]\nid = "ask"\nname = "Ask"\n'
+        content = generate_config(existing=existing, existing_raw=raw)
+        assert "[[serve_skills]]" in content
+        assert 'id = "ask"' in content
+
+    def test_unknown_keys_before_tables(self):
+        existing = {
+            "provider": "generic",
+            "my_custom_thing": "foo",
+            "profiles": {"fast": {"provider": "lmstudio"}},
+        }
+        raw = (
+            'provider = "generic"\n'
+            'my_custom_thing = "foo"\n'
+            "\n"
+            "[profiles.fast]\n"
+            'provider = "lmstudio"\n'
+        )
+        content = generate_config(existing=existing, existing_raw=raw)
+        assert 'my_custom_thing = "foo"' in content
+        lines = content.splitlines()
+        custom_idx = next(
+            i for i, line in enumerate(lines) if 'my_custom_thing = "foo"' in line
+        )
+        profile_idx = next(
+            i for i, line in enumerate(lines) if line.strip() == "[profiles.fast]"
+        )
+        assert custom_idx < profile_idx
+
+    def test_existing_with_valid_toml_output(self):
+        existing = {
+            "provider": "openrouter",
+            "model": "qwen/qwen3",
+            "temperature": 0.7,
+            "active_profile": "fast",
+            "profiles": {"fast": {"provider": "lmstudio"}},
+        }
+        raw = (
+            'provider = "openrouter"\n'
+            'model = "qwen/qwen3"\n'
+            "temperature = 0.7\n"
+            'active_profile = "fast"\n'
+            "\n"
+            "[profiles.fast]\n"
+            'provider = "lmstudio"\n'
+        )
+        content = generate_config(existing=existing, existing_raw=raw)
+        uncommented = []
+        for line in content.splitlines():
+            s = line.strip()
+            if not s or s.startswith("#"):
+                continue
+            # Strip trailing comments for parsing
+            if "  #" in line:
+                line = line[: line.index("  #")]
+            uncommented.append(line)
+        parsed = tomllib.loads("\n".join(uncommented))
+        assert parsed["provider"] == "openrouter"
+        assert parsed["temperature"] == 0.7
+        assert parsed["active_profile"] == "fast"
+        assert parsed["profiles"]["fast"]["provider"] == "lmstudio"
+
+
+# ===========================================================================
 # Type validation
 # ===========================================================================
 
@@ -626,18 +757,76 @@ class TestInitConfig:
         assert dest.exists()
         assert "Project config" in dest.read_text()
 
-    def test_refuses_overwrite(self, tmp_path, monkeypatch):
-        """_handle_init_config exits non-zero if config already exists."""
+    def test_writes_new_file_when_exists(self, tmp_path, monkeypatch):
+        """When config exists, _handle_init_config writes to .new sibling."""
         from swival.agent import _handle_init_config
 
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
         cfg = tmp_path / "xdg" / "swival" / "config.toml"
         cfg.parent.mkdir(parents=True, exist_ok=True)
-        cfg.write_text("existing\n")
+        cfg.write_text('provider = "openrouter"\nmodel = "qwen/qwen3"\n')
+
+        args = types.SimpleNamespace(project=False, base_dir=".")
+        _handle_init_config(args)
+
+        new_file = cfg.with_suffix(".toml.new")
+        assert new_file.exists()
+        content = new_file.read_text()
+        assert 'provider = "openrouter"' in content
+        assert 'model = "qwen/qwen3"' in content
+        assert cfg.read_text() == 'provider = "openrouter"\nmodel = "qwen/qwen3"\n'
+
+    def test_new_file_clobber_guard(self, tmp_path, monkeypatch):
+        """Exits if .new file already exists."""
+        from swival.agent import _handle_init_config
+
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+        cfg = tmp_path / "xdg" / "swival" / "config.toml"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text('provider = "generic"\n')
+        cfg.with_suffix(".toml.new").write_text("in-progress edits\n")
 
         args = types.SimpleNamespace(project=False, base_dir=".")
         with pytest.raises(SystemExit):
             _handle_init_config(args)
+
+    def test_malformed_existing_generates_plain_template(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Malformed TOML falls back to a plain template with a warning."""
+        from swival.agent import _handle_init_config
+
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+        cfg = tmp_path / "xdg" / "swival" / "config.toml"
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text("this is = = = not valid toml\n")
+
+        args = types.SimpleNamespace(project=False, base_dir=".")
+        _handle_init_config(args)
+
+        new_file = cfg.with_suffix(".toml.new")
+        assert new_file.exists()
+        content = new_file.read_text()
+        assert "# provider" in content
+        captured = capsys.readouterr()
+        assert "syntax errors" in captured.err
+        assert "plain template" in captured.out
+
+    def test_project_existing_config(self, tmp_path):
+        """--init-config --project with existing swival.toml writes .new."""
+        from swival.agent import _handle_init_config
+
+        dest = tmp_path / "swival.toml"
+        dest.write_text('provider = "lmstudio"\ntemperature = 0.5\n')
+
+        args = types.SimpleNamespace(project=True, base_dir=str(tmp_path))
+        _handle_init_config(args)
+
+        new_file = dest.with_suffix(".toml.new")
+        assert new_file.exists()
+        content = new_file.read_text()
+        assert 'provider = "lmstudio"' in content
+        assert "temperature = 0.5" in content
 
 
 # ===========================================================================

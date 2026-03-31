@@ -572,6 +572,8 @@ def _ask_api_key(s: dict, *, env_var: str, label: str = "API key") -> None:
 
 def render_minimal_config(settings: dict) -> str:
     """Render a minimal TOML config string from onboarding settings."""
+    from .config import _toml_format
+
     lines = [
         "# Swival config, created by first-run setup.",
         "# Run `swival --init-config` to see all available options.",
@@ -580,20 +582,9 @@ def render_minimal_config(settings: dict) -> str:
     for key in _CONFIG_KEY_ORDER:
         if key not in settings:
             continue
-        val = settings[key]
-        if isinstance(val, bool):
-            lines.append(f"{key} = {'true' if val else 'false'}")
-        elif isinstance(val, int):
-            lines.append(f"{key} = {val}")
-        else:
-            lines.append(f'{key} = "{_toml_escape(val)}"')
+        lines.append(f"{key} = {_toml_format(settings[key])}")
     lines.append("")
     return "\n".join(lines)
-
-
-def _toml_escape(s: str) -> str:
-    """Escape a string for TOML double-quoted values."""
-    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
 def _mask_secret(val: str) -> str:
