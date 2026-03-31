@@ -50,6 +50,12 @@ Trash retention is enforced automatically. Entries older than seven days are rem
 
 Set `case_insensitive` to `true` for case-insensitive matching. Results are capped at 100 matches and long lines are truncated to 2,000 characters.
 
+## `outline`
+
+`outline` shows the structural skeleton of one or more files: classes, functions, and top-level declarations with line numbers. No bodies are included. This is useful for surveying a file before reading specific sections.
+
+Pass `file_path` for a single file, or `files` for a batch (up to 20 files). The `depth` parameter controls nesting: 1 for top-level only, 2 for classes and methods (the default), 3 for nested functions and classes. In batch mode, each file can override the depth individually.
+
 ## `think`
 
 `think` is structured scratchpad reasoning. It lets the model capture numbered thoughts, revise earlier thoughts, and branch from a prior thought to compare alternative approaches. This is especially helpful for debugging and multi-step refactors.
@@ -158,7 +164,7 @@ Subagents inherit the parent's full system prompt (instructions, memory, AGENTS.
 
 Subagents cannot spawn their own subagents — the tool is removed from their tool list to prevent recursion. Up to 4 subagents can run concurrently.
 
-This tool is only available when `--subagents` is passed on the CLI or `subagents=True` is set in the Session constructor or config file.
+Subagents are auto-enabled for the `google`, `chatgpt`, and `bedrock` providers, or when the detected context window is at least 100,000 tokens. Pass `--subagents` or `--no-subagents` on the CLI (or `subagents=True`/`False` in Session or config) to override the default.
 
 ## `check_subagents`
 

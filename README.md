@@ -229,8 +229,8 @@ Full documentation is available at [swival.dev](https://swival.dev/).
 - [Context Management](docs.md/context-management.md) -- compaction, snapshots,
   knowledge survival, and how Swival handles tight context windows
 - [Providers](docs.md/providers.md) -- LM Studio, HuggingFace, OpenRouter,
-  Google Gemini, ChatGPT Plus/Pro, generic OpenAI-compatible server, and
-  command (external program) configuration
+  Google Gemini, ChatGPT Plus/Pro, AWS Bedrock, generic OpenAI-compatible
+  server, and command (external program) configuration
 - [MCP](docs.md/mcp.md) -- connecting external tool servers via the Model Context
   Protocol
 - [A2A](docs.md/a2a.md) -- connecting to remote agents via the Agent-to-Agent
@@ -250,5 +250,7 @@ Full documentation is available at [swival.dev](https://swival.dev/).
   and execution
 - [Python API](docs.md/python-api.md) -- library API for embedding Swival in
   Python applications
+- [Not Just for Frontier Models](docs.md/open-models.md) -- why Swival is
+  built to work well with small and open models too
 - [Using Swival with AgentFS](docs.md/agentfs.md) -- copy-on-write filesystem
   sandboxing for safe agent runs

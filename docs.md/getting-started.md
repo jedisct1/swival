@@ -44,15 +44,16 @@ brew uninstall swival     # if installed with Homebrew
 
 ## Provider Quick Reference
 
-| Provider      | Auth                                               | Required flags                                    |
-| ------------- | -------------------------------------------------- | ------------------------------------------------- |
-| `lmstudio`    | none                                               | none                                              |
-| `huggingface` | `HF_TOKEN` or `--api-key`                          | `--provider huggingface --model ORG/MODEL`        |
-| `openrouter`  | `OPENROUTER_API_KEY` or `--api-key`                | `--provider openrouter --model MODEL`             |
-| `google`      | `--api-key`, `GEMINI_API_KEY`, or `OPENAI_API_KEY` | `--provider google --model MODEL`                 |
-| `chatgpt`     | browser auth on first run or `CHATGPT_API_KEY`     | `--provider chatgpt --model MODEL`                |
-| `generic`     | optional `OPENAI_API_KEY`                          | `--provider generic --base-url URL --model MODEL` |
-| `command`     | none                                               | `--provider command --model "COMMAND"`            |
+| Provider      | Auth                                                | Required flags                                    |
+| ------------- | --------------------------------------------------- | ------------------------------------------------- |
+| `lmstudio`    | none                                                | none                                              |
+| `huggingface` | `HF_TOKEN` or `--api-key`                           | `--provider huggingface --model ORG/MODEL`        |
+| `openrouter`  | `OPENROUTER_API_KEY` or `--api-key`                 | `--provider openrouter --model MODEL`             |
+| `google`      | `--api-key`, `GEMINI_API_KEY`, or `OPENAI_API_KEY`  | `--provider google --model MODEL`                 |
+| `chatgpt`     | browser auth on first run or `CHATGPT_API_KEY`      | `--provider chatgpt --model MODEL`                |
+| `generic`     | optional `OPENAI_API_KEY`                           | `--provider generic --base-url URL --model MODEL` |
+| `bedrock`     | AWS credential chain (`AWS_PROFILE`, env vars, IAM) | `--provider bedrock --model MODEL`                |
+| `command`     | none                                                | `--provider command --model "COMMAND"`            |
 
 The sections below expand each provider with copy-paste commands.
 
@@ -180,6 +181,19 @@ On the first run, Swival will print a URL and a code. Open the URL in your brows
 `--model` is required -- there is no default. Supported model names can change over time, so check [Providers](providers.md) if you need the current naming.
 
 For a deeper look at ChatGPT Plus/Pro-specific options, see [Providers](providers.md).
+
+## Running with AWS Bedrock
+
+If you use AWS, the `bedrock` provider connects to models hosted on Bedrock using your existing AWS credentials. No API key is needed — Swival picks up credentials from environment variables, `~/.aws/credentials`, IAM roles, and SSO.
+
+```sh
+export AWS_REGION_NAME=us-east-2
+swival "Hello world" --provider bedrock --model global.anthropic.claude-opus-4-6-v1
+```
+
+To use a named profile, pass `--aws-profile` or set `AWS_PROFILE`. Note: the region env var is `AWS_REGION_NAME`, not `AWS_DEFAULT_REGION`.
+
+For a deeper look at Bedrock-specific options, see [Providers](providers.md).
 
 ## Where To Go Next
 

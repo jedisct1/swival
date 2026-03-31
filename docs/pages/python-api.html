@@ -90,6 +90,7 @@ print(answer)
     model: str | None = None,
     api_key: str | None = None,
     base_url: str | None = None,
+    aws_profile: str | None = None,
     max_turns: int = 100,
     max_output_tokens: int = 32768,
     max_context_tokens: int | None = None,
@@ -155,7 +156,7 @@ print(answer)
 </tr>
 <tr>
 <td><code>provider</code></td>
-<td>LLM provider: <code>"lmstudio"</code>, <code>"huggingface"</code>, <code>"openrouter"</code>, <code>"chatgpt"</code>, <code>"google"</code>, <code>"generic"</code>, or a command string.</td>
+<td>LLM provider: <code>"lmstudio"</code>, <code>"huggingface"</code>, <code>"openrouter"</code>, <code>"chatgpt"</code>, <code>"google"</code>, <code>"bedrock"</code>, <code>"generic"</code>, <code>"command"</code>, or a command string.</td>
 </tr>
 <tr>
 <td><code>model</code></td>
