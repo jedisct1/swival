@@ -577,7 +577,7 @@ OUTLINE_TOOL = {
                 },
                 "files": {
                     "type": "array",
-                    "description": "List of files to outline (batch mode).",
+                    "description": "List of files to outline (batch mode, max 20).",
                     "items": {
                         "type": "object",
                         "properties": {
