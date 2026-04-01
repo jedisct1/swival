@@ -6566,11 +6566,13 @@ def _repl_clear(
     fmt.info(f"context cleared ({dropped} messages removed)")
 
 
-def _repl_add_dir(path_str: str, extra_write_roots: list) -> None:
-    """Add a directory to the write-access whitelist."""
+def _repl_add_dir_impl(
+    path_str: str, target_list: list, command: str, label: str
+) -> None:
+    """Shared logic for adding a directory to a whitelist."""
     path_str = path_str.strip()
     if not path_str:
-        fmt.warning("/add-dir requires a path argument")
+        fmt.warning(f"{command} requires a path argument")
         return
 
     p = Path(path_str).expanduser().resolve()
@@ -6580,34 +6582,22 @@ def _repl_add_dir(path_str: str, extra_write_roots: list) -> None:
     if p == Path(p.anchor):
         fmt.warning("cannot add filesystem root")
         return
-    if p in extra_write_roots:
-        fmt.info(f"already in whitelist: {p}")
+    if p in target_list:
+        fmt.info(f"already in {label}: {p}")
         return
 
-    extra_write_roots.append(p)
-    fmt.info(f"added to whitelist: {p}")
+    target_list.append(p)
+    fmt.info(f"added to {label}: {p}")
+
+
+def _repl_add_dir(path_str: str, extra_write_roots: list) -> None:
+    """Add a directory to the write-access whitelist."""
+    _repl_add_dir_impl(path_str, extra_write_roots, "/add-dir", "whitelist")
 
 
 def _repl_add_dir_ro(path_str: str, skill_read_roots: list) -> None:
     """Add a directory to the read-only whitelist."""
-    path_str = path_str.strip()
-    if not path_str:
-        fmt.warning("/add-dir-ro requires a path argument")
-        return
-
-    p = Path(path_str).expanduser().resolve()
-    if not p.is_dir():
-        fmt.warning(f"not a directory: {path_str}")
-        return
-    if p == Path(p.anchor):
-        fmt.warning("cannot add filesystem root")
-        return
-    if p in skill_read_roots:
-        fmt.info(f"already in read-only whitelist: {p}")
-        return
-
-    skill_read_roots.append(p)
-    fmt.info(f"added to read-only whitelist: {p}")
+    _repl_add_dir_impl(path_str, skill_read_roots, "/add-dir-ro", "read-only whitelist")
 
 
 def _repl_compact(
