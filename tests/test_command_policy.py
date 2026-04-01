@@ -476,6 +476,19 @@ class TestPersistApprovedBucket:
         assert "'git push'" in content
         assert 'model = "test"' in content
 
+    def test_appends_to_existing_list_no_double_comma(self, tmp_path):
+        toml_path = tmp_path / "swival.toml"
+        toml_path.write_text("approved_buckets = [\n    'git',\n]\n")
+        persist_approved_bucket("<shell>", str(tmp_path))
+        content = toml_path.read_text()
+        assert ",," not in content
+        assert "'<shell>'" in content
+        assert "'git'" in content
+        import tomllib
+
+        parsed = tomllib.loads(content)
+        assert parsed["approved_buckets"] == ["git", "<shell>"]
+
     def test_no_duplicate(self, tmp_path):
         persist_approved_bucket("ls", str(tmp_path))
         persist_approved_bucket("ls", str(tmp_path))

@@ -254,7 +254,7 @@ def persist_approved_bucket(bucket: str, base_dir: str) -> None:
 
     if "approved_buckets" in data:
         idx = existing.rfind("]", existing.index("approved_buckets"))
-        before = existing[:idx].rstrip()
+        before = existing[:idx].rstrip().rstrip(",")
         after = existing[idx:]
         if before.endswith("["):
             new_content = before + f"\n    {bucket!r},\n" + after
