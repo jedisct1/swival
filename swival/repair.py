@@ -163,9 +163,15 @@ def _coerce_scalar(value: Any, expected: str) -> Any:
 
 _GLOB_META_RE = re.compile(r"[*?\[\]]")
 
-_PATH_FIELDS = frozenset({
-    "path", "file_path", "image_path", "dir", "directory",
-})
+_PATH_FIELDS = frozenset(
+    {
+        "path",
+        "file_path",
+        "image_path",
+        "dir",
+        "directory",
+    }
+)
 
 
 def _repair_path_globs(
@@ -199,12 +205,14 @@ def _repair_path_globs(
             cleaned = "."
         if cleaned != value:
             result[field] = cleaned
-            repairs.append({
-                "type": "strip_glob_from_path",
-                "field": field,
-                "from": value,
-                "to": cleaned,
-            })
+            repairs.append(
+                {
+                    "type": "strip_glob_from_path",
+                    "field": field,
+                    "from": value,
+                    "to": cleaned,
+                }
+            )
 
 
 def _strip_unknown(

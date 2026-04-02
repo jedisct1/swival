@@ -2,10 +2,6 @@ version = 1
 revision = 3
 requires-python = ">=3.13"
 
-[options]
-exclude-newer = "2026-04-01T12:06:34.803106Z"
-exclude-newer-span = "P1D"
-
 [manifest]
 constraints = [
     { name = "cryptography", specifier = ">=46.0.6" },

@@ -294,7 +294,10 @@ SCHEMA_LIST_FILES = {
 SCHEMA_OUTLINE = {
     "type": "object",
     "properties": {
-        "file_path": {"type": "string", "description": "Path to a single file to outline."},
+        "file_path": {
+            "type": "string",
+            "description": "Path to a single file to outline.",
+        },
         "depth": {"type": "integer", "minimum": 1, "maximum": 3, "default": 2},
     },
 }
@@ -384,7 +387,9 @@ class TestFieldAliases:
         result, repairs = repair_tool_args(args, SCHEMA_OUTLINE)
         assert result["file_path"] == "real.py"
         assert "path" not in result
-        assert any(r["type"] == "strip_unknown" and r["field"] == "path" for r in repairs)
+        assert any(
+            r["type"] == "strip_unknown" and r["field"] == "path" for r in repairs
+        )
 
 
 class TestCombinedRepairs:
