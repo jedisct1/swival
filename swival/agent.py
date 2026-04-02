@@ -6612,7 +6612,20 @@ def _repl_profile(
         new_name = name
 
     merged = dict(raw_baseline)
-    if profile_body:
+    if profile_body is not None:
+        # Clear provider-identity keys so they don't leak from the baseline
+        # when the profile sets a different provider without specifying them.
+        for k in (
+            "provider",
+            "model",
+            "api_key",
+            "base_url",
+            "aws_profile",
+            "extra_body",
+            "reasoning_effort",
+            "sanitize_thinking",
+        ):
+            merged.pop(k, None)
         for k, v in profile_body.items():
             if k not in _PROFILE_METADATA_KEYS:
                 merged[k] = v
@@ -6636,9 +6649,19 @@ def _repl_profile(
         if val is not None:
             llm_kwargs[key] = val
 
+    # Carry over session-level llm_kwargs (e.g. prompt_cache, max_retries)
+    # but NOT profile-controlled keys which are already set above.
+    _PROFILE_LLM_KEYS = {
+        "provider",
+        "api_key",
+        "aws_profile",
+        "extra_body",
+        "reasoning_effort",
+        "sanitize_thinking",
+    }
     old_llm_kwargs = repl_kwargs.get("llm_kwargs", {})
     for key, val in old_llm_kwargs.items():
-        if key not in llm_kwargs:
+        if key not in _PROFILE_LLM_KEYS and key not in llm_kwargs:
             llm_kwargs[key] = val
 
     repl_kwargs["model_id"] = model_id

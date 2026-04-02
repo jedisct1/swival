@@ -226,6 +226,60 @@ class TestProfileRevert:
         call_kw = mock_rp.call_args
         assert call_kw.kwargs["provider"] == BASELINE["provider"]
 
+    def test_minimal_profile_no_baseline_leak(self):
+        """A profile that only sets provider must NOT inherit model from baseline."""
+        profiles = {"local": {"provider": "lmstudio"}}
+        baseline = dict(BASELINE)  # has model="meta-llama/llama-4-scout"
+        kw = _make_repl_kwargs()
+
+        ret = (
+            "discovered-model",
+            "http://127.0.0.1:1234",
+            None,
+            32000,
+            {"provider": "lmstudio"},
+        )
+        with patch("swival.agent.resolve_provider", return_value=ret) as mock_rp:
+            _repl_profile("local", profiles, None, None, baseline, kw, None, False)
+
+        call_kw = mock_rp.call_args
+        assert call_kw.kwargs["model"] is None  # must not be baseline's model
+
+    def test_reasoning_effort_not_carried_across_profiles(self):
+        """Switching from a profile with reasoning_effort to one without must drop it."""
+        profiles = {
+            "high": {
+                "provider": "chatgpt",
+                "model": "gpt-5.4",
+                "reasoning_effort": "high",
+            },
+            "local": {"provider": "lmstudio"},
+        }
+        kw = _make_repl_kwargs()
+        baseline = dict(BASELINE)
+
+        ret_high = (
+            "gpt-5.4",
+            "http://api",
+            "sk",
+            128000,
+            {"provider": "chatgpt", "api_key": "sk"},
+        )
+        with patch("swival.agent.resolve_provider", return_value=ret_high):
+            _repl_profile("high", profiles, None, None, baseline, kw, None, False)
+        assert kw["llm_kwargs"].get("reasoning_effort") == "high"
+
+        ret_local = (
+            "discovered",
+            "http://local",
+            None,
+            32000,
+            {"provider": "lmstudio"},
+        )
+        with patch("swival.agent.resolve_provider", return_value=ret_local):
+            _repl_profile("local", profiles, None, "high", baseline, kw, None, False)
+        assert "reasoning_effort" not in kw["llm_kwargs"]
+
     def test_double_switch(self):
         """A -> B -> C: each switch resolves from baseline, not previous profile."""
         baseline = dict(BASELINE)
