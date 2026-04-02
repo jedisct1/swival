@@ -136,7 +136,7 @@ List available profiles with `--list-profiles`:
 swival --list-profiles
 ```
 
-Each profile requires `provider`. The allowed keys are: `provider`, `model`, `api_key`, `base_url`, `aws_profile`, `max_output_tokens`, `max_context_tokens`, `temperature`, `top_p`, `seed`, `extra_body`, `reasoning_effort`, and `sanitize_thinking`. Keys outside this set — like `files`, `commands`, or `reviewer` — are rejected with an error listing the allowed keys. Profiles are for choosing a model stack, not for changing agent behavior.
+Each profile requires `provider`. The allowed keys are: `provider`, `model`, `api_key`, `base_url`, `aws_profile`, `max_output_tokens`, `max_context_tokens`, `temperature`, `top_p`, `seed`, `extra_body`, `reasoning_effort`, `sanitize_thinking`, and `description`. Keys outside this set — like `files`, `commands`, or `reviewer` — are rejected with an error listing the allowed keys. Profiles are for choosing a model stack, not for changing agent behavior. The `description` key is metadata — it appears in profile listings but is not passed to the provider.
 
 If `--profile` is combined with explicit flags like `--provider` or `--model`, the explicit flags win on a per-key basis, just like CLI flags override config everywhere else in Swival.
 
@@ -161,6 +161,16 @@ swival --model "Qwen/Qwen3-Coder" "task needing a different model"
 ```
 
 Any model supported by the inference endpoint works — no extra profile needed.
+
+You can also switch profiles mid-session from the REPL without restarting:
+
+```
+swival> /profile              # list profiles, active one marked with →
+swival> /profile fast-local   # switch to the "fast-local" profile
+swival> /profile -            # revert to the profile active at session start
+```
+
+Switching only changes LLM settings — conversation history, tools, files, and all other state are preserved. New subagents spawned after the switch use the new profile; existing running subagents are unaffected.
 
 Profiles defined in global config and project config merge per-key for the same profile name. A project can refine a global profile by overriding just one or two keys without copying the whole table.
 

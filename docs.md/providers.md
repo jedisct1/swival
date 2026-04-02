@@ -26,11 +26,15 @@ model = "gpt-5.4"
 reasoning_effort = "high"
 ```
 
-Then switch with `--profile`:
+Then switch with `--profile` at startup, or `/profile` mid-session:
 
 ```sh
 swival --profile local "quick task"
 swival --profile gpt5 "hard task"
+```
+
+```
+swival> /profile gpt5
 ```
 
 The sections below document each provider's flags, authentication, and behavior in detail.

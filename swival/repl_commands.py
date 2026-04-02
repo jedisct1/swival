@@ -37,6 +37,10 @@ REPL_COMMANDS: dict[str, CommandInfo] = {
     ),
     "/learn": CommandInfo(desc="Review session for mistakes and persist to memory"),
     "/new": CommandInfo(desc="Reset conversation to initial state"),
+    "/profile": CommandInfo(
+        desc="Switch LLM profile (no arg = list, - = revert)",
+        arg="[name]",
+    ),
     "/quit": CommandInfo(desc="Exit the REPL"),
     "/remember": CommandInfo(
         desc="Add a durable project fact to AGENTS.md",

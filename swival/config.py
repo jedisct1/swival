@@ -26,6 +26,7 @@ SANDBOX_MODES = ("builtin", "agentfs")
 REASONING_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh", "default")
 
 PROFILE_KEYS: set[str] = {
+    "description",
     "provider",
     "model",
     "api_key",
@@ -40,6 +41,8 @@ PROFILE_KEYS: set[str] = {
     "reasoning_effort",
     "sanitize_thinking",
 }
+
+_PROFILE_METADATA_KEYS: set[str] = {"description"}
 
 CONFIG_KEYS: dict[str, type | tuple[type, ...]] = {
     "provider": str,
@@ -381,6 +384,13 @@ def _validate_profiles(profiles: dict, source: str) -> None:
                     f"{source}: profiles.{name}: '{key}' is not allowed in a profile. "
                     f"Profiles only support LLM-related keys: {allowed}"
                 )
+            if key in _PROFILE_METADATA_KEYS:
+                if not isinstance(value, str):
+                    raise ConfigError(
+                        f"{source}: profiles.{name}.{key} expected str, "
+                        f"got {type(value).__name__}"
+                    )
+                continue
             expected = CONFIG_KEYS[key]
             if isinstance(value, bool) and expected is not bool:
                 raise ConfigError(

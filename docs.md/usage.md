@@ -81,6 +81,8 @@ The REPL is built on `prompt-toolkit`, so it supports input history, history sea
 
 `/remember <text>` adds a convention to the project-level `AGENTS.md` file under `## Conventions`. Duplicates are skipped.
 
+`/profile` lists available profiles with the active one marked. `/profile NAME` switches to a different profile mid-session — the LLM settings change but conversation history, tools, and all other state are preserved. `/profile -` reverts to the profile that was active at session start. Each switch re-resolves the provider from scratch, so provider-specific behavior (Google endpoint rewrite, LM Studio model discovery, etc.) works correctly.
+
 `/init` scans your project for build/test/lint/format commands and cross-cutting conventions, then generates a structured `AGENTS.md` file with a `## Workflow` section (exact commands including an after-every-edit reflex) followed by a `## Conventions` section. Validates the output and retries once if the structure is wrong.
 
 `/exit` and `/quit` leave the REPL. Pressing `Ctrl-D` exits as well.

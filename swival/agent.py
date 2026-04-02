@@ -3774,6 +3774,36 @@ def _handle_init_config(args):
         print(f"Created {out}")
 
 
+def _format_profile_line(
+    name: str,
+    body: dict,
+    active_name: str | None,
+    active_source: str = "",
+) -> str:
+    provider = body.get("provider", "?")
+    model = body.get("model", "(auto)")
+    extras = []
+    if "base_url" in body:
+        extras.append(f"base={body['base_url']}")
+    if "reasoning_effort" in body:
+        extras.append(f"reasoning={body['reasoning_effort']}")
+    if "max_context_tokens" in body:
+        extras.append(f"ctx={body['max_context_tokens']}")
+
+    if name == active_name:
+        marker = "\u2192 "
+        suffix = f"  (active {active_source})" if active_source else "  (active)"
+    else:
+        marker = "  "
+        suffix = ""
+
+    line = f"{marker}{name:<16} {provider:<12} / {model}"
+    if extras:
+        line += f"  {', '.join(extras)}"
+    line += suffix
+    return line
+
+
 def _handle_list_profiles(config: dict, args) -> None:
     """Print available profiles and exit."""
     profiles = config.get("profiles", {})
@@ -3796,29 +3826,7 @@ def _handle_list_profiles(config: dict, args) -> None:
         return
 
     for name in sorted(profiles):
-        body = profiles[name]
-        provider = body.get("provider", "?")
-        model = body.get("model", "(auto)")
-        extras = []
-        if "base_url" in body:
-            extras.append(f"base={body['base_url']}")
-        if "reasoning_effort" in body:
-            extras.append(f"reasoning={body['reasoning_effort']}")
-        if "max_context_tokens" in body:
-            extras.append(f"ctx={body['max_context_tokens']}")
-
-        if name == active_name:
-            marker = "\u2192 "
-            suffix = f"  (active {active_source})" if active_source else "  (active)"
-        else:
-            marker = "  "
-            suffix = ""
-
-        line = f"{marker}{name:<16} {provider:<12} / {model}"
-        if extras:
-            line += f"  {', '.join(extras)}"
-        line += suffix
-        print(line)
+        print(_format_profile_line(name, profiles[name], active_name, active_source))
 
 
 def main():
@@ -3910,6 +3918,9 @@ def main():
     if getattr(args, "list_profiles", False):
         _handle_list_profiles(file_config, args)
         sys.exit(0)
+
+    # Stash profiles before resolve_profile_config pops them
+    args._all_profiles = dict(file_config.get("profiles", {}))
 
     # Resolve selected profile into flat config before apply_config_to_args
     try:
@@ -4821,6 +4832,22 @@ def _validate_external_command(cmd_string: str, label: str) -> None:
 
 
 def _run_main(args, report, _write_report, parser):
+    args._raw_llm_baseline = {
+        "provider": args.provider,
+        "model": args.model,
+        "api_key": args.api_key,
+        "base_url": args.base_url,
+        "aws_profile": args.aws_profile,
+        "max_context_tokens": args.max_context_tokens,
+        "max_output_tokens": args.max_output_tokens,
+        "temperature": args.temperature,
+        "top_p": args.top_p,
+        "seed": args.seed,
+        "extra_body": getattr(args, "extra_body", None),
+        "reasoning_effort": getattr(args, "reasoning_effort", None),
+        "sanitize_thinking": getattr(args, "sanitize_thinking", None),
+    }
+
     # Provider-specific model discovery and context configuration
     try:
         model_id, api_base, api_key, context_length, llm_kwargs = resolve_provider(
@@ -5371,6 +5398,9 @@ def _run_main(args, report, _write_report, parser):
             **loop_kwargs,
             no_history=no_history,
             _subagent_holder=_sa_holder,
+            profiles=getattr(args, "_all_profiles", None),
+            startup_profile=getattr(args, "_active_profile", None),
+            raw_llm_baseline=getattr(args, "_raw_llm_baseline", None),
         )
     finally:
         if _sa_holder[0] is not None:
@@ -6482,6 +6512,7 @@ def _repl_status(
     snapshot_state,
     file_tracker,
     compaction_state,
+    current_profile: str | None = None,
 ) -> None:
     """Print a compact session overview."""
     from .continue_here import load_continue_file
@@ -6492,7 +6523,10 @@ def _repl_status(
     max_turns = turn_state["max_turns"]
 
     lines = []
-    lines.append(f"model: {model_id}")
+    model_line = f"model: {model_id}"
+    if current_profile:
+        model_line += f"  (profile: {current_profile})"
+    lines.append(model_line)
     lines.append(f"endpoint: {api_base}")
 
     if context_length:
@@ -6538,6 +6572,102 @@ def _repl_status(
 
     for line in lines:
         fmt.info(line)
+
+
+def _repl_profile(
+    cmd_arg: str,
+    profiles: dict,
+    startup_profile: str | None,
+    current_profile: str | None,
+    raw_baseline: dict,
+    repl_kwargs: dict,
+    subagent_manager,
+    verbose: bool,
+) -> str | None:
+    """Handle /profile command. Returns the new current profile name."""
+    from .config import _PROFILE_METADATA_KEYS
+
+    name = cmd_arg.strip()
+
+    if not name:
+        if not profiles:
+            fmt.info(
+                "No profiles defined. Add [profiles.NAME] sections to your config."
+            )
+            return current_profile
+
+        for pname in sorted(profiles):
+            fmt.info(_format_profile_line(pname, profiles[pname], current_profile))
+        return current_profile
+
+    if name == "-":
+        profile_body = None
+        new_name = startup_profile
+    else:
+        if name not in profiles:
+            known = ", ".join(sorted(profiles)) if profiles else "(none)"
+            fmt.warning(f"unknown profile {name!r}. Available: {known}")
+            return current_profile
+        profile_body = profiles[name]
+        new_name = name
+
+    merged = dict(raw_baseline)
+    if profile_body:
+        for k, v in profile_body.items():
+            if k not in _PROFILE_METADATA_KEYS:
+                merged[k] = v
+
+    try:
+        model_id, api_base, resolved_key, context_length, llm_kwargs = resolve_provider(
+            provider=merged["provider"],
+            model=merged.get("model"),
+            api_key=merged.get("api_key"),
+            base_url=merged.get("base_url"),
+            max_context_tokens=merged.get("max_context_tokens"),
+            verbose=verbose,
+            aws_profile=merged.get("aws_profile"),
+        )
+    except (ConfigError, AgentError) as exc:
+        fmt.warning(f"profile switch failed: {exc}")
+        return current_profile
+
+    for key in ("extra_body", "reasoning_effort", "sanitize_thinking"):
+        val = merged.get(key)
+        if val is not None:
+            llm_kwargs[key] = val
+
+    old_llm_kwargs = repl_kwargs.get("llm_kwargs", {})
+    for key, val in old_llm_kwargs.items():
+        if key not in llm_kwargs:
+            llm_kwargs[key] = val
+
+    repl_kwargs["model_id"] = model_id
+    repl_kwargs["api_base"] = api_base
+    repl_kwargs["context_length"] = context_length
+    repl_kwargs["llm_kwargs"] = llm_kwargs
+    repl_kwargs["max_output_tokens"] = merged.get("max_output_tokens")
+    repl_kwargs["temperature"] = merged.get("temperature")
+    repl_kwargs["top_p"] = merged.get("top_p")
+    repl_kwargs["seed"] = merged.get("seed")
+
+    if subagent_manager is not None:
+        for k in (
+            "model_id",
+            "api_base",
+            "context_length",
+            "llm_kwargs",
+            "max_output_tokens",
+            "temperature",
+            "top_p",
+            "seed",
+        ):
+            subagent_manager._template[k] = repl_kwargs[k]
+
+    label = f"profile: {new_name}" if new_name else "profile: (baseline)"
+    fmt.info(f"{label}")
+    fmt.info(f"model: {llm_kwargs.get('provider', '')} / {model_id}")
+    fmt.info(f"endpoint: {api_base}")
+    return new_name
 
 
 def _repl_tools(tools: list, mcp_manager=None, a2a_manager=None) -> None:
@@ -6900,6 +7030,9 @@ def repl_loop(
     command_policy=None,
     is_subagent: bool = False,
     _subagent_holder: list | None = None,
+    profiles: dict | None = None,
+    startup_profile: str | None = None,
+    raw_llm_baseline: dict | None = None,
 ):
     """Interactive read-eval-print loop."""
     from prompt_toolkit import PromptSession
@@ -6971,6 +7104,8 @@ def repl_loop(
         command_policy=command_policy,
         turn_state=turn_state,
     )
+
+    _current_profile = startup_profile
 
     while True:
         try:
@@ -7118,6 +7253,7 @@ def repl_loop(
                 snapshot_state=snapshot_state,
                 file_tracker=file_tracker,
                 compaction_state=compaction_state,
+                current_profile=_current_profile,
             )
             continue
         elif cmd == "/copy":
@@ -7322,6 +7458,26 @@ def repl_loop(
             continue
         elif cmd == "/remember":
             _repl_remember(cmd_arg, base_dir, messages)
+            continue
+        elif cmd == "/profile":
+            _current_profile = _repl_profile(
+                cmd_arg,
+                profiles=profiles or {},
+                startup_profile=startup_profile,
+                current_profile=_current_profile,
+                raw_baseline=raw_llm_baseline or {},
+                repl_kwargs=_repl_loop_kwargs,
+                subagent_manager=subagent_manager,
+                verbose=verbose,
+            )
+            model_id = _repl_loop_kwargs["model_id"]
+            api_base = _repl_loop_kwargs["api_base"]
+            context_length = _repl_loop_kwargs["context_length"]
+            max_output_tokens = _repl_loop_kwargs["max_output_tokens"]
+            temperature = _repl_loop_kwargs["temperature"]
+            top_p = _repl_loop_kwargs["top_p"]
+            seed = _repl_loop_kwargs["seed"]
+            llm_kwargs = _repl_loop_kwargs["llm_kwargs"]
             continue
 
         messages.append({"role": "user", "content": line})
