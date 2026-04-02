@@ -6279,7 +6279,7 @@ def _repl_run_custom_command(
     cmd_name = parts[0]
     arg_string = parts[1].strip() if len(parts) > 1 else ""
 
-    if not re.fullmatch(r"[a-zA-Z0-9_-]+", cmd_name):
+    if not _CUSTOM_CMD_NAME_RE.fullmatch(cmd_name):
         fmt.error(f"invalid command name: {cmd_name!r}")
         return None
 
@@ -6350,6 +6350,53 @@ def _repl_run_custom_command(
     return cmd_name, stdout
 
 
+_CUSTOM_CMD_NAME_RE = re.compile(r"[a-zA-Z0-9_-]+$")
+
+
+def discover_custom_commands() -> list[str]:
+    """Return sorted names of runnable custom commands.
+
+    Applies the same resolution rules as :func:`_repl_run_custom_command`:
+    executable files in ``global_config_dir() / "commands"`` whose name
+    (or stem on Windows) matches ``[a-zA-Z0-9_-]+``.  Ambiguous stems on
+    Windows are excluded.
+    """
+    from .config import global_config_dir
+
+    commands_dir = global_config_dir() / "commands"
+    if not commands_dir.is_dir():
+        return []
+
+    ci = sys.platform == "win32"
+    names: set[str] = set()
+
+    if ci:
+        stems: dict[str, list[Path]] = {}
+        for f in commands_dir.iterdir():
+            if f.is_file() and os.access(f, os.X_OK):
+                key = f.stem.lower()
+                stems.setdefault(key, []).append(f)
+        for key, files in stems.items():
+            if len(files) == 1 and _CUSTOM_CMD_NAME_RE.fullmatch(key):
+                names.add(key)
+    else:
+        exact_names: set[str] = set()
+        stem_files: dict[str, list[Path]] = {}
+        for f in commands_dir.iterdir():
+            if not f.is_file() or not os.access(f, os.X_OK):
+                continue
+            if _CUSTOM_CMD_NAME_RE.fullmatch(f.name):
+                exact_names.add(f.name)
+            if f.stem != f.name and _CUSTOM_CMD_NAME_RE.fullmatch(f.stem):
+                stem_files.setdefault(f.stem, []).append(f)
+        names = set(exact_names)
+        for stem, files in stem_files.items():
+            if len(files) == 1:
+                names.add(stem)
+
+    return sorted(names)
+
+
 def _truncate_for_context(
     text: str,
     messages: list,
@@ -6383,30 +6430,40 @@ def _truncate_for_context(
 
 
 def _repl_help() -> None:
-    """Print available REPL commands."""
-    fmt.info(
-        "Available commands:\n"
-        "  /add-dir <path>    Grant read+write access to a directory\n"
-        "  /add-dir-ro <path> Grant read-only access to a directory\n"
-        "  /clear, /new       Reset conversation to initial state\n"
-        "  /compact [--drop]  Compress context (--drop removes middle turns)\n"
-        "  /continue          Reset turn counter and continue the agent loop\n"
-        "  /copy              Copy last output to clipboard\n"
-        "  /exit, /quit       Exit the REPL\n"
-        "  /extend [N]        Double max turns, or set to N\n"
-        "  /help              Show this help message\n"
-        "  /init              Scan project for build/test/lint workflow and conventions, write AGENTS.md\n"
-        "  /learn             Review session for mistakes and persist to memory\n"
-        "  /remember <text>   Add a durable project fact to AGENTS.md\n"
-        "  /restore           Summarize & collapse since checkpoint\n"
-        "  /save [label]      Set a context checkpoint\n"
-        "  /simplify [focus]  Simplify codebase (optionally scoped to focus area)\n"
-        "  /status            Show session stats (model, context, turns, state)\n"
-        "  /tools             List all available tools\n"
-        "  /unsave            Cancel active checkpoint\n"
-        "\n"
-        "  !command [args]    Run <config_dir>/commands/command; output becomes your next prompt"
+    """Print available REPL commands.
+
+    Formatted from :data:`~swival.repl_commands.REPL_COMMANDS` so that
+    help text, completion, and dispatch stay in sync.
+    """
+    from .repl_commands import REPL_COMMANDS
+
+    groups: dict[tuple[str, str | None], list[str]] = {}
+    for cmd in sorted(REPL_COMMANDS):
+        info = REPL_COMMANDS[cmd]
+        key = (info.desc, info.arg)
+        groups.setdefault(key, []).append(cmd)
+
+    lines = ["Available commands:"]
+    seen: set[str] = set()
+    for cmd in sorted(REPL_COMMANDS):
+        if cmd in seen:
+            continue
+        info = REPL_COMMANDS[cmd]
+        key = (info.desc, info.arg)
+        group = groups[key]
+        for c in group:
+            seen.add(c)
+        label = ", ".join(group)
+        if info.arg:
+            label += f" {info.arg}"
+        lines.append(f"  {label:<19}{info.desc}")
+
+    lines.append("")
+    lines.append(
+        f"  {'!command [args]':<19}"
+        "Run <config_dir>/commands/command; output becomes your next prompt"
     )
+    fmt.info("\n".join(lines))
 
 
 def _repl_status(
@@ -6850,6 +6907,8 @@ def repl_loop(
     from prompt_toolkit.history import FileHistory
     from prompt_toolkit.styles import Style
 
+    from .completer import SwivalCompleter
+
     history_path = os.path.join(base_dir, ".swival", "repl_history")
     os.makedirs(os.path.dirname(history_path), exist_ok=True)
     prompt_style = Style.from_dict(
@@ -6858,10 +6917,13 @@ def repl_loop(
             "prompt": "bold ansigreen",
         }
     )
+    completer = SwivalCompleter(skills_catalog=skills_catalog)
     session = PromptSession(
         history=FileHistory(history_path),
         enable_history_search=True,
         style=prompt_style,
+        completer=completer,
+        complete_while_typing=False,
     )
     prompt_text = FormattedText([("class:prompt", "swival> ")])
 

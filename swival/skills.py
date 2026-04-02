@@ -481,6 +481,37 @@ def format_skill_catalog(catalog: dict[str, SkillInfo]) -> str:
 
 _MENTION_NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]*[a-z0-9]|[a-z0-9]")
 
+_SKILL_NAME_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789-")
+
+
+def find_skill_prefix(text: str) -> str | None:
+    """Return the partial skill name being typed at the end of *text*.
+
+    Applies the same boundary rules as :func:`extract_skill_mentions`:
+    ``$`` must be preceded by a non-alphanumeric character (or be at
+    position 0) and the partial name must consist of characters matching
+    :data:`_MENTION_NAME_RE` (``[a-z0-9-]``, first char not ``-``).
+
+    Returns the partial name (without ``$``), or ``None`` if the cursor
+    is not in a valid skill-mention position.  An empty string means
+    ``$`` was typed with no name yet -- all skills should be offered.
+    """
+    dollar = text.rfind("$")
+    if dollar == -1:
+        return None
+    if dollar > 0 and text[dollar - 1].isalnum():
+        return None
+
+    partial = text[dollar + 1 :]
+    if not partial:
+        return ""
+    if partial[0] not in _SKILL_NAME_CHARS or partial[0] == "-":
+        return None
+    for ch in partial:
+        if ch not in _SKILL_NAME_CHARS:
+            return None
+    return partial
+
 
 def extract_skill_mentions(text: str, catalog: dict[str, SkillInfo]) -> list[str]:
     """Extract $skill-name mentions from text that match catalog entries.
