@@ -9,6 +9,7 @@ the telemetry pipeline can measure which fixes actually help.
 from __future__ import annotations
 
 import difflib
+import re
 from typing import Any
 
 
@@ -48,9 +49,18 @@ def repair_tool_args(
 
     _repair_near_miss_fields(result, properties, repairs)
     _repair_types(result, properties, repairs)
+    _repair_path_globs(result, properties, repairs)
     _strip_unknown(result, properties, repairs)
 
     return result, repairs
+
+
+_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "path": ("file_path", "image_path"),
+    "file": ("file_path",),
+    "filename": ("file_path",),
+    "filepath": ("file_path",),
+}
 
 
 def _repair_near_miss_fields(
@@ -63,6 +73,13 @@ def _repair_near_miss_fields(
     renames: list[tuple[str, str]] = []
     for key in list(result):
         if key in known:
+            continue
+        # Check explicit aliases first (catches pairs too dissimilar for
+        # difflib, e.g. "path" → "file_path").
+        alias_targets = _FIELD_ALIASES.get(key, ())
+        hit = next((t for t in alias_targets if t in known and t not in result), None)
+        if hit:
+            renames.append((key, hit))
             continue
         matches = difflib.get_close_matches(key, known, n=1, cutoff=0.8)
         if matches:
@@ -142,6 +159,52 @@ def _coerce_scalar(value: Any, expected: str) -> Any:
         return int(value)
 
     return _SKIP
+
+
+_GLOB_META_RE = re.compile(r"[*?\[\]]")
+
+_PATH_FIELDS = frozenset({
+    "path", "file_path", "image_path", "dir", "directory",
+})
+
+
+def _repair_path_globs(
+    result: dict[str, Any],
+    properties: dict[str, Any],
+    repairs: list[dict[str, Any]],
+) -> None:
+    """Strip glob metacharacters from path/directory fields.
+
+    Models frequently pass ``".**"`` or ``"**"`` as a path, mashing together
+    ``.`` (current directory) and ``**`` (recursive glob).  The intent is
+    "search everything here" — the correct path value is ``"."``.
+    """
+    for field, prop in properties.items():
+        if field not in result:
+            continue
+        value = result[field]
+        if not isinstance(value, str):
+            continue
+        if not _GLOB_META_RE.search(value):
+            continue
+        # Only touch fields that are clearly file/directory paths, not
+        # pattern or include fields.
+        desc = prop.get("description", "").lower()
+        if field not in _PATH_FIELDS and "path" not in field:
+            continue
+        if "pattern" in desc or "regex" in desc or "glob" in desc:
+            continue
+        cleaned = _GLOB_META_RE.sub("", value).rstrip("/")
+        if not cleaned:
+            cleaned = "."
+        if cleaned != value:
+            result[field] = cleaned
+            repairs.append({
+                "type": "strip_glob_from_path",
+                "field": field,
+                "from": value,
+                "to": cleaned,
+            })
 
 
 def _strip_unknown(

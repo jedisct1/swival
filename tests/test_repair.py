@@ -278,6 +278,115 @@ class TestStripUnknown:
         assert strip_repairs == []
 
 
+SCHEMA_LIST_FILES = {
+    "type": "object",
+    "properties": {
+        "pattern": {"type": "string", "description": "Glob pattern to match files."},
+        "path": {
+            "type": "string",
+            "description": "File or directory to search in, relative to base directory.",
+            "default": ".",
+        },
+    },
+    "required": ["pattern"],
+}
+
+SCHEMA_OUTLINE = {
+    "type": "object",
+    "properties": {
+        "file_path": {"type": "string", "description": "Path to a single file to outline."},
+        "depth": {"type": "integer", "minimum": 1, "maximum": 3, "default": 2},
+    },
+}
+
+
+class TestPathGlobStripping:
+    def test_dotstarstar_becomes_dot(self):
+        args = {"pattern": "TODO", "path": ".**"}
+        result, repairs = repair_tool_args(args, SCHEMA_GREP)
+        assert result["path"] == "."
+        assert any(r["type"] == "strip_glob_from_path" for r in repairs)
+
+    def test_doublestar_becomes_dot(self):
+        args = {"pattern": "TODO", "path": "**"}
+        result, repairs = repair_tool_args(args, SCHEMA_GREP)
+        assert result["path"] == "."
+
+    def test_dot_slash_doublestar_becomes_dot(self):
+        args = {"pattern": "TODO", "path": "./**"}
+        result, repairs = repair_tool_args(args, SCHEMA_GREP)
+        assert result["path"] == "."
+
+    def test_dir_slash_doublestar_becomes_dir(self):
+        args = {"pattern": "TODO", "path": "src/**"}
+        result, repairs = repair_tool_args(args, SCHEMA_GREP)
+        assert result["path"] == "src"
+
+    def test_plain_dot_unchanged(self):
+        args = {"pattern": "TODO", "path": "."}
+        result, repairs = repair_tool_args(args, SCHEMA_GREP)
+        assert result["path"] == "."
+        assert not any(r["type"] == "strip_glob_from_path" for r in repairs)
+
+    def test_normal_path_unchanged(self):
+        args = {"pattern": "TODO", "path": "src/lib"}
+        result, repairs = repair_tool_args(args, SCHEMA_GREP)
+        assert result["path"] == "src/lib"
+        assert not any(r["type"] == "strip_glob_from_path" for r in repairs)
+
+    def test_pattern_field_not_touched(self):
+        """The pattern/include fields contain globs intentionally."""
+        args = {"pattern": "**/*.py"}
+        result, repairs = repair_tool_args(args, SCHEMA_LIST_FILES)
+        assert result["pattern"] == "**/*.py"
+        assert not any(r["type"] == "strip_glob_from_path" for r in repairs)
+
+    def test_list_files_path_cleaned(self):
+        args = {"pattern": "**/*.py", "path": ".**"}
+        result, repairs = repair_tool_args(args, SCHEMA_LIST_FILES)
+        assert result["path"] == "."
+        assert result["pattern"] == "**/*.py"
+
+    def test_star_becomes_dot(self):
+        args = {"pattern": "TODO", "path": "*"}
+        result, repairs = repair_tool_args(args, SCHEMA_GREP)
+        assert result["path"] == "."
+
+
+class TestFieldAliases:
+    def test_path_renamed_to_file_path(self):
+        """outline has file_path not path — alias should catch it."""
+        args = {"path": "src/main.py"}
+        result, repairs = repair_tool_args(args, SCHEMA_OUTLINE)
+        assert result["file_path"] == "src/main.py"
+        assert "path" not in result
+        assert any(r["type"] == "rename_field" and r["from"] == "path" for r in repairs)
+
+    def test_path_not_renamed_when_schema_has_path(self):
+        """grep has a real path field — no alias should fire."""
+        args = {"pattern": "TODO", "path": "."}
+        result, repairs = repair_tool_args(args, SCHEMA_GREP)
+        assert result["path"] == "."
+        assert not any(r["type"] == "rename_field" for r in repairs)
+
+    def test_alias_plus_glob_strip(self):
+        """outline(path=".**") → file_path="." via alias + glob strip."""
+        args = {"path": ".**"}
+        result, repairs = repair_tool_args(args, SCHEMA_OUTLINE)
+        assert result["file_path"] == "."
+        assert "path" not in result
+        types = [r["type"] for r in repairs]
+        assert "rename_field" in types
+        assert "strip_glob_from_path" in types
+
+    def test_alias_skipped_when_correct_field_exists(self):
+        args = {"file_path": "real.py", "path": "extra.py"}
+        result, repairs = repair_tool_args(args, SCHEMA_OUTLINE)
+        assert result["file_path"] == "real.py"
+        assert "path" not in result
+        assert any(r["type"] == "strip_unknown" and r["field"] == "path" for r in repairs)
+
+
 class TestCombinedRepairs:
     def test_rename_then_coerce(self):
         args = {"file_paht": "f.py", "offset": "10"}
