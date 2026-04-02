@@ -2,6 +2,17 @@
 
 All notable user-facing changes to Swival.
 
+## 0.10.8
+
+- A new `/profile` REPL command can list available profiles, switch to a different
+  LLM profile mid-session, and revert to the startup profile (or baseline config)
+  with `/profile -`. `/status` now shows the active profile.
+- TAB completion has been added to the REPL for slash commands, custom
+  `!commands`, directory-path arguments for `/add-dir` and `/add-dir-ro`, and
+  `$skill` mentions.
+- `/init` now includes commit and pull request style guidance in generated
+  `AGENTS.md` files, derived from recent git history and any PR template.
+
 ## 0.10.7
 
 - Interactive command approval mode has been added: `--commands ask` prompts the
