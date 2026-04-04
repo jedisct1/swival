@@ -710,33 +710,31 @@ class TestShellStringCompat:
         assert not result.startswith("error:")
 
 
+def _capture_tools_via_main(tmp_path, monkeypatch, extra_args):
+    """Run agent.main() with given CLI args and capture the tools list."""
+    from swival import agent
+
+    captured = {}
+
+    def fake_call_llm(*args, **kwargs):
+        captured["tools"] = kwargs.get("tools") or args[7]
+        return _make_message(content="Done."), "stop"
+
+    monkeypatch.setattr(agent, "call_llm", fake_call_llm)
+    monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["agent", "hello", "--base-dir", str(tmp_path), "--no-instructions"]
+        + extra_args,
+    )
+    agent.main()
+    return captured["tools"]
+
+
 class TestYoloSchema:
     def _capture_tools(self, tmp_path, monkeypatch):
-        from swival import agent
-
-        captured = {}
-
-        def fake_call_llm(*args, **kwargs):
-            captured["tools"] = kwargs.get("tools") or args[7]
-            return _make_message(content="Done."), "stop"
-
-        monkeypatch.setattr(agent, "call_llm", fake_call_llm)
-        monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
-        monkeypatch.setattr(
-            sys,
-            "argv",
-            [
-                "agent",
-                "hello",
-                "--base-dir",
-                str(tmp_path),
-                "--yolo",
-                "--no-instructions",
-            ],
-        )
-
-        agent.main()
-        return captured["tools"]
+        return _capture_tools_via_main(tmp_path, monkeypatch, ["--yolo"])
 
     def test_yolo_exposes_both_command_tools(self, tmp_path, monkeypatch):
         """Unrestricted mode exposes both run_command and run_shell_command."""
@@ -768,6 +766,26 @@ class TestYoloSchema:
         rc_tool = next(t for t in tools if t["function"]["name"] == "run_command")
         desc = rc_tool["function"]["description"]
         assert "run_shell_command" in desc
+
+
+class TestAskModeSchema:
+    def _capture_tools(self, tmp_path, monkeypatch):
+        return _capture_tools_via_main(tmp_path, monkeypatch, ["--commands", "ask"])
+
+    def test_ask_mode_excludes_run_shell_command(self, tmp_path, monkeypatch):
+        """--commands ask exposes run_command but not run_shell_command."""
+        tools = self._capture_tools(tmp_path, monkeypatch)
+        names = [t["function"]["name"] for t in tools]
+        assert "run_command" in names
+        assert "run_shell_command" not in names
+
+    def test_ask_mode_run_command_no_shell_hint(self, tmp_path, monkeypatch):
+        """--commands ask: run_command description does not mention run_shell_command."""
+        tools = self._capture_tools(tmp_path, monkeypatch)
+        rc_tool = next(t for t in tools if t["function"]["name"] == "run_command")
+        desc = rc_tool["function"]["description"]
+        assert "run_shell_command" not in desc
+        assert "not supported" in desc
 
 
 # ---------------------------------------------------------------------------
@@ -1056,6 +1074,7 @@ class TestRunShellCommandDispatch:
             {"command": "echo hello && echo world"},
             str(tmp_path),
             commands_unrestricted=True,
+            shell_allowed=True,
             resolved_commands={},
         )
         assert "hello" in result
@@ -1069,6 +1088,7 @@ class TestRunShellCommandDispatch:
             {"command": "echo abc | tr a-z A-Z"},
             str(tmp_path),
             commands_unrestricted=True,
+            shell_allowed=True,
             resolved_commands={},
         )
         assert "ABC" in result
@@ -1081,6 +1101,7 @@ class TestRunShellCommandDispatch:
             {"command": ["echo", "repaired"]},
             str(tmp_path),
             commands_unrestricted=True,
+            shell_allowed=True,
             resolved_commands={},
         )
         assert "repaired" in result
@@ -1095,6 +1116,7 @@ class TestRunShellCommandDispatch:
             {"command": '["echo", "json-fix"]'},
             str(tmp_path),
             commands_unrestricted=True,
+            shell_allowed=True,
             resolved_commands={},
         )
         assert "json-fix" in result

@@ -710,6 +710,77 @@ class TestCommandToolContextPrefix:
 # ---------------------------------------------------------------------------
 
 
+class TestCommandProviderShellAllowed:
+    """Verify shell_allowed propagates through the command-provider tool-call path."""
+
+    def _run_shell_call(self, tmp_path, monkeypatch, shell_allowed):
+        from swival.agent import _call_command_with_tools
+        from swival.thinking import ThinkingState
+        from swival.todo import TodoState
+
+        shell_response = (
+            '<swival:call id="c1" name="run_shell_command">'
+            '{"command": "echo hello"}'
+            "</swival:call>"
+        )
+        call_count = [0]
+
+        def fake_run(cmd, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return sp.CompletedProcess(cmd, 0, stdout=shell_response, stderr="")
+            return sp.CompletedProcess(cmd, 0, stdout="Done.", stderr="")
+
+        monkeypatch.setattr(sp, "run", fake_run)
+
+        tc_kwargs = dict(
+            base_dir=str(tmp_path),
+            thinking_state=ThinkingState(),
+            verbose=False,
+            resolved_commands={},
+            skills_catalog={},
+            skill_read_roots=[],
+            extra_write_roots=[],
+            files_mode="some",
+            commands_unrestricted=True,
+            shell_allowed=shell_allowed,
+            file_tracker=None,
+            todo_state=TodoState(),
+            snapshot_state=None,
+            mcp_manager=None,
+            a2a_manager=None,
+            subagent_manager=None,
+            messages=None,
+            image_stash=None,
+            scratch_dir=None,
+            command_policy=None,
+            is_subagent=False,
+            report=None,
+        )
+        _msg, _stop, activity = _call_command_with_tools(
+            command_str="echo test",
+            messages=[{"role": "user", "content": "hi"}],
+            handle_tool_call_kwargs=tc_kwargs,
+            outer_turn=0,
+            outer_turn_offset=0,
+            report=None,
+            snapshot_state=None,
+            verbose=False,
+            _emit=lambda *a, **kw: None,
+        )
+        return activity
+
+    def test_shell_allowed_true_permits_shell_command(self, tmp_path, monkeypatch):
+        """With shell_allowed=True, run_shell_command via <swival:call> succeeds."""
+        activity = self._run_shell_call(tmp_path, monkeypatch, shell_allowed=True)
+        assert activity[0]["succeeded"]
+
+    def test_shell_allowed_false_blocks_shell_command(self, tmp_path, monkeypatch):
+        """With shell_allowed=False, run_shell_command via <swival:call> is blocked."""
+        activity = self._run_shell_call(tmp_path, monkeypatch, shell_allowed=False)
+        assert not activity[0]["succeeded"]
+
+
 class TestCommandProviderToolCatalog:
     def test_catalog_injected_when_schemas_present(self, tmp_path):
         schemas = [

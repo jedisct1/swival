@@ -2085,6 +2085,7 @@ def handle_tool_call(
     extra_write_roots=None,
     files_mode="some",
     commands_unrestricted=False,
+    shell_allowed=False,
     file_tracker=None,
     todo_state=None,
     snapshot_state=None,
@@ -2150,6 +2151,7 @@ def handle_tool_call(
             else [],
             files_mode=files_mode,
             commands_unrestricted=commands_unrestricted,
+            shell_allowed=shell_allowed,
             file_tracker=file_tracker,
             tool_call_id=tool_call.id,
             mcp_manager=mcp_manager,
@@ -4584,6 +4586,7 @@ def build_tools(
     resolved_commands: dict[str, str],
     skills_catalog: dict,
     commands_unrestricted: bool,
+    shell_allowed: bool = False,
     subagents: bool = False,
 ) -> list:
     """Construct the tools list from base + conditionals."""
@@ -4610,13 +4613,21 @@ def build_tools(
         tools.append(skill_tool)
     if commands_unrestricted:
         tool = copy.deepcopy(RUN_COMMAND_TOOL)
-        tool["function"]["description"] = (
-            "Run a command as an array of strings and return its output. "
-            "Use this for direct executable calls without shell syntax. "
-            "For pipes, redirects, or &&, use run_shell_command."
-        )
+        if shell_allowed:
+            tool["function"]["description"] = (
+                "Run a command as an array of strings and return its output. "
+                "Use this for direct executable calls without shell syntax. "
+                "For pipes, redirects, or &&, use run_shell_command."
+            )
+        else:
+            tool["function"]["description"] = (
+                "Run a command as an array of strings and return its output. "
+                "Each argument must be a separate element in the array. "
+                "Shell syntax (pipes, redirects, &&) is not supported."
+            )
         tools.append(tool)
-        tools.append(copy.deepcopy(RUN_SHELL_COMMAND_TOOL))
+        if shell_allowed:
+            tools.append(copy.deepcopy(RUN_SHELL_COMMAND_TOOL))
     elif resolved_commands:
         tool = copy.deepcopy(RUN_COMMAND_TOOL)
         tool["function"]["description"] = (
@@ -5032,6 +5043,8 @@ def _run_main(args, report, _write_report, parser):
             commands_unrestricted = True
             command_policy = CommandPolicy("full")
 
+    shell_allowed = command_policy.shell_allowed
+
     # Discover skills
     from .skills import discover_skills
 
@@ -5058,6 +5071,7 @@ def _run_main(args, report, _write_report, parser):
         resolved_commands,
         skills_catalog,
         commands_unrestricted=commands_unrestricted,
+        shell_allowed=shell_allowed,
         subagents=_subagents,
     )
 
@@ -5236,6 +5250,7 @@ def _run_main(args, report, _write_report, parser):
         extra_write_roots=allowed_dirs,
         files_mode=files_mode,
         commands_unrestricted=commands_unrestricted,
+        shell_allowed=shell_allowed,
         verbose=args.verbose,
         llm_kwargs=llm_kwargs,
         file_tracker=file_tracker,
@@ -5508,6 +5523,7 @@ def run_agent_loop(
     extra_write_roots: list,
     files_mode: str = "some",
     commands_unrestricted: bool = False,
+    shell_allowed: bool = False,
     verbose: bool,
     llm_kwargs: dict,
     file_tracker: FileAccessTracker | None = None,
@@ -5615,6 +5631,7 @@ def run_agent_loop(
             extra_write_roots=extra_write_roots,
             files_mode=files_mode,
             commands_unrestricted=commands_unrestricted,
+            shell_allowed=shell_allowed,
             file_tracker=file_tracker,
             todo_state=todo_state,
             snapshot_state=snapshot_state,
@@ -6220,6 +6237,7 @@ def run_agent_loop(
                 extra_write_roots=extra_write_roots,
                 files_mode=files_mode,
                 commands_unrestricted=commands_unrestricted,
+                shell_allowed=shell_allowed,
                 file_tracker=file_tracker,
                 todo_state=todo_state,
                 snapshot_state=snapshot_state,
@@ -6618,7 +6636,6 @@ def _repl_status(
     context_length: int | None,
     turn_state: dict,
     files_mode: str,
-    commands_unrestricted: bool,
     verbose: bool,
     base_dir: str,
     thinking_state,
@@ -6626,6 +6643,7 @@ def _repl_status(
     snapshot_state,
     file_tracker,
     compaction_state,
+    command_policy,
     current_profile: str | None = None,
 ) -> None:
     """Print a compact session overview."""
@@ -6660,7 +6678,7 @@ def _repl_status(
     tool_count = len(tools)
     lines.append(f"files: {file_info or 'none'}  |  tools: {tool_count} available")
 
-    cmd_mode = "all" if commands_unrestricted else "restricted"
+    cmd_mode = command_policy.mode
     lines.append(
         f"mode: files={files_mode}  commands={cmd_mode}"
         f"  verbose={'on' if verbose else 'off'}"
@@ -7150,6 +7168,7 @@ def repl_loop(
     extra_write_roots: list,
     files_mode: str = "some",
     commands_unrestricted: bool = False,
+    shell_allowed: bool = False,
     verbose: bool,
     llm_kwargs: dict,
     file_tracker: FileAccessTracker | None = None,
@@ -7227,6 +7246,7 @@ def repl_loop(
         extra_write_roots=extra_write_roots,
         files_mode=files_mode,
         commands_unrestricted=commands_unrestricted,
+        shell_allowed=shell_allowed,
         verbose=verbose,
         llm_kwargs=llm_kwargs,
         file_tracker=file_tracker,
@@ -7380,7 +7400,6 @@ def repl_loop(
                 context_length=context_length,
                 turn_state=turn_state,
                 files_mode=files_mode,
-                commands_unrestricted=commands_unrestricted,
                 verbose=verbose,
                 base_dir=base_dir,
                 thinking_state=thinking_state,
@@ -7388,6 +7407,7 @@ def repl_loop(
                 snapshot_state=snapshot_state,
                 file_tracker=file_tracker,
                 compaction_state=compaction_state,
+                command_policy=command_policy,
                 current_profile=_current_profile,
             )
             continue

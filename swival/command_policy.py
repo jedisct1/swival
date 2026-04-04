@@ -149,6 +149,10 @@ class CommandPolicy:
         self.denied_buckets: set[str] = set()
         self.always_ask_buckets: set[str] = set()
 
+    @property
+    def shell_allowed(self) -> bool:
+        return self.mode == "full"
+
     def check(self, argv: list[str], is_subagent: bool = False) -> str | None:
         if self.mode == "full":
             return None

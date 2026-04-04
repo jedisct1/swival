@@ -417,6 +417,40 @@ class TestSessionApprovedBuckets:
         assert s._command_policy.check(["git", "status"]) is None
 
 
+class TestSessionShellAllowed:
+    def test_ask_mode_shell_not_allowed(self, tmp_path, monkeypatch):
+        """ask mode sets _shell_allowed=False and excludes run_shell_command."""
+        monkeypatch.setattr(agent, "call_llm", _simple_llm)
+        monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+
+        s = Session(base_dir=str(tmp_path), commands="ask", history=False)
+        s._setup()
+        assert s._shell_allowed is False
+        tool_names = [t["function"]["name"] for t in s._tools]
+        assert "run_command" in tool_names
+        assert "run_shell_command" not in tool_names
+
+    def test_all_mode_shell_allowed(self, tmp_path, monkeypatch):
+        """commands='all' sets _shell_allowed=True and includes run_shell_command."""
+        monkeypatch.setattr(agent, "call_llm", _simple_llm)
+        monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+
+        s = Session(base_dir=str(tmp_path), commands="all", history=False)
+        s._setup()
+        assert s._shell_allowed is True
+        tool_names = [t["function"]["name"] for t in s._tools]
+        assert "run_shell_command" in tool_names
+
+    def test_none_mode_shell_not_allowed(self, tmp_path, monkeypatch):
+        """commands='none' sets _shell_allowed=False."""
+        monkeypatch.setattr(agent, "call_llm", _simple_llm)
+        monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+
+        s = Session(base_dir=str(tmp_path), commands="none", history=False)
+        s._setup()
+        assert s._shell_allowed is False
+
+
 class TestConvenienceRun:
     def test_run_returns_string(self, tmp_path, monkeypatch):
         monkeypatch.setattr(agent, "call_llm", _simple_llm)

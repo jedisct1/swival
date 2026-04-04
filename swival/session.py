@@ -301,6 +301,8 @@ class Session:
                 f"got {cmds!r}"
             )
 
+        self._shell_allowed = self._command_policy.shell_allowed
+
         # Discover skills
         self._skills_catalog = {}
         if not self.no_skills:
@@ -319,6 +321,7 @@ class Session:
             self._resolved_commands,
             self._skills_catalog,
             commands_unrestricted=self._commands_unrestricted,
+            shell_allowed=self._shell_allowed,
             subagents=self.subagents,
         )
 
@@ -499,6 +502,7 @@ class Session:
             extra_write_roots=self._allowed_dir_paths,
             files_mode=self.files,
             commands_unrestricted=self._commands_unrestricted,
+            shell_allowed=self._shell_allowed,
             verbose=self.verbose,
             llm_kwargs=self._llm_kwargs,
             file_tracker=state["file_tracker"],

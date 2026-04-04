@@ -2434,9 +2434,12 @@ def _normalize_command_call(
     *,
     prefer_shell: bool,
     unrestricted: bool,
+    shell_allowed: bool = True,
+    tool_name: str | None = None,
 ) -> tuple[NormalizedCommandCall | None, str | None]:
     """Canonicalize a command call into (normalized, None) or (None, error)."""
-    tool_name = "run_shell_command" if prefer_shell else "run_command"
+    if tool_name is None:
+        tool_name = "run_shell_command" if prefer_shell else "run_command"
 
     # Rule 1: list → argv
     if isinstance(command, list):
@@ -2472,7 +2475,7 @@ def _normalize_command_call(
         return NormalizedCommandCall(mode="shell", command=command), None
 
     # Rule 4: plain string + prefer_shell=False
-    if unrestricted:
+    if unrestricted and shell_allowed:
         # All strings escalate to shell in unrestricted mode, matching the
         # old _run_command behavior.  This handles shell builtins (exit, cd,
         # type) and commands that only work under a shell even when the
@@ -2580,6 +2583,36 @@ def _run_argv_command(
     return _capture_process(proc, timeout, base_dir, scratch_dir=scratch_dir)
 
 
+def _execute_normalized_command(
+    normalized: NormalizedCommandCall,
+    *,
+    base_dir: str,
+    resolved_commands: dict[str, str],
+    timeout: int = 30,
+    unrestricted: bool = False,
+    scratch_dir: str | None = None,
+) -> str:
+    """Execute a pre-normalized command call."""
+    if normalized.mode == "shell":
+        result = _run_shell_command(
+            normalized.command, base_dir, timeout, scratch_dir=scratch_dir
+        )
+    else:
+        result = _run_argv_command(
+            normalized.command,
+            base_dir,
+            resolved_commands,
+            timeout=timeout,
+            unrestricted=unrestricted,
+            scratch_dir=scratch_dir,
+        )
+
+    if normalized.repair_note:
+        result = f"{result}\n(auto-corrected: {normalized.repair_note})"
+
+    return result
+
+
 def _execute_command_call(
     command: list[str] | str,
     *,
@@ -2599,24 +2632,14 @@ def _execute_command_call(
     if error is not None:
         return error
 
-    if normalized.mode == "shell":
-        result = _run_shell_command(
-            normalized.command, base_dir, timeout, scratch_dir=scratch_dir
-        )
-    else:
-        result = _run_argv_command(
-            normalized.command,
-            base_dir,
-            resolved_commands,
-            timeout=timeout,
-            unrestricted=unrestricted,
-            scratch_dir=scratch_dir,
-        )
-
-    if normalized.repair_note:
-        result = f"{result}\n(auto-corrected: {normalized.repair_note})"
-
-    return result
+    return _execute_normalized_command(
+        normalized,
+        base_dir=base_dir,
+        resolved_commands=resolved_commands,
+        timeout=timeout,
+        unrestricted=unrestricted,
+        scratch_dir=scratch_dir,
+    )
 
 
 def _check_command_policy(
@@ -2895,17 +2918,33 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
         return activate_skill(args["name"], catalog, read_roots)
     elif name in ("run_command", "run_shell_command"):
         prefer_shell = name == "run_shell_command"
+        shell_ok = kwargs.get("shell_allowed", False)
         unrestricted = kwargs.get("commands_unrestricted", False)
-        if prefer_shell and not unrestricted:
+
+        if prefer_shell and not shell_ok:
             return (
                 "error: run_shell_command is not available in this session. "
                 "Use run_command with an array of strings, "
-                "or enable --commands all/ask."
+                "or enable --commands all."
             )
+
+        normalized, err = _normalize_command_call(
+            args["command"],
+            prefer_shell=prefer_shell,
+            unrestricted=unrestricted,
+            shell_allowed=shell_ok,
+            tool_name=name,
+        )
+        if err is not None:
+            return err
+
         command_policy = kwargs.get("command_policy")
         if command_policy is not None:
+            policy_input = (
+                normalized.command if normalized.mode == "argv" else args["command"]
+            )
             rejection = _check_command_policy(
-                args["command"],
+                policy_input,
                 command_policy,
                 base_dir,
                 is_subagent=kwargs.get("is_subagent", False),
@@ -2913,10 +2952,10 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
             )
             if rejection is not None:
                 return rejection
+
         resolved = kwargs.get("resolved_commands", {})
-        return _execute_command_call(
-            command=args["command"],
-            prefer_shell=prefer_shell,
+        return _execute_normalized_command(
+            normalized,
             base_dir=base_dir,
             resolved_commands=resolved,
             timeout=args.get("timeout", 30),
@@ -2964,16 +3003,14 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
             return manager.cancel(sid)
         return f"error: unknown action {action!r}"
     else:
-        unrestricted = kwargs.get("commands_unrestricted", False)
+        shell_ok = kwargs.get("shell_allowed", False)
         suggestion = _TOOL_ALIASES.get(name)
         if suggestion:
-            # Downgrade run_shell_command suggestion when the tool is
-            # unavailable in restricted mode.
-            if suggestion == "run_shell_command" and not unrestricted:
+            if suggestion == "run_shell_command" and not shell_ok:
                 suggestion = "run_command"
             raise KeyError(f"Unknown tool: {name!r}. Did you mean '{suggestion}'?")
         available = _TOOL_NAMES
-        if unrestricted:
+        if shell_ok:
             available = [*_TOOL_NAMES, "run_shell_command"]
         raise KeyError(
             f"Unknown tool: {name!r}. Available tools: {', '.join(available)}"

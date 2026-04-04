@@ -314,14 +314,10 @@ class TestCommandPolicyAsk:
 class TestShellInjection:
     """Verify that shell metacharacters in string commands get the <shell> bucket."""
 
-    def test_shell_string_dispatches_to_shell_bucket(self, monkeypatch):
-        """dispatch() must route 'echo ok && rm -rf /' through <shell>, not 'echo'."""
+    def test_shell_string_dispatches_normalization_error(self, monkeypatch):
+        """dispatch() rejects shell strings via normalization before policy."""
         from swival.tools import dispatch
 
-        # Mock prompt_approval to auto-deny, so we see the policy decision
-        monkeypatch.setattr(
-            "swival.command_policy.prompt_approval", lambda *a, **kw: "deny"
-        )
         p = CommandPolicy("ask", approved_buckets={"echo"})
         result = dispatch(
             "run_command",
@@ -329,18 +325,15 @@ class TestShellInjection:
             "/tmp",
             command_policy=p,
             commands_unrestricted=True,
+            shell_allowed=False,
             resolved_commands={},
         )
-        # Should be denied because <shell> is not in approved_buckets
         assert "error:" in result
-        assert "denied" in result or "<shell>" in result
+        assert "JSON array" in result
 
-    def test_pipe_dispatches_to_shell_bucket(self, monkeypatch):
+    def test_pipe_dispatches_normalization_error(self, monkeypatch):
         from swival.tools import dispatch
 
-        monkeypatch.setattr(
-            "swival.command_policy.prompt_approval", lambda *a, **kw: "deny"
-        )
         p = CommandPolicy("ask", approved_buckets={"cat"})
         result = dispatch(
             "run_command",
@@ -348,9 +341,11 @@ class TestShellInjection:
             "/tmp",
             command_policy=p,
             commands_unrestricted=True,
+            shell_allowed=False,
             resolved_commands={},
         )
         assert "error:" in result
+        assert "JSON array" in result
 
     def test_approving_echo_does_not_approve_shell(self):
         """Approving 'echo' must not also approve 'echo ok && rm -rf /'."""

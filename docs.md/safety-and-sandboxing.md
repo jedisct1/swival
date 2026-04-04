@@ -95,13 +95,13 @@ At startup, each basename is resolved to an absolute path using `which`. If a co
 
 At runtime in whitelist mode, only `run_command` is available and commands must be passed as argument arrays. This removes shell interpolation and injection risk from ordinary command calls. `run_shell_command` is not exposed in whitelist mode since shell strings bypass the whitelist entirely.
 
-In unrestricted modes (`--commands all`, `--commands ask`, `--yolo`), both `run_command` and `run_shell_command` are available. Shell strings go through `run_shell_command` and map to the same `<shell>` approval bucket used by ask mode.
+With `--commands all` or `--yolo`, both `run_command` and `run_shell_command` are available. In ask mode, only `run_command` is exposed — shell access requires `--commands all`.
 
 ### Ask Mode
 
-In ask mode (`--commands ask`), Swival prompts you before running each new command category. Commands are grouped into buckets by their base name (e.g. `ls`, `git push`, `python3 -m pytest`). Shell strings sent through `run_shell_command` are classified under a `<shell>` bucket. Once you approve a bucket, subsequent commands in the same bucket run without asking again.
+In ask mode (`--commands ask`), Swival prompts you before running each new command category. Commands are grouped into buckets by their base name (e.g. `ls`, `git push`, `python3 -m pytest`). Only `run_command` is available — commands must be passed as argument arrays, which prevents shell injection. Once you approve a bucket, subsequent commands in the same bucket run without asking again.
 
-High-risk buckets (`rm`, `git push`, `docker`, `curl`, `<shell>`, interpreter inline-code like `bash -c` or `python3 -c`) default to deny — you must explicitly type `y` to allow them. Non-high-risk buckets default to allow on Enter.
+High-risk buckets (`rm`, `git push`, `docker`, `curl`, interpreter inline-code like `bash -c` or `python3 -c`) default to deny — you must explicitly type `y` to allow them. Non-high-risk buckets default to allow on Enter.
 
 Approval options:
 

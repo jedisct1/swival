@@ -479,14 +479,26 @@ class TestErrorHandling:
     def test_dispatch_hallucinated_shell_suggests_run_shell_command_unrestricted(
         self, tmp_path
     ):
-        """In unrestricted mode, shell-ish aliases suggest run_shell_command."""
+        """With shell_allowed, shell-ish aliases suggest run_shell_command."""
         with pytest.raises(KeyError, match="Did you mean 'run_shell_command'"):
-            dispatch("bash", {}, str(tmp_path), commands_unrestricted=True)
+            dispatch(
+                "bash",
+                {},
+                str(tmp_path),
+                commands_unrestricted=True,
+                shell_allowed=True,
+            )
 
     def test_dispatch_unknown_tool_lists_run_shell_command_unrestricted(self, tmp_path):
-        """In unrestricted mode, available-tools list includes run_shell_command."""
+        """With shell_allowed, available-tools list includes run_shell_command."""
         with pytest.raises(KeyError, match="run_shell_command") as exc_info:
-            dispatch("no_such_tool_xyz", {}, str(tmp_path), commands_unrestricted=True)
+            dispatch(
+                "no_such_tool_xyz",
+                {},
+                str(tmp_path),
+                commands_unrestricted=True,
+                shell_allowed=True,
+            )
         assert "Available tools:" in str(exc_info.value)
 
     def test_dispatch_unknown_tool_omits_run_shell_command_restricted(self, tmp_path):
@@ -495,17 +507,80 @@ class TestErrorHandling:
             dispatch("no_such_tool_xyz", {}, str(tmp_path))
         assert "run_shell_command" not in str(exc_info.value)
 
-    def test_dispatch_run_shell_command_blocked_without_unrestricted(self, tmp_path):
-        """run_shell_command is a real tool now but needs commands_unrestricted."""
+    def test_dispatch_run_shell_command_blocked_without_shell_allowed(self, tmp_path):
+        """run_shell_command blocked when shell_allowed=False."""
         result = dispatch(
             "run_shell_command",
             {"command": "echo hello"},
             str(tmp_path),
-            commands_unrestricted=False,
+            commands_unrestricted=True,
+            shell_allowed=False,
             resolved_commands={},
         )
         assert result.startswith("error:")
         assert "not available" in result
+
+    def test_dispatch_shell_blocked_in_ask_mode(self, tmp_path):
+        """run_shell_command blocked with unrestricted=True but shell_allowed=False."""
+        result = dispatch(
+            "run_shell_command",
+            {"command": "ls -la | grep foo"},
+            str(tmp_path),
+            commands_unrestricted=True,
+            shell_allowed=False,
+            resolved_commands={},
+        )
+        assert result.startswith("error:")
+        assert "not available" in result
+
+    def test_dispatch_run_command_no_shell_escalation_ask_mode(self, tmp_path):
+        """Shell-char string to run_command with shell_allowed=False gets normalization error."""
+        result = dispatch(
+            "run_command",
+            {"command": "echo hello && echo world"},
+            str(tmp_path),
+            commands_unrestricted=True,
+            shell_allowed=False,
+            resolved_commands={},
+        )
+        assert result.startswith("error:")
+        assert "JSON array" in result
+
+    def test_dispatch_run_command_plain_string_split_ask_mode(self, tmp_path):
+        """Plain string to run_command with shell_allowed=False splits to argv."""
+        result = dispatch(
+            "run_command",
+            {"command": "echo hello"},
+            str(tmp_path),
+            commands_unrestricted=True,
+            shell_allowed=False,
+            resolved_commands={},
+        )
+        assert "hello" in result
+        assert not result.startswith("error:")
+
+    def test_dispatch_unknown_tool_omits_shell_in_ask_mode(self, tmp_path):
+        """With unrestricted=True but shell_allowed=False, shell not in available list."""
+        with pytest.raises(KeyError) as exc_info:
+            dispatch(
+                "no_such_tool_xyz",
+                {},
+                str(tmp_path),
+                commands_unrestricted=True,
+                shell_allowed=False,
+            )
+        assert "run_shell_command" not in str(exc_info.value)
+
+    def test_dispatch_alias_downgrades_to_run_command_ask_mode(self, tmp_path):
+        """Shell alias with shell_allowed=False suggests run_command."""
+        with pytest.raises(KeyError, match="Did you mean 'run_command'"):
+            dispatch(
+                "bash",
+                {},
+                str(tmp_path),
+                commands_unrestricted=True,
+                shell_allowed=False,
+            )
 
     def test_dispatch_hallucinated_search_suggests_grep(self, tmp_path):
         """Hallucinated 'search' suggests 'grep'."""
@@ -539,6 +614,47 @@ class TestErrorHandling:
 
 
 # =========================================================================
+# Build tools tests
+# =========================================================================
+
+
+class TestBuildTools:
+    """Tests for build_tools() shell_allowed gating."""
+
+    def test_ask_mode_no_shell(self):
+        from swival.agent import build_tools
+
+        tools = build_tools({}, {}, commands_unrestricted=True, shell_allowed=False)
+        names = [t["function"]["name"] for t in tools]
+        assert "run_command" in names
+        assert "run_shell_command" not in names
+
+    def test_all_mode_has_shell(self):
+        from swival.agent import build_tools
+
+        tools = build_tools({}, {}, commands_unrestricted=True, shell_allowed=True)
+        names = [t["function"]["name"] for t in tools]
+        assert "run_command" in names
+        assert "run_shell_command" in names
+
+    def test_ask_mode_run_command_description_no_shell_hint(self):
+        from swival.agent import build_tools
+
+        tools = build_tools({}, {}, commands_unrestricted=True, shell_allowed=False)
+        rc = [t for t in tools if t["function"]["name"] == "run_command"][0]
+        desc = rc["function"]["description"]
+        assert "run_shell_command" not in desc
+        assert "not supported" in desc
+
+    def test_all_mode_run_command_description_mentions_shell(self):
+        from swival.agent import build_tools
+
+        tools = build_tools({}, {}, commands_unrestricted=True, shell_allowed=True)
+        rc = [t for t in tools if t["function"]["name"] == "run_command"][0]
+        desc = rc["function"]["description"]
+        assert "run_shell_command" in desc
+
+
 # Sandbox tests
 # =========================================================================
 

@@ -1,6 +1,6 @@
 # Tools
 
-Swival gives the model a fixed set of tools at runtime. Most tools are always available. Command execution tools are included by default (commands default to `"all"`): `run_command` takes an argv array and is available in all command modes, while `run_shell_command` takes a shell string and is only available in unrestricted modes (`--commands all`, `--commands ask`, `--yolo`). Pass `--commands none` to remove both, or `--commands ask` for interactive approval. `use_skill` appears only when skills are discovered, MCP tools appear when external MCP servers are configured, and A2A tools appear when remote A2A agents are configured.
+Swival gives the model a fixed set of tools at runtime. Most tools are always available. Command execution tools are included by default (commands default to `"all"`): `run_command` takes an argv array and is available in all command modes, while `run_shell_command` takes a shell string and is only available with `--commands all` or `--yolo`. Pass `--commands none` to remove both, or `--commands ask` for interactive approval (argv-only, no shell). `use_skill` appears only when skills are discovered, MCP tools appear when external MCP servers are configured, and A2A tools appear when remote A2A agents are configured.
 
 ## `read_file`
 
@@ -111,9 +111,7 @@ Timeout defaults to 30 seconds and is clamped to a maximum of 120 seconds. Inlin
 
 `run_shell_command` executes a shell command string and returns its output. It supports pipes, redirects, `&&` chains, and other shell syntax. Commands run through `/bin/sh -c` on Unix or `cmd.exe /c` on Windows.
 
-`run_shell_command` is only available in unrestricted modes (`--commands all`, `--commands ask`, `--yolo`). It does not appear in whitelist mode, since shell strings bypass the whitelist entirely.
-
-In ask mode, shell strings with metacharacters (`&&`, `|`, `;`, etc.) are classified under a `<shell>` bucket that is always high-risk.
+`run_shell_command` is only available with `--commands all` or `--yolo`. It does not appear in ask mode or whitelist mode, since shell strings bypass command-level policy controls.
 
 ## `use_skill`
 
