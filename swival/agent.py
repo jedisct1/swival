@@ -4449,8 +4449,8 @@ def resolve_provider(
     """
     provider_name = provider
     llm_provider = provider
+    os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
     if provider == "lmstudio":
-        os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
         api_base = base_url or "http://127.0.0.1:1234"
         if model:
             model_id = model
@@ -4506,7 +4506,6 @@ def resolve_provider(
                 "--api-key or OPENROUTER_API_KEY env var required for openrouter provider"
             )
     elif provider == "llamacpp":
-        os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
         api_base = _normalize_openai_base(base_url or "http://127.0.0.1:8080")
         if model:
             model_id = model
