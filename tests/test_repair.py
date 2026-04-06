@@ -21,6 +21,7 @@ SCHEMA_EDIT_FILE = {
         "old_string": {"type": "string"},
         "new_string": {"type": "string"},
         "replace_all": {"type": "boolean", "default": False},
+        "line_number": {"type": "integer"},
     },
     "required": ["file_path", "old_string", "new_string"],
 }
@@ -194,6 +195,36 @@ class TestCoerceTypes:
         }
         result, repairs = repair_tool_args(args, SCHEMA_EDIT_FILE)
         assert result["replace_all"] == 2
+
+    def test_string_line_number_coerced_to_int(self):
+        args = {
+            "file_path": "f.py",
+            "old_string": "a",
+            "new_string": "b",
+            "line_number": "42",
+        }
+        result, repairs = repair_tool_args(args, SCHEMA_EDIT_FILE)
+        assert result["line_number"] == 42
+        assert isinstance(result["line_number"], int)
+        assert any(
+            r["type"] == "coerce_type" and r["field"] == "line_number" for r in repairs
+        )
+
+    def test_non_numeric_line_number_left_alone(self):
+        args = {
+            "file_path": "f.py",
+            "old_string": "a",
+            "new_string": "b",
+            "line_number": "hello",
+        }
+        result, repairs = repair_tool_args(args, SCHEMA_EDIT_FILE)
+        assert result["line_number"] == "hello"
+        coerce_repairs = [
+            r
+            for r in repairs
+            if r["type"] == "coerce_type" and r["field"] == "line_number"
+        ]
+        assert coerce_repairs == []
 
 
 class TestShapesLeftAlone:

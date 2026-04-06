@@ -32,7 +32,7 @@ When `move_from` is used and no `content` is provided, Swival moves the source p
 
 Matching is done in three passes. Swival tries an exact string match first. If that fails, it retries with per-line trimmed matching so leading and trailing whitespace differences do not break the edit. If that still fails, it retries with Unicode normalization so smart quotes, em dashes, and ellipsis variants map to ASCII equivalents.
 
-If multiple matches are found and `replace_all` is false, the call fails to prevent accidental bulk edits.
+When multiple matches are found and `replace_all` is false, the call fails with an error that nudges the model toward `line_number`. The optional `line_number` parameter accepts a 1-based line number from `read_file` output. When provided, Swival filters candidate matches to only those whose span includes that line. This is the preferred way to disambiguate repeated matches — the model copies the line number it just read rather than expanding `old_string` with more context. If no match touches the requested line, the error lists the actual candidate lines so the model can retry with the right one. `replace_all` ignores `line_number`.
 
 ## `delete_file`
 

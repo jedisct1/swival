@@ -4,8 +4,6 @@ import os
 import subprocess
 import sys
 import textwrap
-from pathlib import Path
-from unittest import mock
 
 from swival.agent import _find_project_root
 
@@ -61,9 +59,9 @@ class TestFindProjectRoot:
 
 
 class TestBaseDirNormalization:
-    """Integration tests for --base-dir normalization in main()."""
+    """Argparse-level tests for --base-dir default."""
 
-    def test_explicit_base_dir_overrides_discovery(self, tmp_path):
+    def test_explicit_base_dir_is_not_unset(self, tmp_path):
         (tmp_path / ".git").mkdir()
         sub = tmp_path / "child"
         sub.mkdir()
@@ -77,59 +75,7 @@ class TestBaseDirNormalization:
         assert args.base_dir == str(sub)
         assert args.base_dir is not _UNSET
 
-    def test_unset_base_dir_triggers_discovery(self, tmp_path):
-        (tmp_path / ".git").mkdir()
-        sub = tmp_path / "a" / "b"
-        sub.mkdir(parents=True)
-
-        from swival.agent import build_parser
-        from swival.config import _UNSET
-
-        parser = build_parser()
-        args = parser.parse_args(["hello"])
-
-        assert args.base_dir is _UNSET
-
-        with mock.patch("swival.agent.Path") as mock_path_cls:
-            real_path = Path
-
-            def path_side_effect(*a, **kw):
-                return real_path(*a, **kw)
-
-            mock_path_cls.side_effect = path_side_effect
-            mock_path_cls.cwd = mock.Mock(return_value=sub)
-
-            if args.base_dir is _UNSET:
-                args.base_dir = str(_find_project_root(sub))
-            else:
-                args.base_dir = str(real_path(args.base_dir).resolve())
-
-        assert args.base_dir == str(tmp_path)
-
-    def test_explicit_base_dir_dot_stays_literal(self, tmp_path):
-        """Explicit --base-dir . resolves to cwd, not project root."""
-        (tmp_path / ".git").mkdir()
-        sub = tmp_path / "nested"
-        sub.mkdir()
-
-        from swival.agent import build_parser
-
-        parser = build_parser()
-        args = parser.parse_args(["--base-dir", ".", "hello"])
-
-        import os
-
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(sub)
-            args.base_dir = str(Path(args.base_dir).resolve())
-        finally:
-            os.chdir(old_cwd)
-
-        assert args.base_dir == str(sub)
-
-    def test_reviewer_mode_ignores_discovery(self, tmp_path):
-        """Reviewer mode uses positional arg as base_dir, not discovery."""
+    def test_reviewer_mode_uses_positional_arg(self, tmp_path):
         (tmp_path / ".git").mkdir()
         sub = tmp_path / "subdir"
         sub.mkdir()
@@ -142,31 +88,9 @@ class TestBaseDirNormalization:
         assert args.reviewer_mode is True
         assert args.question == str(sub)
 
-    def test_init_config_project_uses_discovered_root(self, tmp_path):
-        """--init-config --project from subdirectory writes to discovered root."""
-        (tmp_path / ".git").mkdir()
-        sub = tmp_path / "deep"
-        sub.mkdir()
-
-        from swival.agent import build_parser
-        from swival.config import _UNSET
-
-        parser = build_parser()
-        args = parser.parse_args(["--init-config", "--project"])
-
-        assert args.base_dir is _UNSET
-
-        args.base_dir = str(_find_project_root(sub))
-
-        base_dir = Path(args.base_dir)
-        assert base_dir == tmp_path
-
 
 def _run_main_capture_base_dir(tmp_path, *, cwd, extra_argv=None):
-    """Run main() in a subprocess, capturing the resolved args.base_dir.
-
-    Patches _run_main to print args.base_dir and exit, so no LLM call is made.
-    """
+    """Patches _run_main to print args.base_dir and exit (no LLM call)."""
     argv_parts = extra_argv or ["hello"]
     script = textwrap.dedent("""\
         import sys, os

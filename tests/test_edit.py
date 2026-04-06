@@ -2,7 +2,7 @@
 
 import pytest
 
-from swival.edit import replace
+from swival.edit import replace, _exact_match_spans
 
 
 # =========================================================================
@@ -71,9 +71,9 @@ class TestReplaceAll:
 class TestMultipleMatchesError:
     """Ambiguous matches raise ValueError when replace_all=False."""
 
-    def test_duplicate_raises(self):
+    def test_duplicate_raises_with_nudge(self):
         content = "aaa\nbbb\naaa\n"
-        with pytest.raises(ValueError, match="multiple matches"):
+        with pytest.raises(ValueError, match="add line_number"):
             replace(content, "aaa", "ccc")
 
     def test_adding_context_resolves_ambiguity(self):
@@ -195,3 +195,112 @@ class TestEdgeCases:
         content = "a\nb\nc\nd\ne\n"
         result = replace(content, "b\nc\nd", "B\nC\nD")
         assert result == "a\nB\nC\nD\ne\n"
+
+
+class TestLineNumberTargeting:
+    """Line-number targeting for disambiguating repeated matches."""
+
+    def test_exact_duplicate_select_second(self):
+        content = "aaa\nbbb\naaa\nccc\n"
+        result = replace(content, "aaa", "XXX", line_number=3)
+        assert result == "aaa\nbbb\nXXX\nccc\n"
+
+    def test_exact_duplicate_select_first(self):
+        content = "aaa\nbbb\naaa\nccc\n"
+        result = replace(content, "aaa", "XXX", line_number=1)
+        assert result == "XXX\nbbb\naaa\nccc\n"
+
+    def test_multiline_match_any_line_in_span(self):
+        content = "x\naaa\nbbb\nx\naaa\nbbb\nx\n"
+        result = replace(content, "aaa\nbbb", "AAA\nBBB", line_number=5)
+        assert result == "x\naaa\nbbb\nx\nAAA\nBBB\nx\n"
+
+    def test_multiline_match_last_line_of_span(self):
+        content = "x\naaa\nbbb\nx\naaa\nbbb\nx\n"
+        result = replace(content, "aaa\nbbb", "AAA\nBBB", line_number=6)
+        assert result == "x\naaa\nbbb\nx\nAAA\nBBB\nx\n"
+
+    def test_fuzzy_trimmed_with_line_number(self):
+        content = "  aaa\nbbb\n  aaa\nccc\n"
+        result = replace(content, "aaa", "XXX", line_number=3)
+        assert "XXX" in result
+        assert result.startswith("  aaa\n")
+
+    def test_unicode_normalized_with_line_number(self):
+        content = "print(\u201chello\u201d)\nother\nprint(\u201chello\u201d)\n"
+        result = replace(content, 'print("hello")', 'print("world")', line_number=3)
+        assert 'print("world")' in result
+        assert result.startswith("print(\u201chello\u201d)\n")
+
+    def test_no_match_at_line_reports_candidates(self):
+        content = "aaa\nbbb\naaa\nccc\n"
+        with pytest.raises(ValueError, match=r"no match at line 2.*lines 1, 3"):
+            replace(content, "aaa", "XXX", line_number=2)
+
+    def test_not_found_still_raises_not_found(self):
+        content = "aaa\nbbb\nccc\n"
+        with pytest.raises(ValueError, match="not found"):
+            replace(content, "zzz", "XXX", line_number=1)
+
+    def test_invalid_line_number_zero_ignored(self):
+        content = "aaa\nbbb\naaa\n"
+        with pytest.raises(ValueError, match="multiple matches"):
+            replace(content, "aaa", "XXX", line_number=0)
+
+    def test_invalid_line_number_negative_ignored(self):
+        content = "aaa\nbbb\naaa\n"
+        with pytest.raises(ValueError, match="multiple matches"):
+            replace(content, "aaa", "XXX", line_number=-5)
+
+    def test_invalid_line_number_string_ignored(self):
+        content = "aaa\nbbb\naaa\n"
+        with pytest.raises(ValueError, match="multiple matches"):
+            replace(content, "aaa", "XXX", line_number="hello")
+
+    def test_bool_line_number_ignored(self):
+        content = "aaa\nbbb\naaa\n"
+        with pytest.raises(ValueError, match="multiple matches"):
+            replace(content, "aaa", "XXX", line_number=True)
+
+    def test_replace_all_ignores_line_number(self):
+        content = "aaa\nbbb\naaa\n"
+        result = replace(content, "aaa", "XXX", replace_all=True, line_number=1)
+        assert result == "XXX\nbbb\nXXX\n"
+
+    def test_non_first_exact_occurrence_replaced(self):
+        content = "x = 1\ny = 2\nx = 1\ny = 3\n"
+        result = replace(content, "x = 1", "x = 99", line_number=3)
+        assert result == "x = 1\ny = 2\nx = 99\ny = 3\n"
+
+    def test_multiple_matches_on_same_line(self):
+        content = "aaa bbb aaa\nccc\n"
+        with pytest.raises(ValueError, match="multiple matches on line 1"):
+            replace(content, "aaa", "XXX", line_number=1)
+
+    def test_candidate_lines_capped(self):
+        content = "\n".join("aaa" for _ in range(10)) + "\n"
+        with pytest.raises(ValueError, match=r"\.\.\.$"):
+            replace(content, "aaa", "XXX", line_number=100)
+
+
+class TestExactMatchSpans:
+    """Tests for the _exact_match_spans helper."""
+
+    def test_finds_all_occurrences(self):
+        content = "aaa bbb aaa ccc aaa"
+        spans = _exact_match_spans(content, "aaa")
+        assert len(spans) == 3
+        assert all(content[s:e] == "aaa" for s, e in spans)
+
+    def test_returns_empty_for_no_match(self):
+        assert _exact_match_spans("hello world", "xyz") == []
+
+    def test_single_match(self):
+        spans = _exact_match_spans("hello world", "world")
+        assert len(spans) == 1
+        assert spans[0] == (6, 11)
+
+    def test_non_overlapping(self):
+        spans = _exact_match_spans("aaaa", "aa")
+        assert len(spans) == 2
+        assert spans == [(0, 2), (2, 4)]

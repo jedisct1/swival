@@ -3789,17 +3789,18 @@ def build_parser():
 
 
 def _find_project_root(start: Path) -> Path:
-    """Walk *start* and its parents looking for .git or swival.toml.
+    """Walk start and its parents looking for .git or swival.toml.
 
-    Returns the first directory that contains either, or *start* if none found.
+    Returns the first directory that contains either, or start if none found.
     """
-    current = start.resolve()
+    resolved = start.resolve()
+    current = resolved
     while True:
         if (current / ".git").exists() or (current / "swival.toml").exists():
             return current
         parent = current.parent
         if parent == current:
-            return start.resolve()
+            return resolved
         current = parent
 
 

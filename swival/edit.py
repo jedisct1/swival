@@ -30,6 +30,37 @@ def _normalize_unicode(s: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Span helpers
+# ---------------------------------------------------------------------------
+
+
+def _exact_match_spans(content: str, old_string: str) -> list[tuple[int, int]]:
+    """Return all non-overlapping (start, end) spans of exact matches."""
+    spans = []
+    start = 0
+    step = len(old_string) or 1
+    while True:
+        idx = content.find(old_string, start)
+        if idx == -1:
+            break
+        spans.append((idx, idx + len(old_string)))
+        start = idx + step
+    return spans
+
+
+def _line_at_offset(content: str, offset: int) -> int:
+    """Return the 1-based line number for a character offset."""
+    return content.count("\n", 0, offset) + 1
+
+
+def _span_lines(content: str, start: int, end: int) -> tuple[int, int]:
+    """Return (first_line, last_line) as 1-based line numbers for a span."""
+    first = _line_at_offset(content, start)
+    last = _line_at_offset(content, max(start, end - 1))
+    return first, last
+
+
+# ---------------------------------------------------------------------------
 # Line-level fuzzy matching helpers
 # ---------------------------------------------------------------------------
 
@@ -54,41 +85,80 @@ def _fuzzy_match_indices(content_lines, prepped_old, old_len, prep):
             yield i
 
 
-def _find_fuzzy(
-    content: str, old_string: str, normalize=None
-) -> tuple[int, int] | None:
-    """Find old_string in content using per-line .strip() comparison.
+def _fuzzy_match_spans(
+    content: str, old_string: str, normalize=None, limit: int | None = None
+) -> list[tuple[int, int]]:
+    """Return (start, end) character-offset spans for fuzzy matches.
 
-    When *normalize* is provided, each stripped line is also passed through
-    it before comparison (e.g. ``_normalize_unicode``).
-
-    Returns (start_index, end_index) into content, or None.
+    When *limit* is set, stop after collecting that many spans.
     """
     content_lines, prepped_old, old_len, prep = _prepare_fuzzy(
         content, old_string, normalize
     )
-
     if old_len == 0:
-        return None
-
+        return []
+    spans = []
     for i in _fuzzy_match_indices(content_lines, prepped_old, old_len, prep):
         start = sum(len(content_lines[k]) + 1 for k in range(i))
         end = start + sum(len(content_lines[i + k]) + 1 for k in range(old_len))
         if not old_string.endswith("\n") and end > 0 and end <= len(content) + 1:
             end -= 1
-        return (start, end)
+        spans.append((start, end))
+        if limit is not None and len(spans) >= limit:
+            break
+    return spans
 
-    return None
+
+def _replace_span(content: str, span: tuple[int, int], new_string: str) -> str:
+    """Replace a single span in content."""
+    return content[: span[0]] + new_string + content[span[1] :]
 
 
-def _count_fuzzy_matches(content: str, old_string: str, normalize=None) -> int:
-    """Count how many times old_string fuzzy-matches in content."""
-    content_lines, prepped_old, old_len, prep = _prepare_fuzzy(
-        content, old_string, normalize
-    )
-    return sum(
-        1 for _ in _fuzzy_match_indices(content_lines, prepped_old, old_len, prep)
-    )
+def _replace_all_fuzzy(
+    content: str, old_string: str, new_string: str, normalize=None
+) -> str:
+    """Replace all fuzzy matches, re-scanning after each replacement."""
+    result = content
+    while True:
+        spans = _fuzzy_match_spans(result, old_string, normalize=normalize)
+        if not spans:
+            break
+        result = _replace_span(result, spans[0], new_string)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Line-number filtering
+# ---------------------------------------------------------------------------
+
+_MAX_CANDIDATE_LINES = 5
+
+
+def _filter_by_line(
+    spans: list[tuple[int, int]],
+    content: str,
+    line_number: int,
+) -> tuple[list[tuple[int, int]], list[int]]:
+    """Filter spans to those intersecting *line_number*.
+
+    Returns (matching_spans, all_candidate_lines).
+    """
+    matching = []
+    candidate_lines: list[int] = []
+    for s, e in spans:
+        first, last = _span_lines(content, s, e)
+        candidate_lines.append(first)
+        if first <= line_number <= last:
+            matching.append((s, e))
+    return matching, candidate_lines
+
+
+def _format_candidate_lines(lines: list[int]) -> str:
+    """Format candidate line numbers for error messages."""
+    unique = sorted(set(lines))
+    if len(unique) <= _MAX_CANDIDATE_LINES:
+        return ", ".join(str(n) for n in unique)
+    return ", ".join(str(n) for n in unique[:_MAX_CANDIDATE_LINES]) + ", ..."
 
 
 # ---------------------------------------------------------------------------
@@ -101,22 +171,29 @@ def replace(
     old_string: str,
     new_string: str,
     replace_all: bool = False,
+    line_number: int | None = None,
 ) -> str:
     """Replace old_string with new_string in content.
 
     Matching strategies (tried in order):
-      1. Exact — str.find / str.count
+      1. Exact — str.find spans
       2. Line-trimmed — sliding window, comparing .strip() per line
       3. Unicode-normalized — strip + smart quotes/dashes/ellipsis → ASCII
+
+    Parameters
+    ----------
+    line_number:
+        Optional 1-based line number from read_file.  When old_string matches
+        multiple times, only replace the match whose span includes this line.
+        Ignored when replace_all is True or when the value is not a positive
+        integer.
 
     Raises ValueError:
       - "no changes" if old_string == new_string
       - "not found" if no match in any pass
-      - "multiple matches" if >1 match and replace_all is False
-
-    When a fuzzy pass matches, the matched text in the original content is
-    replaced (preserving the original's surrounding text), and new_string
-    is inserted verbatim.
+      - "multiple matches; add line_number ..." if >1 match and no line targeting
+      - "no match at line N; matches found at lines ..." if line targeting misses
+      - "multiple matches on line N; add more context ..." if line targeting is ambiguous
     """
     if old_string == new_string:
         raise ValueError("no changes")
@@ -124,35 +201,73 @@ def replace(
     if not old_string:
         raise ValueError("old_string must not be empty")
 
-    # --- Pass 1: exact ---
-    exact_count = content.count(old_string)
-    if exact_count == 1 or (exact_count > 0 and replace_all):
-        return (
-            content.replace(old_string, new_string)
-            if replace_all
-            else content.replace(old_string, new_string, 1)
+    if (
+        isinstance(line_number, bool)
+        or not isinstance(line_number, int)
+        or line_number <= 0
+    ):
+        line_number = None
+
+    if replace_all:
+        line_number = None
+
+    any_candidates_found = False
+    all_candidate_lines: list[int] = []
+
+    # When line_number is set we need all spans for filtering; otherwise
+    # 2 is enough to detect ambiguity (or 1 for replace_all).
+    fuzzy_limit: int | None = None if line_number else 2
+
+    passes: list[tuple[str, object]] = [
+        ("exact", None),
+        ("fuzzy", None),
+        ("unicode", _normalize_unicode),
+    ]
+
+    for pass_name, normalize in passes:
+        if pass_name == "exact":
+            spans = _exact_match_spans(content, old_string)
+        else:
+            spans = _fuzzy_match_spans(
+                content, old_string, normalize=normalize, limit=fuzzy_limit
+            )
+        if not spans:
+            continue
+
+        any_candidates_found = True
+
+        if replace_all:
+            if pass_name == "exact":
+                return content.replace(old_string, new_string)
+            return _replace_all_fuzzy(
+                content, old_string, new_string, normalize=normalize
+            )
+
+        if line_number is not None:
+            matching, cand_lines = _filter_by_line(spans, content, line_number)
+            all_candidate_lines.extend(cand_lines)
+            if len(matching) == 1:
+                return _replace_span(content, matching[0], new_string)
+            if len(matching) > 1:
+                raise ValueError(
+                    f"multiple matches on line {line_number}; "
+                    f"add more context to old_string"
+                )
+            continue
+
+        if len(spans) == 1:
+            return _replace_span(content, spans[0], new_string)
+
+        all_candidate_lines.extend(_span_lines(content, s, e)[0] for s, e in spans)
+        raise ValueError(
+            "multiple matches; add line_number from read_file to target one match, "
+            "or set replace_all=true"
         )
 
-    if exact_count > 1 and not replace_all:
-        raise ValueError("multiple matches")
-
-    # --- Fuzzy passes: line-trimmed, then Unicode-normalized ---
-    for normalize in (None, _normalize_unicode):
-        match = _find_fuzzy(content, old_string, normalize=normalize)
-        if match is not None:
-            if not replace_all:
-                count = _count_fuzzy_matches(content, old_string, normalize=normalize)
-                if count > 1:
-                    raise ValueError("multiple matches")
-            result = content[: match[0]] + new_string + content[match[1] :]
-            if replace_all:
-                while True:
-                    next_match = _find_fuzzy(result, old_string, normalize=normalize)
-                    if next_match is None:
-                        break
-                    result = (
-                        result[: next_match[0]] + new_string + result[next_match[1] :]
-                    )
-            return result
+    if line_number is not None and any_candidates_found:
+        raise ValueError(
+            f"no match at line {line_number}; "
+            f"matches found at lines {_format_candidate_lines(all_candidate_lines)}"
+        )
 
     raise ValueError("not found")

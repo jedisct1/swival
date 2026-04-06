@@ -723,6 +723,69 @@ class TestEditFileErrors:
         assert "outside" in result.lower() or "escape" in result.lower()
 
 
+class TestEditFileLineNumber:
+    """Line-number targeting through _edit_file and dispatch."""
+
+    def test_edit_file_with_line_number(self, tmp_path):
+        (tmp_path / "f.txt").write_text("aaa\nbbb\naaa\nccc\n", encoding="utf-8")
+        result = _edit_file("f.txt", "aaa", "XXX", str(tmp_path), line_number=3)
+        assert "Edited" in result
+        content = (tmp_path / "f.txt").read_text(encoding="utf-8")
+        assert content == "aaa\nbbb\nXXX\nccc\n"
+
+    def test_dispatch_forwards_line_number(self, tmp_path):
+        (tmp_path / "f.txt").write_text("aaa\nbbb\naaa\nccc\n", encoding="utf-8")
+        result = dispatch(
+            "edit_file",
+            {
+                "file_path": "f.txt",
+                "old_string": "aaa",
+                "new_string": "XXX",
+                "line_number": 1,
+            },
+            base_dir=str(tmp_path),
+        )
+        assert "Edited" in result
+        content = (tmp_path / "f.txt").read_text(encoding="utf-8")
+        assert content == "XXX\nbbb\naaa\nccc\n"
+
+    def test_invalid_line_number_zero_ignored(self, tmp_path):
+        (tmp_path / "f.txt").write_text("aaa\nbbb\naaa\n", encoding="utf-8")
+        result = _edit_file("f.txt", "aaa", "XXX", str(tmp_path), line_number=0)
+        assert result.startswith("error:")
+        assert "multiple matches" in result
+
+    def test_invalid_non_numeric_line_number_ignored(self, tmp_path):
+        (tmp_path / "f.txt").write_text("aaa\nbbb\naaa\n", encoding="utf-8")
+        result = dispatch(
+            "edit_file",
+            {
+                "file_path": "f.txt",
+                "old_string": "aaa",
+                "new_string": "XXX",
+                "line_number": "hello",
+            },
+            base_dir=str(tmp_path),
+        )
+        assert result.startswith("error:")
+        assert "multiple matches" in result
+
+    def test_ambiguous_duplicate_nudge_error(self, tmp_path):
+        (tmp_path / "f.txt").write_text("aaa\nbbb\naaa\n", encoding="utf-8")
+        result = _edit_file("f.txt", "aaa", "XXX", str(tmp_path))
+        assert result.startswith("error:")
+        assert "line_number" in result
+
+    def test_replace_all_ignores_line_number(self, tmp_path):
+        (tmp_path / "f.txt").write_text("aaa\nbbb\naaa\n", encoding="utf-8")
+        result = _edit_file(
+            "f.txt", "aaa", "XXX", str(tmp_path), replace_all=True, line_number=1
+        )
+        assert "Edited" in result
+        content = (tmp_path / "f.txt").read_text(encoding="utf-8")
+        assert content == "XXX\nbbb\nXXX\n"
+
+
 # =========================================================================
 # Other
 # =========================================================================

@@ -180,6 +180,13 @@ TOOLS = [
                         "description": "Replace all occurrences.",
                         "default": False,
                     },
+                    "line_number": {
+                        "type": "integer",
+                        "description": (
+                            "1-based line number from read_file. When old_string matches "
+                            "multiple times, only replace the match that touches this line."
+                        ),
+                    },
                 },
                 "required": ["file_path", "old_string", "new_string"],
             },
@@ -1751,6 +1758,7 @@ def _edit_file(
     new_string: str,
     base_dir: str,
     replace_all: bool = False,
+    line_number: int | None = None,
     extra_write_roots: list[Path] = (),
     files_mode: str = "some",
     tracker=None,
@@ -1786,7 +1794,13 @@ def _edit_file(
         return f"error: {exc}"
 
     try:
-        new_content = replace(content, old_string, new_string, replace_all=replace_all)
+        new_content = replace(
+            content,
+            old_string,
+            new_string,
+            replace_all=replace_all,
+            line_number=line_number,
+        )
     except ValueError as exc:
         return f"error: {exc}"
 
@@ -2815,6 +2829,7 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
             new_string=args["new_string"],
             base_dir=base_dir,
             replace_all=args.get("replace_all", False),
+            line_number=args.get("line_number"),
             extra_write_roots=extra_write_roots,
             files_mode=files_mode,
             tracker=file_tracker,

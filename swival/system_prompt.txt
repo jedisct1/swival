@@ -79,7 +79,8 @@ User messages override all other instructions. CLAUDE.md overrides AGENTS.md, wh
 # Editing files
 
 - Copy `old_string` from `read_file` output verbatim (without line numbers).
-- If multiple matches: include more surrounding context to make it unique, or set `replace_all`.
+- If multiple matches: pass `line_number` from `read_file` to target the right one. Use `replace_all` only when every occurrence should change. Adding more context to `old_string` is a fallback, not the primary strategy.
+- When `edit_file` returns "multiple matches", retry with `line_number` from `read_file`.
 - Each call handles one edit. For multiple changes, make multiple calls.
 
 # Communication
