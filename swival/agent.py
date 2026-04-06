@@ -3304,8 +3304,8 @@ def build_parser():
     access_group.add_argument(
         "--base-dir",
         type=str,
-        default=".",
-        help="Base directory for file tools (default: current directory).",
+        default=_UNSET,
+        help="Base directory for file tools (default: auto-detected project root, or current directory).",
     )
     provider_group.add_argument(
         "--base-url",
@@ -3788,6 +3788,21 @@ def build_parser():
     return parser
 
 
+def _find_project_root(start: Path) -> Path:
+    """Walk *start* and its parents looking for .git or swival.toml.
+
+    Returns the first directory that contains either, or *start* if none found.
+    """
+    current = start.resolve()
+    while True:
+        if (current / ".git").exists() or (current / "swival.toml").exists():
+            return current
+        parent = current.parent
+        if parent == current:
+            return start.resolve()
+        current = parent
+
+
 def _should_try_onboarding(args, base_dir: Path) -> bool:
     """Quick pre-check for first-run onboarding without importing onboarding.py."""
     from .config import global_config_dir
@@ -3824,7 +3839,7 @@ def _handle_init_config(args):
 
     project = getattr(args, "project", False)
     if project:
-        base_dir = Path(getattr(args, "base_dir", ".")).resolve()
+        base_dir = Path(args.base_dir)
         dest = base_dir / "swival.toml"
     else:
         dest = global_config_dir() / "config.toml"
@@ -3943,6 +3958,11 @@ def main():
             version = "unknown"
         print(version)
         sys.exit(0)
+
+    if args.base_dir is _UNSET:
+        args.base_dir = str(_find_project_root(Path.cwd()))
+    else:
+        args.base_dir = str(Path(args.base_dir).resolve())
 
     # Handle --init-config before anything else
     if getattr(args, "init_config", False):
