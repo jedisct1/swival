@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from swival.agent import _repl_profile, _repl_status
+from swival.command_policy import CommandPolicy
 from swival.config import _PROFILE_METADATA_KEYS, PROFILE_KEYS, _validate_profiles
 from swival.report import ConfigError
 
@@ -520,7 +521,7 @@ class TestProfileStatus:
             context_length=128000,
             turn_state={"max_turns": 10, "turns_used": 0},
             files_mode="some",
-            commands_unrestricted=False,
+            command_policy=CommandPolicy("allowlist"),
             verbose=False,
             base_dir="/tmp",
             thinking_state=None,
@@ -542,7 +543,7 @@ class TestProfileStatus:
             context_length=128000,
             turn_state={"max_turns": 10, "turns_used": 0},
             files_mode="some",
-            commands_unrestricted=False,
+            command_policy=CommandPolicy("allowlist"),
             verbose=False,
             base_dir="/tmp",
             thinking_state=None,

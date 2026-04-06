@@ -37,6 +37,7 @@ from swival.agent import (
     _repl_status,
     CompactionState,
 )
+from swival.command_policy import CommandPolicy
 from swival.snapshot import SnapshotState
 from swival.thinking import ThinkingState
 from swival.todo import TodoState
@@ -2439,7 +2440,7 @@ class TestStatusCommand:
             context_length=131072,
             turn_state={"max_turns": 20, "turns_used": 0},
             files_mode="some",
-            commands_unrestricted=False,
+            command_policy=CommandPolicy("allowlist"),
             verbose=False,
             base_dir=str(tmp_path),
             thinking_state=ThinkingState(verbose=False),
