@@ -2,6 +2,16 @@
 
 All notable user-facing changes to Swival.
 
+## 0.10.11
+
+- Shell-command execution is now only exposed in unrestricted command modes:
+  `run_shell_command` is hidden outside `--commands all` / `--yolo`, while
+  `run_command` remains available for argv-style execution in `--commands ask`
+  and allowlist modes.
+- Profiles that omit `max_output_tokens` no longer crash or override provider
+  defaults. Swival now preserves an unset output cap instead of substituting a
+  large context-derived value.
+
 ## 0.10.10
 
 - Swival now automatically falls back to plain chat when a provider or model
