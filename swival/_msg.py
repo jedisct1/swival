@@ -44,6 +44,11 @@ def _set_msg_content(msg, value: str) -> None:
         msg.content = value
 
 
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate without importing tiktoken."""
+    return len(text) // 4
+
+
 def _has_image_content(messages: list) -> bool:
     """Check if any message contains image_url parts."""
     for m in messages:

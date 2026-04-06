@@ -71,9 +71,7 @@ class ThinkingState:
             mode = "new"
 
         # Downgrade impossible modes when there's no history to reference
-        if mode == "revision" and not self.history:
-            mode = "new"
-        if mode == "branch" and not self.history:
+        if mode in ("revision", "branch") and not self.history:
             mode = "new"
 
         # Apply mode constraints — strip incompatible fields silently

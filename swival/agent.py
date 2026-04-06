@@ -71,6 +71,7 @@ from .tools import (
     cleanup_old_cmd_outputs,
     get_tool_schema,
 )
+from .prune import prune_transcript_for_llm
 from .repair import format_repair_feedback, repair_tool_args
 
 DEFAULT_SYSTEM_PROMPT_FILE = Path(__file__).parent / "system_prompt.txt"
@@ -108,6 +109,9 @@ SYNTHETIC_USER_PREFIXES: tuple[str, ...] = (
     "[REVIEWER FEEDBACK",
     _IMAGE_SYNTHETIC_PREFIX,
     _COMMAND_TOOL_CONTEXT_PREFIX,
+    "[think state]",
+    "[todo state]",
+    "[snapshot state]",
 )
 
 _SUMMARIZE_SYSTEM_PROMPT = (
@@ -5816,6 +5820,21 @@ def run_agent_loop(
                 else:
                     sys_msg["content"] = base
 
+        prune_metrics = prune_transcript_for_llm(
+            messages,
+            thinking_state=thinking_state,
+            todo_state=todo_state,
+            snapshot_state=snapshot_state,
+            estimate_tokens_fn=estimate_tokens,
+        )
+        if prune_metrics.messages_mutated:
+            if snapshot_state is not None:
+                snapshot_state.invalidate_index_checkpoint()
+        if prune_metrics.net_savings > 0 and verbose:
+            _ps = prune_metrics.summary()
+            if _ps:
+                fmt.info(_ps)
+
         token_est = estimate_tokens(messages, effective_tools)
         if verbose:
             fmt.turn_header(turns, max_turns, token_est)
@@ -6190,6 +6209,7 @@ def run_agent_loop(
                         if effective_tools is not None
                         else "Your response was empty. Please answer the question directly."
                     ),
+                    "_swival_synthetic": True,
                 }
             )
             continue
@@ -6228,6 +6248,7 @@ def run_agent_loop(
                     {
                         "role": "user",
                         "content": "Your response was cut off. Please use the provided tools to complete the task step by step.",
+                        "_swival_synthetic": True,
                     }
                 )
                 continue
@@ -6403,7 +6424,13 @@ def run_agent_loop(
             image_stash.clear()
 
         if interventions:
-            messages.append({"role": "user", "content": "\n\n".join(interventions)})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "\n\n".join(interventions),
+                    "_swival_synthetic": True,
+                }
+            )
         if verbose:
             fmt.context_stats(
                 f"Context after turn {turns}",

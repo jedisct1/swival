@@ -498,14 +498,18 @@ def test_think_nudge_fires_at_most_once(tmp_path, monkeypatch):
 
     agent.main()
 
-    # Count Tip: messages in the final snapshot (the full message history).
-    # Even though edit_file was called twice, only one tip should be present.
-    final_tips = [
-        m for m in _intervention_user_messages(snapshots[-1]) if m.startswith("Tip:")
-    ]
-    assert len(final_tips) == 1, (
-        f"Expected exactly 1 nudge, got {len(final_tips)}: {final_tips}"
-    )
+    # The nudge fires once when edit_file is called without think.
+    # It may be pruned from later snapshots (synthetic GC removes expired
+    # interventions once the model has responded), so check across all
+    # snapshots: it must appear in at least one, and never more than once
+    # in any single snapshot.
+    seen_tip = False
+    for snap in snapshots:
+        tips = [m for m in _intervention_user_messages(snap) if m.startswith("Tip:")]
+        assert len(tips) <= 1, f"More than 1 nudge in a single snapshot: {tips}"
+        if tips:
+            seen_tip = True
+    assert seen_tip, "Think nudge never fired"
 
 
 def test_think_nudge_does_not_fire_for_read_file(tmp_path, monkeypatch):

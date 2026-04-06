@@ -5,6 +5,7 @@ import json
 from . import fmt
 from ._msg import (
     IMAGE_TOKEN_ESTIMATE,
+    _estimate_tokens,
     _msg_get,
     _msg_content,
     _msg_role,
@@ -36,11 +37,6 @@ READ_ONLY_TOOLS = frozenset(
         "outline",
     }
 )
-
-
-def _estimate_tokens(text: str) -> int:
-    """Rough token estimate without importing tiktoken."""
-    return len(text) // 4
 
 
 class SnapshotState:

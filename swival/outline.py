@@ -64,7 +64,7 @@ def outline(
         try:
             return _outline_python(text, depth)
         except SyntaxError:
-            return _outline_heuristic(text, depth)
+            pass
 
     return _outline_heuristic(text, depth)
 
@@ -83,8 +83,8 @@ def _walk_python(nodes: list[ast.stmt], depth: int, level: int, out: list[str]):
     for node in nodes:
         if isinstance(node, ast.ClassDef):
             decorators = "".join(
-                f"{node.decorator_list[i].lineno:<5}{indent}@{_decorator_text(d)}\n"
-                for i, d in enumerate(node.decorator_list)
+                f"{d.lineno:<5}{indent}@{_decorator_text(d)}\n"
+                for d in node.decorator_list
             )
             bases = ", ".join(_expr_text(b) for b in node.bases)
             sig = f"class {node.name}({bases})" if bases else f"class {node.name}"

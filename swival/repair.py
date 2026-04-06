@@ -385,7 +385,10 @@ def format_repair_feedback(
             ):
                 ideal[field] = value.split() if value.strip() else []
 
-    lines: list[str] = [f"\n[Syntax correction] Your {name} call was auto-corrected:"]
+    lines: list[str] = [
+        "\n[swival:repair-feedback]",
+        f"[Syntax correction] Your {name} call was auto-corrected:",
+    ]
     lines.append(f"  Received:  {_json.dumps(original, ensure_ascii=False)}")
     lines.append(f"  Corrected: {_json.dumps(ideal, ensure_ascii=False)}")
 

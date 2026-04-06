@@ -4,25 +4,22 @@ import time
 from pathlib import Path
 
 from . import fmt
-from ._msg import _msg_role, _msg_content, _msg_tool_calls
+from ._msg import _msg_get, _msg_role, _msg_content, _msg_tool_calls
 
 CONTINUE_PATH = ".swival/continue.md"
 MAX_CONTINUE_CHARS = 4000
 STALENESS_SECONDS = 24 * 60 * 60  # 24 hours
 
-# Known synthetic user-message prefixes injected by the agent loop.
-# Imported from agent.py at call time to avoid circular imports;
-# these are the prefixes used by _find_last_user_task.
-SYNTHETIC_USER_PREFIXES: tuple[str, ...] = ()  # populated lazily
-
-
-def _get_synthetic_prefixes() -> tuple[str, ...]:
-    global SYNTHETIC_USER_PREFIXES
-    if not SYNTHETIC_USER_PREFIXES:
-        from .agent import SYNTHETIC_USER_PREFIXES as _prefixes
-
-        SYNTHETIC_USER_PREFIXES = _prefixes
-    return SYNTHETIC_USER_PREFIXES
+# Prefixes that are always synthetic by construction (inserted by pruning,
+# snapshot, image injection, etc.).  These never appear in real user input.
+_ALWAYS_SYNTHETIC_PREFIXES: tuple[str, ...] = (
+    "[REVIEWER FEEDBACK",
+    "[image]",
+    "[Context for follow-up:",
+    "[think state]",
+    "[todo state]",
+    "[snapshot state]",
+)
 
 
 _CONTINUE_SUMMARY_PROMPT = (
@@ -48,9 +45,20 @@ def _safe_continue_path(base_dir: str) -> Path:
     return p
 
 
-def _is_synthetic(content: str) -> bool:
-    """Check if a user message is a synthetic intervention, not a real task."""
-    for prefix in _get_synthetic_prefixes():
+def _is_synthetic(msg) -> bool:
+    """Check if a user message is a synthetic intervention, not a real task.
+
+    Accepts a message dict/namespace or a plain content string.
+
+    Uses the ``_swival_synthetic`` marker set by the agent loop when it
+    injects nudges, guardrails, and other scaffolding messages.  Falls back
+    to bracket-prefixed patterns for content that is always synthetic by
+    construction (recaps, image, reviewer, command-tool context).
+    """
+    if not isinstance(msg, str) and _msg_get(msg, "_swival_synthetic"):
+        return True
+    content = msg if isinstance(msg, str) else _msg_content(msg)
+    for prefix in _ALWAYS_SYNTHETIC_PREFIXES:
         if content.startswith(prefix):
             return True
     return False
@@ -62,7 +70,7 @@ def _find_last_user_task(messages: list) -> str | None:
         if _msg_role(msg) != "user":
             continue
         content = _msg_content(msg)
-        if content and not _is_synthetic(content):
+        if content and not _is_synthetic(msg):
             return content
     return None
 
@@ -73,7 +81,7 @@ def _find_first_user_task(messages: list) -> str | None:
         if _msg_role(msg) != "user":
             continue
         content = _msg_content(msg)
-        if content and not _is_synthetic(content):
+        if content and not _is_synthetic(msg):
             return content
     return None
 

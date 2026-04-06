@@ -86,18 +86,21 @@ class TestFindUserTask:
         assert _find_last_user_task(msgs) == "second task"
 
     def test_skips_synthetic_prefixes(self):
+        def _synth(content):
+            return {"role": "user", "content": content, "_swival_synthetic": True}
+
         msgs = [
             _sys(),
             _user("real task"),
             _assistant("working..."),
-            _user("Your response was empty. Please continue working on the task."),
-            _user(
+            _synth("Your response was empty. Please continue working on the task."),
+            _synth(
                 "IMPORTANT: You have called `edit_file` 2 times with the same error."
             ),
-            _user("STOP: You have failed to use `edit_file` correctly 3 times"),
-            _user("Tip: Consider using the `think` tool before making edits."),
-            _user("Reminder: You have 3 unfinished todo items."),
-            _user("Your response was cut off. Please use the provided tools."),
+            _synth("STOP: You have failed to use `edit_file` correctly 3 times"),
+            _synth("Tip: Consider using the `think` tool before making edits."),
+            _synth("Reminder: You have 3 unfinished todo items."),
+            _synth("Your response was cut off. Please use the provided tools."),
             _user(
                 "[REVIEWER FEEDBACK — Round 2]\n"
                 "A reviewer has evaluated your answer and requested changes. "
@@ -106,6 +109,28 @@ class TestFindUserTask:
             ),
         ]
         assert _find_last_user_task(msgs) == "real task"
+
+    def test_preserves_real_user_with_important_prefix(self):
+        """A real user message starting with IMPORTANT: must not be skipped."""
+        msgs = [
+            _sys(),
+            _user("IMPORTANT: do not modify package.json"),
+            _assistant("ok"),
+        ]
+        assert _find_last_user_task(msgs) == "IMPORTANT: do not modify package.json"
+
+    def test_namespace_synthetic_skipped(self):
+        """Namespace-style messages with _swival_synthetic are also skipped."""
+        import types as _t
+
+        ns_msg = _t.SimpleNamespace(
+            role="user",
+            content="STOP: repeated error",
+            _swival_synthetic=True,
+        )
+        msgs = [_sys(), ns_msg, _user("real task")]
+        assert _find_last_user_task(msgs) == "real task"
+        assert _find_first_user_task(msgs) == "real task"
 
     def test_returns_none_empty(self):
         assert _find_last_user_task([_sys()]) is None
@@ -118,7 +143,7 @@ class TestFindUserTask:
     def test_first_skips_synthetic(self):
         msgs = [
             _sys(),
-            _user("IMPORTANT: error"),
+            {"role": "user", "content": "IMPORTANT: error", "_swival_synthetic": True},
             _user("real first"),
         ]
         assert _find_first_user_task(msgs) == "real first"
