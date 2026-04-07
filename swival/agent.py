@@ -7657,6 +7657,23 @@ def execute_input(
 def _execute_init(cmd_arg: str, ctx: InputContext) -> StepResult:
     """Handle the multi-pass /init command."""
 
+    def _run_init_pass(
+        history_label: str,
+        interrupt_message: str,
+    ) -> tuple[str | None, bool] | None:
+        answer, exhausted, interrupted = _invoke_agent_turn(None, ctx)
+        if interrupted:
+            fmt.warning(interrupt_message)
+            return None
+        if not ctx.no_history and answer:
+            append_history(
+                ctx.base_dir,
+                history_label,
+                answer,
+                diagnostics=ctx.verbose,
+            )
+        return answer, exhausted
+
     if cmd_arg:
         fmt.warning(f"/init takes no arguments, ignoring {cmd_arg!r}")
     _reset_subagent(ctx)
@@ -7676,17 +7693,10 @@ def _execute_init(cmd_arg: str, ctx: InputContext) -> StepResult:
         (_init_prompt(), INIT_ENRICH_PROMPT, INIT_WRITE_PROMPT), 1
     ):
         ctx.messages.append({"role": "user", "content": prompt})
-        answer, exhausted, interrupted = _invoke_agent_turn(None, ctx)
-        if interrupted:
-            fmt.warning("interrupted, /init aborted.")
+        result = _run_init_pass(f"/init pass {_pass}", "interrupted, /init aborted.")
+        if result is None:
             return StepResult(kind="agent_turn", text=None)
-        if not ctx.no_history and answer:
-            append_history(
-                ctx.base_dir,
-                f"/init pass {_pass}",
-                answer,
-                diagnostics=ctx.verbose,
-            )
+        answer, exhausted = result
         last_answer = answer
         if exhausted:
             any_exhausted = True
@@ -7700,18 +7710,12 @@ def _execute_init(cmd_arg: str, ctx: InputContext) -> StepResult:
     if reason is not None:
         retry_prompt = INIT_RETRY_PROMPT.format(reason=reason)
         ctx.messages.append({"role": "user", "content": retry_prompt})
-        answer, exhausted, interrupted = _invoke_agent_turn(None, ctx)
-        if interrupted:
-            fmt.warning("interrupted, /init retry aborted.")
+        result = _run_init_pass(
+            "/init pass 4 (retry)", "interrupted, /init retry aborted."
+        )
+        if result is None:
             return StepResult(kind="agent_turn", text=None)
-        if not ctx.no_history and answer:
-            append_history(
-                ctx.base_dir,
-                "/init pass 4 (retry)",
-                answer,
-                diagnostics=ctx.verbose,
-            )
-        last_answer = answer
+        last_answer, exhausted = result
         if exhausted:
             any_exhausted = True
         retry_reason, content = validate_agents_md(agents_path)
