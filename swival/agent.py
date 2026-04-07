@@ -26,6 +26,7 @@ import tiktoken
 from . import fmt
 from ._msg import (
     IMAGE_TOKEN_ESTIMATE as _IMAGE_TOKEN_ESTIMATE,
+    _canonicalize_tool_calls,
     _has_image_content,
     _msg_get,
     _msg_role,
@@ -5893,6 +5894,8 @@ def run_agent_loop(
                     sys_msg["content"] = base + "\n\n" + history_text
                 else:
                     sys_msg["content"] = base
+
+        _canonicalize_tool_calls(messages)
 
         token_est = estimate_tokens(messages, effective_tools)
         if verbose:

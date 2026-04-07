@@ -49,6 +49,66 @@ def _estimate_tokens(text: str) -> int:
     return len(text) // 4
 
 
+def _canonicalize_tool_calls(messages: list) -> None:
+    """Rewrite historical assistant tool_calls to minimal shape.
+
+    Strips provider extras (index, etc.) keeping only id, type,
+    function.name, function.arguments.  Skips the most recent assistant
+    message with tool_calls so in-flight calls are untouched.
+    """
+    last_tc_idx = None
+    for i in range(len(messages) - 1, -1, -1):
+        if _msg_role(messages[i]) == "assistant" and _msg_tool_calls(messages[i]):
+            last_tc_idx = i
+            break
+
+    for i, msg in enumerate(messages):
+        if i == last_tc_idx:
+            continue
+        if not isinstance(msg, dict):
+            continue
+        if _msg_role(msg) != "assistant":
+            continue
+        tcs = msg.get("tool_calls")
+        if not tcs or not isinstance(tcs, list):
+            continue
+
+        new_tcs = []
+        changed = False
+        for tc in tcs:
+            if isinstance(tc, dict):
+                fn = tc.get("function", {})
+                canonical = {
+                    "id": tc.get("id", ""),
+                    "type": tc.get("type", "function"),
+                    "function": {
+                        "name": fn.get("name", ""),
+                        "arguments": fn.get("arguments", ""),
+                    },
+                }
+                if canonical != tc:
+                    changed = True
+                new_tcs.append(canonical)
+            elif hasattr(tc, "function"):
+                fn = tc.function
+                canonical = {
+                    "id": tc.id if hasattr(tc, "id") else "",
+                    "type": "function",
+                    "function": {
+                        "name": fn.name if hasattr(fn, "name") else "",
+                        "arguments": (fn.arguments if hasattr(fn, "arguments") else "")
+                        or "",
+                    },
+                }
+                changed = True
+                new_tcs.append(canonical)
+            else:
+                new_tcs.append(tc)
+
+        if changed:
+            msg["tool_calls"] = new_tcs
+
+
 def _has_image_content(messages: list) -> bool:
     """Check if any message contains image_url parts."""
     for m in messages:
