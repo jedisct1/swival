@@ -4,7 +4,6 @@ from contextlib import nullcontext
 import copy
 from datetime import datetime
 import json
-import logging
 from typing import Literal
 import os
 import platform
@@ -72,7 +71,6 @@ from .tools import (
     cleanup_old_cmd_outputs,
     get_tool_schema,
 )
-from .prune import prune_transcript_for_llm
 from .repair import format_repair_feedback, repair_tool_args
 
 DEFAULT_SYSTEM_PROMPT_FILE = Path(__file__).parent / "system_prompt.txt"
@@ -110,9 +108,6 @@ SYNTHETIC_USER_PREFIXES: tuple[str, ...] = (
     "[REVIEWER FEEDBACK",
     _IMAGE_SYNTHETIC_PREFIX,
     _COMMAND_TOOL_CONTEXT_PREFIX,
-    "[think state]",
-    "[todo state]",
-    "[snapshot state]",
 )
 
 _SUMMARIZE_SYSTEM_PROMPT = (
@@ -5898,19 +5893,6 @@ def run_agent_loop(
                     sys_msg["content"] = base + "\n\n" + history_text
                 else:
                     sys_msg["content"] = base
-
-        prune_metrics = prune_transcript_for_llm(
-            messages,
-            thinking_state=thinking_state,
-            todo_state=todo_state,
-            snapshot_state=snapshot_state,
-            estimate_tokens_fn=estimate_tokens,
-        )
-        if prune_metrics.messages_mutated:
-            if snapshot_state is not None:
-                snapshot_state.invalidate_index_checkpoint()
-        if prune_metrics.net_savings > 0:
-            logging.debug("%s", prune_metrics.summary())
 
         token_est = estimate_tokens(messages, effective_tools)
         if verbose:

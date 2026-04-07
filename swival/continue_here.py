@@ -10,15 +10,12 @@ CONTINUE_PATH = ".swival/continue.md"
 MAX_CONTINUE_CHARS = 4000
 STALENESS_SECONDS = 24 * 60 * 60  # 24 hours
 
-# Prefixes that are always synthetic by construction (inserted by pruning,
+# Prefixes that are always synthetic by construction (inserted by
 # snapshot, image injection, etc.).  These never appear in real user input.
 _ALWAYS_SYNTHETIC_PREFIXES: tuple[str, ...] = (
     "[REVIEWER FEEDBACK",
     "[image]",
     "[Context for follow-up:",
-    "[think state]",
-    "[todo state]",
-    "[snapshot state]",
 )
 
 
@@ -53,7 +50,7 @@ def _is_synthetic(msg) -> bool:
     Uses the ``_swival_synthetic`` marker set by the agent loop when it
     injects nudges, guardrails, and other scaffolding messages.  Falls back
     to bracket-prefixed patterns for content that is always synthetic by
-    construction (recaps, image, reviewer, command-tool context).
+    construction (image, reviewer, command-tool context).
     """
     if not isinstance(msg, str) and _msg_get(msg, "_swival_synthetic"):
         return True

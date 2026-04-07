@@ -4,19 +4,17 @@ Most AI coding agents assume large context windows — 128K tokens or more. Swiv
 
 You don't need to configure any of this. It works out of the box. But understanding how it works helps you get the most out of small models and explains what's happening when you see compaction messages in the logs.
 
-## The Five Layers
+## The Four Layers
 
-Swival's context management operates as five concentric layers of defense.
+Swival's context management operates as four concentric layers of defense.
 
 **Layer 1 — Prevention.** Tool output is capped before it enters the conversation. A file read that returns 200KB of content is truncated to 50KB. A grep that matches thousands of lines returns the first 100. Command output over 10KB is saved to a file and replaced with a pointer. MCP tool schemas that would consume too much of the window are dropped at startup. These limits keep junk out of the context so compaction rarely needs to fire.
 
-**Layer 2 — Preflight pruning.** Every turn, before the LLM call, Swival runs a pruning pass over the conversation history. It removes expired scaffolding messages (nudges, guardrails, error corrections), folds old state-tool turns (think, todo, snapshot) into compact recaps, and strips provider metadata from historical tool calls. This is the cheapest token reduction — it removes content that is either expired agent scaffolding or exactly reconstructible from live state, without any LLM calls or lossy summarization.
+**Layer 2 — Proactive collapse.** The agent can actively manage its own context using the `snapshot` tool. After reading several files to understand a problem, the agent calls `snapshot restore` with a summary of what it learned. The file reads — often 10K+ tokens of dead weight — are replaced with a ~200 token summary. The agent keeps the knowledge; the context gets the space back.
 
-**Layer 3 — Proactive collapse.** The agent can actively manage its own context using the `snapshot` tool. After reading several files to understand a problem, the agent calls `snapshot restore` with a summary of what it learned. The file reads — often 10K+ tokens of dead weight — are replaced with a ~200 token summary. The agent keeps the knowledge; the context gets the space back.
+**Layer 3 — Reactive compaction.** When the context fills up despite prevention and proactive collapse, Swival runs a graduated compaction pipeline. It starts gentle (shrinking old tool results), escalates if needed (dropping low-importance turns with the last 3 turns protected), and has a last-resort nuclear option (keeping only the system prompt, a summary, and the last 2 turns). Each level is tried in sequence, and the agent only moves to the next if the previous wasn't enough.
 
-**Layer 4 — Reactive compaction.** When the context fills up despite prevention, pruning, and proactive collapse, Swival runs a graduated compaction pipeline. It starts gentle (shrinking old tool results), escalates if needed (dropping low-importance turns with the last 3 turns protected), and has a last-resort nuclear option (keeping only the system prompt, a summary, and the last 2 turns). Each level is tried in sequence, and the agent only moves to the next if the previous wasn't enough.
-
-**Layer 5 — Knowledge survival.** Thinking notes, todo lists, and snapshot summaries live outside the message history in independent channels that compaction cannot touch. Even after the most aggressive compaction wipes nearly everything, the agent still knows its reasoning, its task list, and what it learned during investigation.
+**Layer 4 — Knowledge survival.** Thinking notes, todo lists, and snapshot summaries live outside the message history in independent channels that compaction cannot touch. Even after the most aggressive compaction wipes nearly everything, the agent still knows its reasoning, its task list, and what it learned during investigation.
 
 ## Prevention: Output Size Guards
 
@@ -38,34 +36,6 @@ These limits are deliberately conservative. They prevent a single tool call from
 MCP servers expose external tools, but their schemas can be large. On a 16K context window, tool schemas alone could eat half the budget before the agent does anything.
 
 At startup, Swival estimates the total token cost of all tool schemas. If they exceed 30% of the context window, it warns. If they exceed 50%, it starts dropping the most expensive MCP server's tools until the budget fits. This happens automatically — you don't need to manually curate which MCP tools are available.
-
-## Preflight Pruning
-
-Every turn, after snapshot history is injected into the system message and before token estimation, Swival runs a pruning pass over the live conversation. The pass mutates the message list in place so later turns benefit from the same reductions. It never touches the system message or tool schemas.
-
-Four rules run in order.
-
-### Synthetic Message Cleanup
-
-The agent loop injects scaffolding messages during normal operation: nudges when the model makes repeated errors, tips to encourage thinking before editing, reminders about unfinished todo items, and continuation prompts when the model returns an empty response. These are useful for one turn but become dead weight after the model has responded.
-
-The pruning pass removes any synthetic message that has already been followed by an assistant response. Only messages explicitly marked by the agent loop are eligible — real user messages are never touched, even if they happen to start with the same words as a nudge.
-
-### State-Tool Folding
-
-Tools like `think`, `todo`, and `snapshot` generate verbose tool-call and tool-result messages that mostly duplicate state already tracked in memory. Once the model has had a chance to react to a state-tool turn (at least one later assistant response exists), the pruning pass replaces it with a compact recap built from the current live state.
-
-Recaps are placed near the tail of the conversation so the model attends to them naturally. They are formatted as short summaries: the todo recap lists remaining items, the think recap shows recent reasoning steps, and the snapshot recap shows the active checkpoint status.
-
-Mixed turns — an assistant message that calls both a state tool and a non-state tool like `edit_file` — are left untouched. The snapshot save turn that anchors an active explicit checkpoint is also preserved.
-
-### Repair Feedback Expiry
-
-When the model sends malformed tool-call arguments, Swival auto-corrects them and appends a corrective note to the tool result explaining what was wrong. This teaching feedback is valuable for the immediate next attempt but becomes noise in later turns. The pruning pass strips the feedback suffix from tool results older than the two most recent.
-
-### Tool-Call Canonicalization
-
-Different LLM providers attach extra metadata to tool calls — fields like `index` that are useful for streaming but meaningless in replay. The pruning pass rewrites historical tool calls to a minimal shape with just the ID, type, function name, and arguments. The most recent tool-call turn is left untouched.
 
 ## Proactive Collapse: The Snapshot Tool
 
@@ -159,7 +129,7 @@ The file is always written deterministically first (no network call). On the max
 
 Continue-here files are capped at 4,000 characters. Files older than 24 hours trigger a staleness warning but are still loaded. Use `--no-continue` to disable both writing and reading. The `/status` REPL command includes continue file presence in its session overview.
 
-Together, these channels mean that even after nuclear compaction wipes the conversation to nearly nothing, the agent still has its reasoning chain, its task list, a record of what it learned during investigation, and — if the session was interrupted — a structured resume plan for the next run.
+Together, these four channels mean that even after nuclear compaction wipes the conversation to nearly nothing, the agent still has its reasoning chain, its task list, a record of what it learned during investigation, and — if the session was interrupted — a structured resume plan for the next run.
 
 ## Proactive Checkpoint Summaries
 

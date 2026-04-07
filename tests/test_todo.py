@@ -1047,22 +1047,11 @@ class TestTodoReminder:
 
         agent.main()
 
-        # The reminder fires at end of turn 4 and is visible in the turn-5
-        # snapshot (before pruning removes it).  By the final snapshot it has
-        # been GC'd because a later assistant response exists.
-        turn5_user_msgs = _user_messages(snapshots[4])
-        turn5_reminders = [
-            m for m in turn5_user_msgs if "Reminder:" in m and "todo" in m.lower()
+        all_user_msgs = _user_messages(snapshots[-1])
+        reminder_msgs = [
+            m for m in all_user_msgs if "Reminder:" in m and "todo" in m.lower()
         ]
-        assert len(turn5_reminders) == 1, (
-            f"Expected 1 reminder in turn-5 snapshot, got {len(turn5_reminders)}: {turn5_reminders}"
-        )
-
-        # No second reminder in the final snapshot (interval reset worked)
-        final_user_msgs = _user_messages(snapshots[-1])
-        final_reminders = [
-            m for m in final_user_msgs if "Reminder:" in m and "todo" in m.lower()
-        ]
-        assert len(final_reminders) == 0, (
-            f"Expected 0 reminders in final snapshot, got {len(final_reminders)}: {final_reminders}"
+        # Should have exactly 1 reminder (at turn 4), not 2
+        assert len(reminder_msgs) == 1, (
+            f"Expected 1 reminder, got {len(reminder_msgs)}: {reminder_msgs}"
         )

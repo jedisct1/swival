@@ -18,7 +18,7 @@ None of this means small models are useless. It means the agent needs to do more
 
 These are engineering choices, not marketing claims. Each one exists because a specific failure mode showed up during testing with real models.
 
-**Graduated context management.** Before every LLM call, Swival prunes expired scaffolding messages and folds old state-tool turns into compact recaps — cheap savings that don't need an LLM call. When the window still fills up, a four-level compaction pipeline takes over: shrink old tool results, drop low-value turns (scored by importance), nuclear-drop to just the last two turns, and finally shed tool schemas entirely. Each level fires only if the previous one wasn't enough. See [Context Management](context-management.md) for the full breakdown.
+**Graduated context compaction.** When the window fills up, Swival runs a four-level compaction pipeline: shrink old tool results, drop low-value turns (scored by importance), nuclear-drop to just the last two turns, and finally shed tool schemas entirely. Each level fires only if the previous one wasn't enough. See [Context Management](context-management.md) for the full breakdown.
 
 **Knowledge that survives compaction.** Thinking notes, todo lists, and snapshot summaries live outside the message history. Even after the most aggressive compaction, the agent still has its reasoning chain, its task list, and what it learned during investigation. This is the single most important thing for small-model reliability: the agent can lose old messages and keep working.
 
