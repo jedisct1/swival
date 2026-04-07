@@ -127,7 +127,7 @@ When a session ends abnormally — Ctrl+C, max turns exhausted, compaction failu
 
 The file is always written deterministically first (no network call). On the max-turns path only, Swival optionally enhances it with an LLM-generated summary. If the LLM call fails, the deterministic version is already on disk.
 
-Continue-here files are capped at 4,000 characters. Files older than 24 hours trigger a staleness warning but are still loaded. Use `--no-continue` to disable both writing and reading. The `/status` REPL command includes continue file presence in its session overview.
+Continue-here files are capped at 4,000 characters. Files older than 24 hours trigger a staleness warning but are still loaded. Use `--no-continue` to disable both writing and reading. The `/status` command includes continue file presence in its session overview.
 
 Together, these four channels mean that even after nuclear compaction wipes the conversation to nearly nothing, the agent still has its reasoning chain, its task list, a record of what it learned during investigation, and — if the session was interrupted — a structured resume plan for the next run.
 
@@ -139,9 +139,9 @@ These summaries serve as a safety net. When Level 2 or Level 3 compaction fires 
 
 To prevent the checkpoint store from growing without bound, older summaries are periodically consolidated: the oldest half is merged into a single summary, creating a hierarchical map/reduce structure. The total is capped at roughly 2,000 tokens.
 
-## REPL Commands
+## Commands
 
-The interactive REPL exposes manual controls for context management.
+Swival exposes manual controls for context management as input commands. These work in both interactive mode and one-shot mode.
 
 `/compact` triggers Level 1 compaction (shrink tool results). `/compact --drop` also triggers Level 2 (drop low-importance turns). Both report how many tokens were saved.
 
@@ -149,7 +149,7 @@ The interactive REPL exposes manual controls for context management.
 
 `/clear` drops everything and resets all internal state — conversation, thinking, todos, snapshots, and file tracking.
 
-For the full REPL command reference, see [Usage](usage.md).
+For the full command reference, see [Usage](usage.md).
 
 ## Configuration
 

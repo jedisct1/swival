@@ -61,6 +61,12 @@ from .a2a_types import (
     EVENT_TOOL_FINISH,
     EVENT_TOOL_START,
 )
+from .input_dispatch import (
+    InputContext,
+    ParsedInput,
+    StepResult,
+    parse_input_line,
+)
 from .mcp_client import McpShutdownError
 from .tools import (
     TOOLS,
@@ -5421,6 +5427,81 @@ def _run_main(args, report, _write_report, parser):
     if not args.repl:
         # Single-shot path
         try:
+            # Command-script detection: if the input starts with a known
+            # command or bang, run it through the shared executor instead
+            # of the plain agent loop.
+            from .input_dispatch import is_command_script
+
+            _is_script = is_command_script(args.question)
+            if _is_script and reviewer_cmd:
+                fmt.warning(
+                    "command scripts (input starting with / or !) are not "
+                    "compatible with --reviewer or --self-review. "
+                    "Use a plain prompt instead."
+                )
+                sys.exit(1)
+
+            if _is_script:
+                _active_profile = getattr(args, "_active_profile", None)
+                _script_turn_state = {
+                    "max_turns": loop_kwargs.pop("max_turns", 10),
+                    "turns_used": 0,
+                }
+                loop_kwargs["turn_state"] = _script_turn_state
+                if report:
+                    loop_kwargs["report"] = report
+                ctx = InputContext(
+                    messages=messages,
+                    tools=tools,
+                    base_dir=base_dir,
+                    turn_state=_script_turn_state,
+                    thinking_state=thinking_state,
+                    todo_state=todo_state,
+                    snapshot_state=snapshot_state,
+                    file_tracker=file_tracker,
+                    no_history=no_history,
+                    continue_here=_continue_here,
+                    verbose=args.verbose,
+                    loop_kwargs=loop_kwargs,
+                    current_profile=_active_profile,
+                    profiles=getattr(args, "_all_profiles", None) or {},
+                    startup_profile=_active_profile,
+                    raw_llm_baseline=getattr(args, "_raw_llm_baseline", {}),
+                    pre_profile_baseline=getattr(args, "_pre_profile_baseline", {}),
+                    mcp_manager=loop_kwargs.get("mcp_manager"),
+                    a2a_manager=loop_kwargs.get("a2a_manager"),
+                    subagent_manager=subagent_manager,
+                    extra_write_roots=loop_kwargs.get("extra_write_roots", []),
+                    skill_read_roots=loop_kwargs.get("skill_read_roots", []),
+                    skills_catalog=skills_catalog,
+                )
+                result = run_input_script(args.question, ctx, mode="oneshot")
+                answer = result.text
+                exhausted = result.exhausted
+                # Per-step history is already written by _finalize_agent_step
+                # inside execute_input, so no additional append_history here.
+                if answer is not None:
+                    print(answer)
+                if report:
+                    _write_report(
+                        "exhausted" if exhausted else "success",
+                        answer=answer,
+                        exit_code=2 if exhausted else 0,
+                        turns=ctx.turn_state.get("turns_used", 0),
+                        model_id=model_id,
+                        skills_catalog=skills_catalog,
+                        instructions_loaded=instructions_loaded,
+                        review_rounds=0,
+                        todo_state=todo_state,
+                        snapshot_state=snapshot_state,
+                    )
+                _show_agentfs_diff_hint(args)
+                if exhausted:
+                    if args.verbose:
+                        fmt.warning("max turns reached, agent stopped.")
+                    sys.exit(2)
+                return
+
             messages.append({"role": "user", "content": args.question})
             review_round = 0
             turn_offset = 0
@@ -6722,26 +6803,26 @@ def _truncate_for_context(
     return text
 
 
-def _repl_help() -> None:
-    """Print available REPL commands.
+def _repl_help() -> str:
+    """Build help text for available REPL commands.
 
-    Formatted from :data:`~swival.repl_commands.REPL_COMMANDS` so that
+    Formatted from :data:`~swival.input_commands.INPUT_COMMANDS` so that
     help text, completion, and dispatch stay in sync.
     """
-    from .repl_commands import REPL_COMMANDS
+    from .input_commands import INPUT_COMMANDS
 
     groups: dict[tuple[str, str | None], list[str]] = {}
-    for cmd in sorted(REPL_COMMANDS):
-        info = REPL_COMMANDS[cmd]
+    for cmd in sorted(INPUT_COMMANDS):
+        info = INPUT_COMMANDS[cmd]
         key = (info.desc, info.arg)
         groups.setdefault(key, []).append(cmd)
 
     lines = ["Available commands:"]
     seen: set[str] = set()
-    for cmd in sorted(REPL_COMMANDS):
+    for cmd in sorted(INPUT_COMMANDS):
         if cmd in seen:
             continue
-        info = REPL_COMMANDS[cmd]
+        info = INPUT_COMMANDS[cmd]
         key = (info.desc, info.arg)
         group = groups[key]
         for c in group:
@@ -6756,7 +6837,7 @@ def _repl_help() -> None:
         f"  {'!command [args]':<19}"
         "Run <config_dir>/commands/command; output becomes your next prompt"
     )
-    fmt.info("\n".join(lines))
+    return "\n".join(lines)
 
 
 def _repl_status(
@@ -6776,8 +6857,8 @@ def _repl_status(
     compaction_state,
     command_policy,
     current_profile: str | None = None,
-) -> None:
-    """Print a compact session overview."""
+) -> str:
+    """Build a compact session overview."""
     from .continue_here import load_continue_file
 
     tokens = estimate_tokens(messages, tools)
@@ -6833,8 +6914,7 @@ def _repl_status(
         lines.append("")
         lines.append(f"continue file: yes ({len(content):,} chars)")
 
-    for line in lines:
-        fmt.info(line)
+    return "\n".join(lines)
 
 
 def _repl_profile(
@@ -6847,8 +6927,11 @@ def _repl_profile(
     repl_kwargs: dict | None = None,
     subagent_manager=None,
     verbose: bool = False,
-) -> str | None:
-    """Handle /profile command. Returns the new current profile name."""
+) -> tuple[str | None, str, bool]:
+    """Handle /profile command.
+
+    Returns ``(new_profile_name, message, is_error)``.
+    """
     from .config import _PROFILE_METADATA_KEYS
 
     if repl_kwargs is None:
@@ -6858,14 +6941,17 @@ def _repl_profile(
 
     if not name:
         if not profiles:
-            fmt.info(
-                "No profiles defined. Add [profiles.NAME] sections to your config."
+            return (
+                current_profile,
+                "No profiles defined. Add [profiles.NAME] sections to your config.",
+                False,
             )
-            return current_profile
 
-        for pname in sorted(profiles):
-            fmt.info(_format_profile_line(pname, profiles[pname], current_profile))
-        return current_profile
+        lines = [
+            _format_profile_line(pname, profiles[pname], current_profile)
+            for pname in sorted(profiles)
+        ]
+        return current_profile, "\n".join(lines), False
 
     if name == "-":
         profile_body = None
@@ -6873,8 +6959,11 @@ def _repl_profile(
     else:
         if name not in profiles:
             known = ", ".join(sorted(profiles)) if profiles else "(none)"
-            fmt.warning(f"unknown profile {name!r}. Available: {known}")
-            return current_profile
+            return (
+                current_profile,
+                f"unknown profile {name!r}. Available: {known}",
+                True,
+            )
         profile_body = profiles[name]
         new_name = name
 
@@ -6901,8 +6990,7 @@ def _repl_profile(
             aws_profile=merged.get("aws_profile"),
         )
     except (ConfigError, AgentError) as exc:
-        fmt.warning(f"profile switch failed: {exc}")
-        return current_profile
+        return current_profile, f"profile switch failed: {exc}", True
 
     for key in ("extra_body", "reasoning_effort", "sanitize_thinking"):
         val = merged.get(key)
@@ -6947,14 +7035,16 @@ def _repl_profile(
             subagent_manager._template[k] = repl_kwargs[k]
 
     label = f"profile: {new_name}" if new_name else "profile: (baseline)"
-    fmt.info(f"{label}")
-    fmt.info(f"model: {llm_kwargs.get('provider', '')} / {model_id}")
-    fmt.info(f"endpoint: {api_base}")
-    return new_name
+    lines = [
+        label,
+        f"model: {llm_kwargs.get('provider', '')} / {model_id}",
+        f"endpoint: {api_base}",
+    ]
+    return new_name, "\n".join(lines), False
 
 
-def _repl_tools(tools: list, mcp_manager=None, a2a_manager=None) -> None:
-    """Print all available tools grouped by source."""
+def _repl_tools(tools: list, mcp_manager=None, a2a_manager=None) -> str:
+    """Build a listing of all available tools grouped by source."""
     # Collect MCP/A2A tool info from managers for classification.
     mcp_info = mcp_manager.get_tool_info() if mcp_manager is not None else {}
     a2a_info = a2a_manager.get_tool_info() if a2a_manager is not None else {}
@@ -7009,10 +7099,7 @@ def _repl_tools(tools: list, mcp_manager=None, a2a_manager=None) -> None:
             parts.append(f"  {group}:")
             parts.extend(_format_entries(entries, "    "))
 
-    if parts:
-        fmt.info("\n".join(parts))
-    else:
-        fmt.info("No tools available.")
+    return "\n".join(parts) if parts else "No tools available."
 
 
 def _repl_clear(
@@ -7021,7 +7108,7 @@ def _repl_clear(
     file_tracker: FileAccessTracker | None = None,
     todo_state: TodoState | None = None,
     snapshot_state: SnapshotState | None = None,
-) -> None:
+) -> str:
     """Clear conversation history, keeping only the leading system messages."""
     leading = []
     for msg in messages:
@@ -7048,41 +7135,42 @@ def _repl_clear(
         snapshot_state.reset()
 
     fmt.reset_state()
-    fmt.info(f"context cleared ({dropped} messages removed)")
+    return f"context cleared ({dropped} messages removed)"
 
 
 def _repl_add_dir_impl(
     path_str: str, target_list: list, command: str, label: str
-) -> None:
-    """Shared logic for adding a directory to a whitelist."""
+) -> tuple[str, bool]:
+    """Shared logic for adding a directory to a whitelist.
+
+    Returns ``(message, is_error)``.
+    """
     path_str = path_str.strip()
     if not path_str:
-        fmt.warning(f"{command} requires a path argument")
-        return
+        return f"{command} requires a path argument", True
 
     p = Path(path_str).expanduser().resolve()
     if not p.is_dir():
-        fmt.warning(f"not a directory: {path_str}")
-        return
+        return f"not a directory: {path_str}", True
     if p == Path(p.anchor):
-        fmt.warning("cannot add filesystem root")
-        return
+        return "cannot add filesystem root", True
     if p in target_list:
-        fmt.info(f"already in {label}: {p}")
-        return
+        return f"already in {label}: {p}", False
 
     target_list.append(p)
-    fmt.info(f"added to {label}: {p}")
+    return f"added to {label}: {p}", False
 
 
-def _repl_add_dir(path_str: str, extra_write_roots: list) -> None:
+def _repl_add_dir(path_str: str, extra_write_roots: list) -> tuple[str, bool]:
     """Add a directory to the write-access whitelist."""
-    _repl_add_dir_impl(path_str, extra_write_roots, "/add-dir", "whitelist")
+    return _repl_add_dir_impl(path_str, extra_write_roots, "/add-dir", "whitelist")
 
 
-def _repl_add_dir_ro(path_str: str, skill_read_roots: list) -> None:
+def _repl_add_dir_ro(path_str: str, skill_read_roots: list) -> tuple[str, bool]:
     """Add a directory to the read-only whitelist."""
-    _repl_add_dir_impl(path_str, skill_read_roots, "/add-dir-ro", "read-only whitelist")
+    return _repl_add_dir_impl(
+        path_str, skill_read_roots, "/add-dir-ro", "read-only whitelist"
+    )
 
 
 def _repl_compact(
@@ -7091,7 +7179,7 @@ def _repl_compact(
     context_length: int | None,
     arg: str,
     snapshot_state: "SnapshotState | None" = None,
-) -> None:
+) -> str:
     """Manually compact conversation context."""
     before = estimate_tokens(messages, tools)
 
@@ -7104,27 +7192,28 @@ def _repl_compact(
 
     after = estimate_tokens(messages, tools)
     saved = before - after
-    fmt.info(f"compacted: {before} -> {after} tokens ({saved} saved)")
+    return f"compacted: {before} -> {after} tokens ({saved} saved)"
 
 
-def _repl_extend(arg: str, state: dict) -> None:
-    """Double max turns (default) or set to a specific value."""
+def _repl_extend(arg: str, state: dict) -> tuple[str, bool]:
+    """Double max turns (default) or set to a specific value.
+
+    Returns ``(message, is_error)``.
+    """
     arg = arg.strip()
     if arg:
         try:
             n = int(arg)
         except ValueError:
-            fmt.warning(f"invalid number: {arg}")
-            return
+            return f"invalid number: {arg}", True
         if n < 1:
-            fmt.warning("max turns must be at least 1")
-            return
+            return "max turns must be at least 1", True
         state["max_turns"] = n
-        fmt.info(f"max turns set to {n}")
+        return f"max turns set to {n}", False
     else:
         old = state["max_turns"]
         state["max_turns"] = old * 2
-        fmt.info(f"max turns doubled: {old} -> {old * 2}")
+        return f"max turns doubled: {old} -> {old * 2}", False
 
 
 def _last_assistant_text(messages: list) -> str | None:
@@ -7166,17 +7255,17 @@ def _repl_copy(text: str | None) -> None:
 
 def _repl_snapshot_save(
     label: str, messages: list, snapshot_state: "SnapshotState | None"
-) -> None:
+) -> tuple[str, bool]:
+    """Returns ``(message, is_error)``."""
     if snapshot_state is None:
-        fmt.warning("snapshot not available")
-        return
+        return "snapshot not available", True
     result = snapshot_state.save_at_index(label, len(messages))
     if result.startswith("error:"):
-        fmt.warning(
-            f"checkpoint already active (label={snapshot_state.explicit_label!r}). Cancel it first with /unsave."
+        return (
+            f"checkpoint already active (label={snapshot_state.explicit_label!r}). Cancel it first with /unsave.",
+            True,
         )
-    else:
-        fmt.info(f"checkpoint saved: {label}")
+    return f"checkpoint saved: {label}", False
 
 
 def _repl_snapshot_restore(
@@ -7189,13 +7278,12 @@ def _repl_snapshot_restore(
     top_p: float,
     seed: int | None,
     provider: str | None,
-) -> None:
+) -> tuple[str, bool]:
+    """Returns ``(message, is_error)``."""
     if snapshot_state is None:
-        fmt.warning("snapshot not available")
-        return
+        return "snapshot not available", True
     if len(messages) <= 1:
-        fmt.warning("nothing to collapse")
-        return
+        return "nothing to collapse", True
 
     def summarize_fn(text):
         return _call_summarize_llm(
@@ -7211,25 +7299,22 @@ def _repl_snapshot_restore(
         )
 
     result = snapshot_state.restore_with_autosummary(messages, summarize_fn)
-    if result.startswith("error:"):
-        fmt.warning(result)
-    else:
-        fmt.info(result)
+    is_error = result.startswith("error:")
+    return result, is_error
 
 
-def _repl_snapshot_unsave(snapshot_state: "SnapshotState | None") -> None:
+def _repl_snapshot_unsave(snapshot_state: "SnapshotState | None") -> tuple[str, bool]:
+    """Returns ``(message, is_error)``."""
     if snapshot_state is None:
-        fmt.warning("snapshot not available")
-        return
+        return "snapshot not available", True
     result = snapshot_state.cancel()
     try:
         data = json.loads(result)
         if data.get("status") == "no_checkpoint":
-            fmt.warning("no active checkpoint to cancel")
-        else:
-            fmt.info(f"checkpoint cancelled: {data.get('label', '?')}")
+            return "no active checkpoint to cancel", True
+        return f"checkpoint cancelled: {data.get('label', '?')}", False
     except (json.JSONDecodeError, TypeError):
-        fmt.info(result)
+        return result, False
 
 
 def _patch_system_instructions(messages: list, base_dir: str) -> None:
@@ -7262,19 +7347,430 @@ def _patch_system_instructions(messages: list, base_dir: str) -> None:
     _set_msg_content(messages[0], updated)
 
 
-def _repl_remember(text: str, base_dir: str, messages: list) -> None:
-    """Handle /remember command: add a convention to project AGENTS.md."""
+def _repl_remember(text: str, base_dir: str, messages: list) -> tuple[str, bool]:
+    """Handle /remember command: add a convention to project AGENTS.md.
+
+    Returns ``(message, is_error)``.
+    """
     if not text.strip():
-        fmt.warning("/remember requires text. Usage: /remember <fact>")
-        return
+        return "/remember requires text. Usage: /remember <fact>", True
     try:
         msg, changed, is_error = remember_agents_fact(base_dir, text)
     except ValueError as exc:
-        fmt.warning(str(exc))
-        return
-    (fmt.warning if is_error else fmt.info)(msg)
+        return str(exc), True
     if changed:
         _patch_system_instructions(messages, base_dir)
+    return msg, is_error
+
+
+def _invoke_agent_turn(
+    content: str | None,
+    ctx: InputContext,
+) -> tuple[str | None, bool, bool]:
+    """Append content and run the agent loop.
+
+    Returns ``(answer, exhausted, interrupted)``.
+    """
+    if content is not None:
+        ctx.messages.append({"role": "user", "content": content})
+    try:
+        answer, exhausted = run_agent_loop(
+            ctx.messages,
+            ctx.tools,
+            max_turns=ctx.turn_state["max_turns"],
+            **ctx.loop_kwargs,
+        )
+    except KeyboardInterrupt:
+        _reset_subagent(ctx)
+        if ctx.continue_here:
+            from .continue_here import write_continue_file
+
+            write_continue_file(
+                ctx.base_dir,
+                ctx.messages,
+                todo_state=ctx.todo_state,
+                snapshot_state=ctx.snapshot_state,
+                thinking_state=ctx.thinking_state,
+            )
+        return None, False, True
+    return answer, exhausted, False
+
+
+def _reset_subagent(ctx: InputContext) -> None:
+    if ctx.subagent_manager is not None:
+        ctx.subagent_manager.shutdown()
+        ctx.subagent_manager = ctx.subagent_manager.fresh_copy()
+        ctx.loop_kwargs["subagent_manager"] = ctx.subagent_manager
+        if ctx.subagent_holder is not None:
+            ctx.subagent_holder[0] = ctx.subagent_manager
+
+
+def _finalize_agent_step(
+    answer: str | None,
+    exhausted: bool,
+    history_label: str,
+    ctx: InputContext,
+) -> StepResult:
+    """Post-process an agent turn into a StepResult."""
+    if not ctx.no_history and answer:
+        append_history(ctx.base_dir, history_label, answer, diagnostics=ctx.verbose)
+    return StepResult(kind="agent_turn", text=answer, exhausted=exhausted)
+
+
+def _run_agent_step(
+    content: str | None,
+    history_label: str,
+    ctx: InputContext,
+    *,
+    interrupt_label: str = "question",
+) -> StepResult:
+    """Invoke the agent loop, handle interrupts, finalize history.
+
+    Collapses the repeated invoke/interrupt/finalize/exhaustion-warning
+    pattern used by ``/simplify``, ``/learn``, ``/continue``, bang commands,
+    and plain text input.
+    """
+    answer, exhausted, interrupted = _invoke_agent_turn(content, ctx)
+    if interrupted:
+        fmt.warning(f"interrupted, {interrupt_label} aborted.")
+        return StepResult(kind="agent_turn")
+    step = _finalize_agent_step(answer, exhausted, history_label, ctx)
+    if exhausted and ctx.verbose:
+        fmt.warning(
+            f"max turns reached for {interrupt_label}. Use /continue to resume."
+        )
+    return step
+
+
+def execute_input(
+    parsed: ParsedInput,
+    ctx: InputContext,
+    *,
+    mode: str = "repl",
+) -> StepResult:
+    """Execute a single parsed input line.
+
+    ``mode`` is ``"repl"`` or ``"oneshot"``. Commands whose ``modes`` tuple
+    excludes the current mode are rejected with a warning.
+    """
+    from .input_commands import INPUT_COMMANDS
+
+    # Empty line — no-op.
+    if not parsed.raw:
+        return StepResult(kind="flow_control")
+
+    # Custom bang command.
+    if parsed.is_custom_command:
+        result = _repl_run_custom_command(
+            parsed.raw, ctx.base_dir, model_id=ctx.loop_kwargs["model_id"]
+        )
+        if result is None:
+            return StepResult(kind="state_change")
+        cmd_name, prompt_content = result
+        prompt_content = _truncate_for_context(
+            prompt_content,
+            ctx.messages,
+            ctx.tools,
+            ctx.loop_kwargs.get("context_length"),
+        )
+        if prompt_content is None:
+            return StepResult(kind="state_change")
+
+        fmt.info(f"[!{cmd_name}] output:\n{prompt_content}")
+        return _run_agent_step(
+            prompt_content,
+            f"[!{cmd_name}] {parsed.raw}",
+            ctx,
+            interrupt_label="question",
+        )
+
+    # Slash command.
+    if parsed.is_command:
+        cmd = parsed.cmd
+        cmd_arg = parsed.cmd_arg
+
+        # Mode check.
+        if cmd in INPUT_COMMANDS:
+            info = INPUT_COMMANDS[cmd]
+            if mode not in info.modes:
+                return StepResult(
+                    kind="info",
+                    text=f"{cmd} is not available in {mode} mode.",
+                )
+
+        # Flow control.
+        if cmd in ("/exit", "/quit"):
+            return StepResult(kind="flow_control", stop=True)
+
+        # State-change commands.
+        if cmd == "/add-dir":
+            msg, err = _repl_add_dir(cmd_arg, ctx.extra_write_roots)
+            return StepResult(kind="state_change", text=msg, is_error=err)
+
+        if cmd == "/add-dir-ro":
+            msg, err = _repl_add_dir_ro(cmd_arg, ctx.skill_read_roots)
+            return StepResult(kind="state_change", text=msg, is_error=err)
+
+        if cmd in ("/clear", "/new"):
+            _reset_subagent(ctx)
+            msg = _repl_clear(
+                ctx.messages,
+                ctx.thinking_state,
+                file_tracker=ctx.file_tracker,
+                todo_state=ctx.todo_state,
+                snapshot_state=ctx.snapshot_state,
+            )
+            return StepResult(kind="state_change", text=msg)
+
+        if cmd == "/compact":
+            msg = _repl_compact(
+                ctx.messages,
+                ctx.tools,
+                ctx.loop_kwargs.get("context_length"),
+                cmd_arg,
+                ctx.snapshot_state,
+            )
+            return StepResult(kind="state_change", text=msg)
+
+        if cmd == "/continue":
+            fmt.info("continuing agent loop...")
+            return _run_agent_step(
+                None, "(continued)", ctx, interrupt_label="continuation"
+            )
+
+        if cmd == "/extend":
+            msg, err = _repl_extend(cmd_arg, ctx.turn_state)
+            return StepResult(kind="state_change", text=msg, is_error=err)
+
+        if cmd == "/profile":
+            new_profile, msg, err = _repl_profile(
+                cmd_arg,
+                profiles=ctx.profiles,
+                startup_profile=ctx.startup_profile,
+                current_profile=ctx.current_profile,
+                raw_baseline=ctx.raw_llm_baseline,
+                pre_profile_baseline=ctx.pre_profile_baseline,
+                repl_kwargs=ctx.loop_kwargs,
+                subagent_manager=ctx.subagent_manager,
+                verbose=ctx.verbose,
+            )
+            ctx.current_profile = new_profile
+            return StepResult(kind="state_change", text=msg, is_error=err)
+
+        if cmd == "/remember":
+            msg, err = _repl_remember(cmd_arg, ctx.base_dir, ctx.messages)
+            return StepResult(kind="state_change", text=msg, is_error=err)
+
+        if cmd == "/restore":
+            msg, err = _repl_snapshot_restore(
+                ctx.messages,
+                ctx.snapshot_state,
+                model_id=ctx.loop_kwargs["model_id"],
+                api_base=ctx.loop_kwargs["api_base"],
+                api_key=ctx.loop_kwargs["llm_kwargs"].get("api_key"),
+                top_p=ctx.loop_kwargs["top_p"],
+                seed=ctx.loop_kwargs["seed"],
+                provider=ctx.loop_kwargs["llm_kwargs"].get("provider"),
+            )
+            return StepResult(kind="state_change", text=msg, is_error=err)
+
+        if cmd == "/save":
+            label = cmd_arg.strip() or "user-checkpoint"
+            msg, err = _repl_snapshot_save(label, ctx.messages, ctx.snapshot_state)
+            return StepResult(kind="state_change", text=msg, is_error=err)
+
+        if cmd == "/unsave":
+            msg, err = _repl_snapshot_unsave(ctx.snapshot_state)
+            return StepResult(kind="state_change", text=msg, is_error=err)
+
+        # Info commands.
+        if cmd == "/help":
+            return StepResult(kind="info", text=_repl_help())
+
+        if cmd == "/status":
+            msg = _repl_status(
+                messages=ctx.messages,
+                tools=ctx.tools,
+                model_id=ctx.loop_kwargs["model_id"],
+                api_base=ctx.loop_kwargs["api_base"],
+                context_length=ctx.loop_kwargs.get("context_length"),
+                turn_state=ctx.turn_state,
+                files_mode=ctx.loop_kwargs.get("files_mode", "some"),
+                verbose=ctx.verbose,
+                base_dir=ctx.base_dir,
+                thinking_state=ctx.thinking_state,
+                todo_state=ctx.todo_state,
+                snapshot_state=ctx.snapshot_state,
+                file_tracker=ctx.file_tracker,
+                compaction_state=ctx.loop_kwargs.get("compaction_state"),
+                command_policy=ctx.loop_kwargs.get("command_policy"),
+                current_profile=ctx.current_profile,
+            )
+            return StepResult(kind="info", text=msg)
+
+        if cmd == "/tools":
+            return StepResult(
+                kind="info",
+                text=_repl_tools(ctx.tools, ctx.mcp_manager, ctx.a2a_manager),
+            )
+
+        if cmd == "/copy":
+            _repl_copy(_last_assistant_text(ctx.messages))
+            return StepResult(kind="flow_control")
+
+        # Agent-turn commands.
+        if cmd == "/init":
+            return _execute_init(cmd_arg, ctx)
+
+        if cmd == "/learn":
+            return _run_agent_step(
+                LEARN_PROMPT, "/learn", ctx, interrupt_label="/learn"
+            )
+
+        if cmd == "/simplify":
+            focus = cmd_arg.strip()
+            prompt = SIMPLIFY_PROMPT
+            if focus:
+                prompt += f"\n\nFocus area: {focus}"
+            return _run_agent_step(
+                prompt, "/simplify", ctx, interrupt_label="/simplify"
+            )
+
+        # Unknown slash command — pass through as plain text.
+
+    # Plain text (or unrecognized slash command).
+    return _run_agent_step(parsed.raw, parsed.raw, ctx, interrupt_label="question")
+
+
+def _execute_init(cmd_arg: str, ctx: InputContext) -> StepResult:
+    """Handle the multi-pass /init command."""
+
+    if cmd_arg:
+        fmt.warning(f"/init takes no arguments, ignoring {cmd_arg!r}")
+    _reset_subagent(ctx)
+    fmt.info(
+        _repl_clear(
+            ctx.messages,
+            ctx.thinking_state,
+            file_tracker=ctx.file_tracker,
+            todo_state=ctx.todo_state,
+            snapshot_state=ctx.snapshot_state,
+        )
+    )
+
+    last_answer = None
+    any_exhausted = False
+    for _pass, prompt in enumerate(
+        (_init_prompt(), INIT_ENRICH_PROMPT, INIT_WRITE_PROMPT), 1
+    ):
+        ctx.messages.append({"role": "user", "content": prompt})
+        answer, exhausted, interrupted = _invoke_agent_turn(None, ctx)
+        if interrupted:
+            fmt.warning("interrupted, /init aborted.")
+            return StepResult(kind="agent_turn", text=None)
+        if not ctx.no_history and answer:
+            append_history(
+                ctx.base_dir,
+                f"/init pass {_pass}",
+                answer,
+                diagnostics=ctx.verbose,
+            )
+        last_answer = answer
+        if exhausted:
+            any_exhausted = True
+            if ctx.verbose:
+                fmt.warning(f"max turns reached during /init pass {_pass}.")
+            break
+
+    # Post-write validation and retry.
+    agents_path = Path(ctx.base_dir).resolve() / "AGENTS.md"
+    reason, content = validate_agents_md(agents_path)
+    if reason is not None:
+        retry_prompt = INIT_RETRY_PROMPT.format(reason=reason)
+        ctx.messages.append({"role": "user", "content": retry_prompt})
+        answer, exhausted, interrupted = _invoke_agent_turn(None, ctx)
+        if interrupted:
+            fmt.warning("interrupted, /init retry aborted.")
+            return StepResult(kind="agent_turn", text=None)
+        if not ctx.no_history and answer:
+            append_history(
+                ctx.base_dir,
+                "/init pass 4 (retry)",
+                answer,
+                diagnostics=ctx.verbose,
+            )
+        last_answer = answer
+        if exhausted:
+            any_exhausted = True
+        retry_reason, content = validate_agents_md(agents_path)
+        if retry_reason is not None:
+            fmt.warning(f"AGENTS.md still invalid after retry: {retry_reason}")
+
+    if content is not None and len(content) > _INIT_AGENTS_MD_BUDGET:
+        fmt.warning(
+            f"AGENTS.md is {len(content)} chars, "
+            f"exceeds {_INIT_AGENTS_MD_BUDGET} target."
+        )
+
+    return StepResult(kind="agent_turn", text=last_answer, exhausted=any_exhausted)
+
+
+def run_input_script(
+    text: str,
+    ctx: InputContext,
+    *,
+    mode: str = "oneshot",
+) -> StepResult:
+    """Execute a multi-line command script.
+
+    Returns a single StepResult whose ``text`` is the last visible output.
+    State-change and info failures emit warnings to stderr and continue.
+    Agent-turn failures abort the remaining lines.
+    """
+
+    last_text: str | None = None
+    last_exhausted = False
+    total_turns = 0
+
+    for raw_line in text.splitlines():
+        parsed = parse_input_line(raw_line)
+        if not parsed.raw:
+            continue
+
+        # Write the accumulated total before each step so that commands
+        # like /status see the correct count during execution.
+        ctx.turn_state["turns_used"] = total_turns
+
+        step = execute_input(parsed, ctx, mode=mode)
+
+        # Accumulate turns. Only agent-turn steps invoke run_agent_loop,
+        # which overwrites turns_used with its per-call count.
+        if step.kind == "agent_turn":
+            step_turns = ctx.turn_state.get("turns_used", 0)
+            total_turns += step_turns
+            ctx.turn_state["turns_used"] = total_turns
+
+            # Advance turn_offset so multi-agent-turn scripts get
+            # non-overlapping turn numbers in the report timeline.
+            report = ctx.loop_kwargs.get("report")
+            if report is not None:
+                ctx.loop_kwargs["turn_offset"] = report.max_turn_seen
+
+        if step.text is not None:
+            last_text = step.text
+
+        if step.stop:
+            break
+
+        # Agent-turn failures abort the script.
+        if step.kind == "agent_turn" and step.text is None:
+            break
+
+        if step.exhausted:
+            last_exhausted = True
+            break
+
+    return StepResult(kind="flow_control", text=last_text, exhausted=last_exhausted)
 
 
 def repl_loop(
@@ -7349,15 +7845,6 @@ def repl_loop(
     if verbose:
         fmt.repl_banner()
 
-    def _reset_subagent_manager():
-        nonlocal subagent_manager
-        if subagent_manager is not None:
-            subagent_manager.shutdown()
-            subagent_manager = subagent_manager.fresh_copy()
-            _repl_loop_kwargs["subagent_manager"] = subagent_manager
-            if _subagent_holder is not None:
-                _subagent_holder[0] = subagent_manager
-
     turn_state = {"max_turns": max_turns, "turns_used": 0}
     _repl_loop_kwargs = dict(
         api_base=api_base,
@@ -7391,7 +7878,33 @@ def repl_loop(
         turn_state=turn_state,
     )
 
-    _current_profile = startup_profile
+    ctx = InputContext(
+        messages=messages,
+        tools=tools,
+        base_dir=base_dir,
+        turn_state=turn_state,
+        thinking_state=thinking_state,
+        todo_state=todo_state,
+        snapshot_state=snapshot_state,
+        file_tracker=file_tracker,
+        no_history=no_history,
+        continue_here=continue_here,
+        verbose=verbose,
+        loop_kwargs=_repl_loop_kwargs,
+        current_profile=startup_profile,
+        profiles=profiles or {},
+        startup_profile=startup_profile,
+        raw_llm_baseline=raw_llm_baseline or {},
+        pre_profile_baseline=pre_profile_baseline or {},
+        mcp_manager=mcp_manager,
+        a2a_manager=a2a_manager,
+        subagent_manager=subagent_manager,
+        subagent_holder=_subagent_holder,
+        extra_write_roots=extra_write_roots,
+        skill_read_roots=skill_read_roots,
+        skills_catalog=skills_catalog,
+        is_subagent=is_subagent,
+    )
 
     while True:
         try:
@@ -7411,391 +7924,22 @@ def repl_loop(
                 )
             break
 
-        line = line.strip()
-        if not line:
+        parsed = parse_input_line(line)
+        if not parsed.raw:
             continue
 
-        if line.startswith("!") and len(line) > 1 and not line[1:].startswith(" "):
-            result = _repl_run_custom_command(line, base_dir, model_id=model_id)
-            if result is None:
-                continue
-            cmd_name, prompt_content = result
-            prompt_content = _truncate_for_context(
-                prompt_content, messages, tools, context_length
-            )
-            if prompt_content is None:
-                continue
+        result = execute_input(parsed, ctx, mode="repl")
 
-            fmt.info(f"[!{cmd_name}] output:\n{prompt_content}")
-            messages.append({"role": "user", "content": prompt_content})
-            try:
-                answer, exhausted = run_agent_loop(
-                    messages,
-                    tools,
-                    max_turns=turn_state["max_turns"],
-                    **_repl_loop_kwargs,
-                )
-            except KeyboardInterrupt:
-                _reset_subagent_manager()
-                fmt.warning("interrupted, question aborted.")
-                if continue_here:
-                    from .continue_here import write_continue_file
+        if result.text is not None:
+            if result.kind == "agent_turn":
+                fmt.repl_answer(result.text)
+            elif result.is_error:
+                fmt.warning(result.text)
+            else:
+                fmt.info(result.text)
 
-                    write_continue_file(
-                        base_dir,
-                        messages,
-                        todo_state=todo_state,
-                        snapshot_state=snapshot_state,
-                        thinking_state=thinking_state,
-                    )
-                continue
-
-            history_label = f"[!{cmd_name}] {line}"
-            if not no_history and answer:
-                append_history(base_dir, history_label, answer, diagnostics=verbose)
-            if answer is not None:
-                fmt.repl_answer(answer)
-
-            if exhausted and verbose:
-                fmt.warning(
-                    "max turns reached for this question. Use /continue to resume."
-                )
-            continue
-
-        # REPL commands — only intercept known commands; unknown /foo passes through
-        if line in ("/exit", "/quit"):
+        if result.stop:
             break
-
-        cmd_parts = line.split(None, 1)
-        cmd = cmd_parts[0].lower()
-        cmd_arg = cmd_parts[1] if len(cmd_parts) > 1 else ""
-
-        if cmd == "/add-dir":
-            _repl_add_dir(cmd_arg, extra_write_roots)
-            continue
-        elif cmd == "/add-dir-ro":
-            _repl_add_dir_ro(cmd_arg, skill_read_roots)
-            continue
-        elif cmd in ("/clear", "/new"):
-            _reset_subagent_manager()
-            _repl_clear(
-                messages,
-                thinking_state,
-                file_tracker=file_tracker,
-                todo_state=todo_state,
-                snapshot_state=snapshot_state,
-            )
-            continue
-        elif cmd == "/compact":
-            _repl_compact(messages, tools, context_length, cmd_arg, snapshot_state)
-            continue
-        elif cmd == "/continue":
-            fmt.info("continuing agent loop...")
-            try:
-                answer, exhausted = run_agent_loop(
-                    messages,
-                    tools,
-                    max_turns=turn_state["max_turns"],
-                    **_repl_loop_kwargs,
-                )
-            except KeyboardInterrupt:
-                _reset_subagent_manager()
-                fmt.warning("interrupted, continuation aborted.")
-                if continue_here:
-                    from .continue_here import write_continue_file
-
-                    write_continue_file(
-                        base_dir,
-                        messages,
-                        todo_state=todo_state,
-                        snapshot_state=snapshot_state,
-                        thinking_state=thinking_state,
-                    )
-                continue
-            if not no_history and answer:
-                append_history(base_dir, "(continued)", answer, diagnostics=verbose)
-            if answer is not None:
-                fmt.repl_answer(answer)
-
-            if exhausted and verbose:
-                fmt.warning(
-                    "max turns reached for this question. Use /continue to resume."
-                )
-            continue
-        elif cmd == "/status":
-            _repl_status(
-                messages=messages,
-                tools=tools,
-                model_id=model_id,
-                api_base=api_base,
-                context_length=context_length,
-                turn_state=turn_state,
-                files_mode=files_mode,
-                verbose=verbose,
-                base_dir=base_dir,
-                thinking_state=thinking_state,
-                todo_state=todo_state,
-                snapshot_state=snapshot_state,
-                file_tracker=file_tracker,
-                compaction_state=compaction_state,
-                command_policy=command_policy,
-                current_profile=_current_profile,
-            )
-            continue
-        elif cmd == "/copy":
-            _repl_copy(_last_assistant_text(messages))
-            continue
-        elif cmd == "/extend":
-            _repl_extend(cmd_arg, turn_state)
-            continue
-        elif cmd == "/help":
-            _repl_help()
-            continue
-        elif cmd == "/init":
-            if cmd_arg:
-                fmt.warning(f"/init takes no arguments, ignoring {cmd_arg!r}")
-            # Clear conversation history first to start with a clean context
-            _reset_subagent_manager()
-            _repl_clear(
-                messages,
-                thinking_state,
-                file_tracker=file_tracker,
-                todo_state=todo_state,
-                snapshot_state=snapshot_state,
-            )
-            # Three-pass init: explore, enrich, write — then validate
-            _init_aborted = False
-            for _pass, prompt in enumerate(
-                (_init_prompt(), INIT_ENRICH_PROMPT, INIT_WRITE_PROMPT), 1
-            ):
-                messages.append({"role": "user", "content": prompt})
-                try:
-                    answer, exhausted = run_agent_loop(
-                        messages,
-                        tools,
-                        max_turns=turn_state["max_turns"],
-                        **_repl_loop_kwargs,
-                    )
-                except KeyboardInterrupt:
-                    _reset_subagent_manager()
-                    fmt.warning("interrupted, /init aborted.")
-                    if continue_here:
-                        from .continue_here import write_continue_file
-
-                        write_continue_file(
-                            base_dir,
-                            messages,
-                            todo_state=todo_state,
-                            snapshot_state=snapshot_state,
-                            thinking_state=thinking_state,
-                        )
-                    _init_aborted = True
-                    break
-                if not no_history and answer:
-                    append_history(
-                        base_dir,
-                        f"/init pass {_pass}",
-                        answer,
-                        diagnostics=verbose,
-                    )
-                if answer is not None:
-                    fmt.repl_answer(answer)
-
-                if exhausted and verbose:
-                    fmt.warning(f"max turns reached during /init pass {_pass}.")
-            # Post-write validation and conditional retry
-            if not _init_aborted:
-                agents_path = Path(base_dir).resolve() / "AGENTS.md"
-                reason, content = validate_agents_md(agents_path)
-                if reason is not None:
-                    retry_prompt = INIT_RETRY_PROMPT.format(reason=reason)
-                    messages.append({"role": "user", "content": retry_prompt})
-                    try:
-                        answer, exhausted = run_agent_loop(
-                            messages,
-                            tools,
-                            max_turns=turn_state["max_turns"],
-                            **_repl_loop_kwargs,
-                        )
-                    except KeyboardInterrupt:
-                        _reset_subagent_manager()
-                        fmt.warning("interrupted, /init retry aborted.")
-                        if continue_here:
-                            from .continue_here import write_continue_file
-
-                            write_continue_file(
-                                base_dir,
-                                messages,
-                                todo_state=todo_state,
-                                snapshot_state=snapshot_state,
-                                thinking_state=thinking_state,
-                            )
-                        _init_aborted = True
-                    else:
-                        if not no_history and answer:
-                            append_history(
-                                base_dir,
-                                "/init pass 4 (retry)",
-                                answer,
-                                diagnostics=verbose,
-                            )
-                        if answer is not None:
-                            fmt.repl_answer(answer)
-
-                        retry_reason, content = validate_agents_md(agents_path)
-                        if retry_reason is not None:
-                            fmt.warning(
-                                f"AGENTS.md still invalid after retry: {retry_reason}"
-                            )
-                # Budget check using already-read content
-                if not _init_aborted and content is not None:
-                    if len(content) > _INIT_AGENTS_MD_BUDGET:
-                        fmt.warning(
-                            f"AGENTS.md is {len(content)} chars, "
-                            f"exceeds {_INIT_AGENTS_MD_BUDGET} target."
-                        )
-            continue
-        elif cmd == "/learn":
-            messages.append({"role": "user", "content": LEARN_PROMPT})
-            try:
-                answer, exhausted = run_agent_loop(
-                    messages,
-                    tools,
-                    max_turns=turn_state["max_turns"],
-                    **_repl_loop_kwargs,
-                )
-            except KeyboardInterrupt:
-                _reset_subagent_manager()
-                fmt.warning("interrupted, /learn aborted.")
-                if continue_here:
-                    from .continue_here import write_continue_file
-
-                    write_continue_file(
-                        base_dir,
-                        messages,
-                        todo_state=todo_state,
-                        snapshot_state=snapshot_state,
-                        thinking_state=thinking_state,
-                    )
-                continue
-            if not no_history and answer:
-                append_history(base_dir, "/learn", answer, diagnostics=verbose)
-            if answer is not None:
-                fmt.repl_answer(answer)
-
-            if exhausted and verbose:
-                fmt.warning("max turns reached for /learn. Use /continue to resume.")
-            continue
-        elif cmd == "/restore":
-            _repl_snapshot_restore(
-                messages,
-                snapshot_state,
-                model_id=model_id,
-                api_base=api_base,
-                api_key=llm_kwargs.get("api_key"),
-                top_p=top_p,
-                seed=seed,
-                provider=llm_kwargs.get("provider"),
-            )
-            continue
-        elif cmd == "/save":
-            label = cmd_arg.strip() or "user-checkpoint"
-            _repl_snapshot_save(label, messages, snapshot_state)
-            continue
-        elif cmd == "/simplify":
-            focus = cmd_arg.strip()
-            prompt = SIMPLIFY_PROMPT
-            if focus:
-                prompt += f"\n\nFocus area: {focus}"
-            messages.append({"role": "user", "content": prompt})
-            try:
-                answer, exhausted = run_agent_loop(
-                    messages,
-                    tools,
-                    max_turns=turn_state["max_turns"],
-                    **_repl_loop_kwargs,
-                )
-            except KeyboardInterrupt:
-                _reset_subagent_manager()
-                fmt.warning("interrupted, /simplify aborted.")
-                if continue_here:
-                    from .continue_here import write_continue_file
-
-                    write_continue_file(
-                        base_dir,
-                        messages,
-                        todo_state=todo_state,
-                        snapshot_state=snapshot_state,
-                        thinking_state=thinking_state,
-                    )
-                continue
-            if not no_history and answer:
-                append_history(base_dir, "/simplify", answer, diagnostics=verbose)
-            if answer is not None:
-                fmt.repl_answer(answer)
-            if exhausted and verbose:
-                fmt.warning("max turns reached for /simplify. Use /continue to resume.")
-            continue
-        elif cmd == "/tools":
-            _repl_tools(tools, mcp_manager, a2a_manager)
-            continue
-        elif cmd == "/unsave":
-            _repl_snapshot_unsave(snapshot_state)
-            continue
-        elif cmd == "/remember":
-            _repl_remember(cmd_arg, base_dir, messages)
-            continue
-        elif cmd == "/profile":
-            _current_profile = _repl_profile(
-                cmd_arg,
-                profiles=profiles or {},
-                startup_profile=startup_profile,
-                current_profile=_current_profile,
-                raw_baseline=raw_llm_baseline or {},
-                pre_profile_baseline=pre_profile_baseline or {},
-                repl_kwargs=_repl_loop_kwargs,
-                subagent_manager=subagent_manager,
-                verbose=verbose,
-            )
-            model_id = _repl_loop_kwargs["model_id"]
-            api_base = _repl_loop_kwargs["api_base"]
-            context_length = _repl_loop_kwargs["context_length"]
-            max_output_tokens = _repl_loop_kwargs["max_output_tokens"]
-            temperature = _repl_loop_kwargs["temperature"]
-            top_p = _repl_loop_kwargs["top_p"]
-            seed = _repl_loop_kwargs["seed"]
-            llm_kwargs = _repl_loop_kwargs["llm_kwargs"]
-            continue
-
-        messages.append({"role": "user", "content": line})
-        try:
-            answer, exhausted = run_agent_loop(
-                messages,
-                tools,
-                max_turns=turn_state["max_turns"],
-                **_repl_loop_kwargs,
-            )
-        except KeyboardInterrupt:
-            _reset_subagent_manager()
-            fmt.warning("interrupted, question aborted.")
-            if continue_here:
-                from .continue_here import write_continue_file
-
-                write_continue_file(
-                    base_dir,
-                    messages,
-                    todo_state=todo_state,
-                    snapshot_state=snapshot_state,
-                    thinking_state=thinking_state,
-                )
-            continue
-
-        if not no_history and answer:
-            append_history(base_dir, line, answer, diagnostics=verbose)
-        if answer is not None:
-            fmt.repl_answer(answer)
-        if exhausted and verbose:
-            fmt.warning("max turns reached for this question. Use /continue to resume.")
 
 
 if __name__ == "__main__":

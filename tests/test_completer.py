@@ -69,10 +69,10 @@ class TestSlashCommands:
         assert _completions(completer, "/xyz") == []
 
     def test_bare_slash_yields_all(self, completer):
-        from swival.repl_commands import REPL_COMMANDS
+        from swival.input_commands import INPUT_COMMANDS
 
         results = _completions(completer, "/")
-        assert len(results) == len(REPL_COMMANDS)
+        assert len(results) == len(INPUT_COMMANDS)
 
     def test_case_insensitive(self, completer):
         results = _completions(completer, "/HEL")

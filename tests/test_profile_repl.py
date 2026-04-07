@@ -92,7 +92,7 @@ def _call_profile(
         resolve_return = _resolve_return()
 
     with patch("swival.agent.resolve_provider", return_value=resolve_return) as mock_rp:
-        result = _repl_profile(
+        profile_name, msg, is_error = _repl_profile(
             cmd_arg,
             profiles=profiles,
             startup_profile=startup_profile,
@@ -103,7 +103,7 @@ def _call_profile(
             subagent_manager=subagent_manager,
             verbose=False,
         )
-    return result, repl_kwargs, mock_rp
+    return profile_name, msg, is_error, repl_kwargs, mock_rp
 
 
 # ---------------------------------------------------------------------------
@@ -112,23 +112,21 @@ def _call_profile(
 
 
 class TestProfileList:
-    def test_no_profiles(self, capsys):
-        result, _, _ = _call_profile("", profiles={})
+    def test_no_profiles(self):
+        result, msg, is_error, _, _ = _call_profile("", profiles={})
         assert result is None
-        assert "No profiles defined" in capsys.readouterr().err
+        assert "No profiles defined" in msg
 
-    def test_shows_all(self, capsys):
-        result, _, _ = _call_profile("", current_profile=None)
-        out = capsys.readouterr().err
-        assert "fast" in out
-        assert "big" in out
+    def test_shows_all(self):
+        result, msg, is_error, _, _ = _call_profile("", current_profile=None)
+        assert "fast" in msg
+        assert "big" in msg
         assert result is None
 
-    def test_marks_active(self, capsys):
-        result, _, _ = _call_profile("", current_profile="fast")
-        out = capsys.readouterr().err
-        assert "\u2192" in out
-        assert "(active)" in out
+    def test_marks_active(self):
+        result, msg, is_error, _, _ = _call_profile("", current_profile="fast")
+        assert "\u2192" in msg
+        assert "(active)" in msg
         assert result == "fast"
 
 
@@ -139,8 +137,9 @@ class TestProfileList:
 
 class TestProfileSwitch:
     def test_updates_kwargs(self):
-        result, kw, mock_rp = _call_profile("fast")
+        result, msg, is_error, kw, mock_rp = _call_profile("fast")
         assert result == "fast"
+        assert not is_error
         assert kw["model_id"] == "test-model"
         assert kw["api_base"] == "http://test-api"
         assert kw["context_length"] == 128000
@@ -149,14 +148,16 @@ class TestProfileSwitch:
         assert call_kw.kwargs["provider"] == "lmstudio"
         assert call_kw.kwargs["model"] == "qwen3.5-0.8b"
 
-    def test_unknown_name(self, capsys):
-        result, kw, _ = _call_profile("nonexistent", current_profile="fast")
+    def test_unknown_name(self):
+        result, msg, is_error, kw, _ = _call_profile(
+            "nonexistent", current_profile="fast"
+        )
         assert result == "fast"
+        assert is_error
         assert kw["model_id"] == "old-model"
-        out = capsys.readouterr().err
-        assert "unknown profile" in out
-        assert "big" in out
-        assert "fast" in out
+        assert "unknown profile" in msg
+        assert "big" in msg
+        assert "fast" in msg
 
     def test_preserves_conversation(self):
         messages = [{"role": "user", "content": "hello"}]
@@ -165,7 +166,7 @@ class TestProfileSwitch:
 
     def test_overlay_priority(self):
         """Profile values override baseline, not the other way."""
-        result, kw, mock_rp = _call_profile("big")
+        result, msg, is_error, kw, mock_rp = _call_profile("big")
         call_kw = mock_rp.call_args
         assert call_kw.kwargs["api_key"] == "sk-big"
 
@@ -180,7 +181,7 @@ class TestProfileSwitch:
                 "max_output_tokens": 8192,
             }
         }
-        result, kw, _ = _call_profile("custom", profiles=profiles)
+        result, msg, is_error, kw, _ = _call_profile("custom", profiles=profiles)
         assert kw["temperature"] == 0.2
         assert kw["top_p"] == 0.9
         assert kw["seed"] == 42
@@ -193,9 +194,9 @@ class TestProfileSwitch:
 
 
 class TestProfileErrors:
-    def test_resolve_failure_keeps_current(self, capsys):
+    def test_resolve_failure_keeps_current(self):
         with patch("swival.agent.resolve_provider", side_effect=ConfigError("bad")):
-            result = _repl_profile(
+            result, msg, is_error = _repl_profile(
                 "fast",
                 profiles=PROFILES,
                 startup_profile=None,
@@ -206,7 +207,8 @@ class TestProfileErrors:
                 verbose=False,
             )
         assert result == "big"
-        assert "profile switch failed" in capsys.readouterr().err
+        assert is_error
+        assert "profile switch failed" in msg
 
 
 # ---------------------------------------------------------------------------
@@ -216,17 +218,17 @@ class TestProfileErrors:
 
 class TestProfileRevert:
     def test_dash_restores_baseline(self):
-        result, kw, mock_rp = _call_profile("-", startup_profile="fast")
+        result, msg, is_error, kw, mock_rp = _call_profile("-", startup_profile="fast")
         assert result == "fast"
         call_kw = mock_rp.call_args
         assert call_kw.kwargs["provider"] == BASELINE["provider"]
 
     def test_dash_with_startup_profile(self):
-        result, _, mock_rp = _call_profile("-", startup_profile="big")
+        result, msg, is_error, _, mock_rp = _call_profile("-", startup_profile="big")
         assert result == "big"
 
     def test_dash_no_startup(self):
-        result, _, mock_rp = _call_profile("-", startup_profile=None)
+        result, msg, is_error, _, mock_rp = _call_profile("-", startup_profile=None)
         assert result is None
         call_kw = mock_rp.call_args
         assert call_kw.kwargs["provider"] == BASELINE["provider"]
@@ -377,7 +379,7 @@ class TestProfileSubagent:
             _template = {"model_id": "old", "api_base": "old"}
 
         mgr = FakeManager()
-        result, kw, _ = _call_profile("fast", subagent_manager=mgr)
+        result, msg, is_error, kw, _ = _call_profile("fast", subagent_manager=mgr)
         assert mgr._template["model_id"] == "test-model"
         assert mgr._template["api_base"] == "http://test-api"
         assert mgr._template["context_length"] == 128000
@@ -408,7 +410,7 @@ class TestProfileApiKey:
             128000,
             {"provider": "x", "api_key": "sk-new-key"},
         )
-        result, kw, _ = _call_profile("big", resolve_return=ret)
+        result, msg, is_error, kw, _ = _call_profile("big", resolve_return=ret)
         assert kw["llm_kwargs"]["api_key"] == "sk-new-key"
 
 
@@ -423,7 +425,7 @@ class TestProfilePreservesSessionKeys:
         kw["llm_kwargs"]["prompt_cache"] = False
         kw["llm_kwargs"]["max_retries"] = 9
 
-        result, kw, _ = _call_profile("fast", repl_kwargs=kw)
+        result, msg, is_error, kw, _ = _call_profile("fast", repl_kwargs=kw)
         assert kw["llm_kwargs"]["prompt_cache"] is False
         assert kw["llm_kwargs"]["max_retries"] == 9
 
@@ -432,7 +434,9 @@ class TestProfilePreservesSessionKeys:
         kw["llm_kwargs"]["prompt_cache"] = False
         kw["llm_kwargs"]["max_retries"] = 5
 
-        result, kw, _ = _call_profile("-", startup_profile=None, repl_kwargs=kw)
+        result, msg, is_error, kw, _ = _call_profile(
+            "-", startup_profile=None, repl_kwargs=kw
+        )
         assert kw["llm_kwargs"]["prompt_cache"] is False
         assert kw["llm_kwargs"]["max_retries"] == 5
 
@@ -442,7 +446,7 @@ class TestProfilePreservesSessionKeys:
         kw = _make_repl_kwargs()
         kw["llm_kwargs"]["provider"] = "should-be-overwritten"
 
-        result, kw, _ = _call_profile("fast")
+        result, msg, is_error, kw, _ = _call_profile("fast")
         assert kw["llm_kwargs"]["provider"] == "test"
 
 
@@ -502,7 +506,9 @@ class TestProfileLocalsCoherence:
 
     def test_dash_locals_coherent(self):
         kw = _make_repl_kwargs()
-        result, kw2, _ = _call_profile("-", startup_profile=None, repl_kwargs=kw)
+        result, msg, is_error, kw2, _ = _call_profile(
+            "-", startup_profile=None, repl_kwargs=kw
+        )
         assert kw["model_id"] == kw2["model_id"]
 
 
@@ -512,8 +518,8 @@ class TestProfileLocalsCoherence:
 
 
 class TestProfileStatus:
-    def test_status_shows_profile_name(self, capsys):
-        _repl_status(
+    def test_status_shows_profile_name(self):
+        out = _repl_status(
             messages=[],
             tools=[],
             model_id="test-model",
@@ -531,11 +537,10 @@ class TestProfileStatus:
             compaction_state=None,
             current_profile="fast-local",
         )
-        out = capsys.readouterr().err
         assert "profile: fast-local" in out
 
-    def test_status_no_profile(self, capsys):
-        _repl_status(
+    def test_status_no_profile(self):
+        out = _repl_status(
             messages=[],
             tools=[],
             model_id="test-model",
@@ -552,5 +557,4 @@ class TestProfileStatus:
             file_tracker=None,
             compaction_state=None,
         )
-        out = capsys.readouterr().err
         assert "profile:" not in out

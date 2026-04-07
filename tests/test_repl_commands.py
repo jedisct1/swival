@@ -10,24 +10,24 @@ from unittest.mock import patch
 
 import pytest
 
-from swival.repl_commands import REPL_COMMANDS
+from swival.input_commands import INPUT_COMMANDS
 
 
 # -- registry / dispatcher guard -------------------------------------------
 
 
 class TestRegistryMatchesDispatcher:
-    """Ensure REPL_COMMANDS stays in sync with the actual dispatcher."""
+    """Ensure INPUT_COMMANDS stays in sync with the actual dispatcher."""
 
     def test_all_commands_accounted_for(self):
-        from swival.agent import repl_loop
+        from swival.agent import execute_input
 
-        source = inspect.getsource(repl_loop)
+        source = inspect.getsource(execute_input)
 
         dispatched: set[str] = set()
 
-        # Pattern: line in ("/exit", "/quit")
-        for group in re.findall(r"line\s+in\s+\(([^)]+)\)", source):
+        # Pattern: cmd in ("/exit", "/quit") or cmd in ("/clear", "/new")
+        for group in re.findall(r"cmd\s+in\s+\(([^)]+)\)", source):
             for cmd in re.findall(r'["\'](/[a-z-]+)["\']', group):
                 dispatched.add(cmd)
 
@@ -35,20 +35,15 @@ class TestRegistryMatchesDispatcher:
         for cmd in re.findall(r'cmd\s*==\s*["\'](/[a-z-]+)["\']', source):
             dispatched.add(cmd)
 
-        # Pattern: cmd in ("/clear", "/new")
-        for group in re.findall(r"cmd\s+in\s+\(([^)]+)\)", source):
-            for cmd in re.findall(r'["\'](/[a-z-]+)["\']', group):
-                dispatched.add(cmd)
-
-        registry = set(REPL_COMMANDS.keys())
+        registry = set(INPUT_COMMANDS.keys())
 
         missing_from_registry = dispatched - registry
         missing_from_dispatcher = registry - dispatched
         assert not missing_from_registry, (
-            f"Commands in dispatcher but not in REPL_COMMANDS: {missing_from_registry}"
+            f"Commands in dispatcher but not in INPUT_COMMANDS: {missing_from_registry}"
         )
         assert not missing_from_dispatcher, (
-            f"Commands in REPL_COMMANDS but not in dispatcher: {missing_from_dispatcher}"
+            f"Commands in INPUT_COMMANDS but not in dispatcher: {missing_from_dispatcher}"
         )
 
 
@@ -56,21 +51,20 @@ class TestRegistryMatchesDispatcher:
 
 
 class TestHelpOutput:
-    def test_sorted_order(self, capsys):
+    def test_sorted_order(self):
         from swival.agent import _repl_help
 
-        _repl_help()
-        lines = [line.strip() for line in capsys.readouterr().err.splitlines()]
+        text = _repl_help()
+        lines = [line.strip() for line in text.splitlines()]
         commands = [line.split()[0] for line in lines if line.startswith("/")]
         assert commands == sorted(commands)
 
-    def test_contains_all_commands(self, capsys):
+    def test_contains_all_commands(self):
         from swival.agent import _repl_help
 
-        _repl_help()
-        err = capsys.readouterr().err
-        for cmd in REPL_COMMANDS:
-            assert cmd in err
+        text = _repl_help()
+        for cmd in INPUT_COMMANDS:
+            assert cmd in text
 
 
 # -- discover_custom_commands -----------------------------------------------

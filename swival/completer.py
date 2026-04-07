@@ -7,7 +7,7 @@ import sys
 from prompt_toolkit.completion import Completer, Completion, PathCompleter
 from prompt_toolkit.document import Document
 
-from .repl_commands import REPL_COMMANDS
+from .input_commands import INPUT_COMMANDS
 from .skills import find_skill_prefix
 
 
@@ -33,7 +33,7 @@ class SwivalCompleter(Completer):
         if text.startswith("/"):
             parts = text.split(None, 1)
             cmd = parts[0].lower()
-            if cmd in REPL_COMMANDS and REPL_COMMANDS[cmd].arg_type == "dir_path":
+            if cmd in INPUT_COMMANDS and INPUT_COMMANDS[cmd].arg_type == "dir_path":
                 arg_text = parts[1] if len(parts) > 1 else ""
                 sub_doc = Document(arg_text, len(arg_text))
                 yield from self._path_completer.get_completions(sub_doc, complete_event)
@@ -51,12 +51,12 @@ class SwivalCompleter(Completer):
 
     def _complete_slash_commands(self, text: str):
         prefix = text.lower()
-        for cmd in sorted(REPL_COMMANDS):
+        for cmd in sorted(INPUT_COMMANDS):
             if cmd.lower().startswith(prefix):
                 yield Completion(
                     cmd,
                     start_position=-len(text),
-                    display_meta=REPL_COMMANDS[cmd].desc,
+                    display_meta=INPUT_COMMANDS[cmd].desc,
                 )
 
     def _complete_custom_commands(self, text: str):

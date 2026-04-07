@@ -47,7 +47,9 @@ swival
 
 The REPL is built on `prompt-toolkit`, so it supports input history, history search, and normal terminal line editing.
 
-## REPL Commands
+## Input Commands
+
+Slash commands work in both interactive mode (typed at the REPL prompt) and one-shot mode (when the input starts with a command, e.g. `swival /status`). A few commands (`/continue`, `/copy`) are REPL-only and are rejected in one-shot mode.
 
 `/help` prints the command reference in the terminal.
 

@@ -524,23 +524,22 @@ class TestCompactionListIdentity:
 
 
 class TestHelpCommand:
-    def test_help_prints_commands(self, capsys):
-        """'/help' prints the command list via fmt.info()."""
-        _repl_help()
-        captured = capsys.readouterr()
-        assert "/help" in captured.err
-        assert "/clear" in captured.err
-        assert "/compact" in captured.err
-        assert "/add-dir" in captured.err
-        assert "/continue" in captured.err
-        assert "/tools" in captured.err
-        assert "/init" in captured.err
-        assert "/exit" in captured.err
+    def test_help_prints_commands(self):
+        """'/help' returns the command list."""
+        text = _repl_help()
+        assert "/help" in text
+        assert "/clear" in text
+        assert "/compact" in text
+        assert "/add-dir" in text
+        assert "/continue" in text
+        assert "/tools" in text
+        assert "/init" in text
+        assert "/exit" in text
 
-    def test_help_commands_are_sorted(self, capsys):
+    def test_help_commands_are_sorted(self):
         """Slash commands in /help are listed in lexicographic order."""
-        _repl_help()
-        lines = [line.strip() for line in capsys.readouterr().err.splitlines()]
+        text = _repl_help()
+        lines = [line.strip() for line in text.splitlines()]
         commands = [line.split()[0] for line in lines if line.startswith("/")]
         assert commands == sorted(commands)
 
@@ -589,27 +588,25 @@ class TestToolsCommand:
         assert mock_loop.call_count == 0
         assert len(messages) == 1
 
-    def test_builtin_tools_listed(self, capsys):
+    def test_builtin_tools_listed(self):
         """Built-in tools appear with full descriptions."""
         tools = [
             _tool("edit_file", "Replace a string in a file."),
             _tool("read_file", "Read a file or directory."),
         ]
-        _repl_tools(tools)
-        out = capsys.readouterr().err
+        out = _repl_tools(tools)
         assert "Built-in tools:" in out
         assert "edit_file" in out
         assert "read_file" in out
         assert "Replace a string in a file." in out
 
-    def test_builtin_sorted(self, capsys):
+    def test_builtin_sorted(self):
         """Built-in tools are sorted alphabetically."""
         tools = [_tool("write_file"), _tool("edit_file"), _tool("read_file")]
-        _repl_tools(tools)
-        out = capsys.readouterr().err
+        out = _repl_tools(tools)
         assert out.index("edit_file") < out.index("read_file") < out.index("write_file")
 
-    def test_mcp_tools_grouped(self, capsys):
+    def test_mcp_tools_grouped(self):
         """MCP tools are grouped by server with correct count."""
         tools = [
             _tool("read_file", "Read."),
@@ -621,37 +618,34 @@ class TestToolsCommand:
             "gh": [("mcp__gh__search", "Search repos.")],
             "fs": [("mcp__fs__read", "Read fs.")],
         }
-        _repl_tools(tools, mcp_manager=mcp_mgr)
-        out = capsys.readouterr().err
+        out = _repl_tools(tools, mcp_manager=mcp_mgr)
         assert "MCP tools (2 servers):" in out
         assert "gh:" in out
         assert "fs:" in out
         # Servers sorted: fs before gh
         assert out.index("fs:") < out.index("gh:")
 
-    def test_a2a_tools_grouped(self, capsys):
+    def test_a2a_tools_grouped(self):
         """A2A tools are grouped by agent with correct count."""
         tools = [_tool("a2a__coder__review", "Review code.")]
         a2a_mgr = MagicMock()
         a2a_mgr.get_tool_info.return_value = {
             "coder": [("a2a__coder__review", "Review code.")],
         }
-        _repl_tools(tools, a2a_manager=a2a_mgr)
-        out = capsys.readouterr().err
+        out = _repl_tools(tools, a2a_manager=a2a_mgr)
         assert "A2A tools (1 agent):" in out
         assert "coder:" in out
         assert "Review code." in out
 
-    def test_no_managers_no_mcp_a2a_sections(self, capsys):
+    def test_no_managers_no_mcp_a2a_sections(self):
         """Without managers, MCP/A2A sections are absent."""
         tools = [_tool("read_file", "Read.")]
-        _repl_tools(tools)
-        out = capsys.readouterr().err
+        out = _repl_tools(tools)
         assert "Built-in tools:" in out
         assert "MCP" not in out
         assert "A2A" not in out
 
-    def test_embedded_newlines_hanging_indent(self, capsys):
+    def test_embedded_newlines_hanging_indent(self):
         """Descriptions with newlines get hanging-indent continuation."""
         tools = [
             _tool("a2a__bot__ask", "Ask the bot.\nExamples: hello; help me"),
@@ -660,8 +654,7 @@ class TestToolsCommand:
         a2a_mgr.get_tool_info.return_value = {
             "bot": [("a2a__bot__ask", "Ask the bot.\nExamples: hello; help me")],
         }
-        _repl_tools(tools, a2a_manager=a2a_mgr)
-        out = capsys.readouterr().err
+        out = _repl_tools(tools, a2a_manager=a2a_mgr)
         lines = out.strip().split("\n")
         # Find the continuation line with "Examples:"
         cont_lines = [ln for ln in lines if "Examples:" in ln]
@@ -675,21 +668,19 @@ class TestToolsCommand:
         indent_len = len(cont_line) - len(stripped)
         assert indent_len >= desc_start
 
-    def test_singular_server_label(self, capsys):
+    def test_singular_server_label(self):
         """Single MCP server uses 'server' not 'servers'."""
         tools = [_tool("mcp__gh__search", "Search.")]
         mcp_mgr = MagicMock()
         mcp_mgr.get_tool_info.return_value = {
             "gh": [("mcp__gh__search", "Search.")],
         }
-        _repl_tools(tools, mcp_manager=mcp_mgr)
-        out = capsys.readouterr().err
+        out = _repl_tools(tools, mcp_manager=mcp_mgr)
         assert "MCP tools (1 server):" in out
 
-    def test_empty_tools(self, capsys):
-        """No tools at all prints a fallback message."""
-        _repl_tools([])
-        out = capsys.readouterr().err
+    def test_empty_tools(self):
+        """No tools at all returns a fallback message."""
+        out = _repl_tools([])
         assert "No tools available." in out
 
 
@@ -792,37 +783,36 @@ class TestAddDirCommand:
         _repl_add_dir(str(tmp_path), extra)
         assert tmp_path.resolve() in extra
 
-    def test_add_dir_missing_arg(self, capsys):
-        """/add-dir with no argument prints a warning."""
+    def test_add_dir_missing_arg(self):
+        """/add-dir with no argument returns a warning."""
         extra = []
-        _repl_add_dir("", extra)
+        msg, is_error = _repl_add_dir("", extra)
         assert extra == []
-        captured = capsys.readouterr()
-        assert "requires a path" in captured.err
+        assert "requires a path" in msg
+        assert is_error is True
 
-    def test_add_dir_nonexistent(self, capsys):
-        """/add-dir with nonexistent path prints a warning."""
+    def test_add_dir_nonexistent(self):
+        """/add-dir with nonexistent path returns a warning."""
         extra = []
-        _repl_add_dir("/nonexistent_path_abc123", extra)
+        msg, is_error = _repl_add_dir("/nonexistent_path_abc123", extra)
         assert extra == []
-        captured = capsys.readouterr()
-        assert "not a directory" in captured.err
+        assert "not a directory" in msg
+        assert is_error is True
 
-    def test_add_dir_duplicate(self, tmp_path, capsys):
+    def test_add_dir_duplicate(self, tmp_path):
         """Adding same dir twice doesn't duplicate it."""
         extra = [tmp_path.resolve()]
-        _repl_add_dir(str(tmp_path), extra)
+        msg, is_error = _repl_add_dir(str(tmp_path), extra)
         assert len(extra) == 1
-        captured = capsys.readouterr()
-        assert "already in whitelist" in captured.err
+        assert "already in whitelist" in msg
 
-    def test_add_dir_root_rejected(self, capsys):
+    def test_add_dir_root_rejected(self):
         """/add-dir / is rejected."""
         extra = []
-        _repl_add_dir("/", extra)
+        msg, is_error = _repl_add_dir("/", extra)
         assert extra == []
-        captured = capsys.readouterr()
-        assert "filesystem root" in captured.err
+        assert "filesystem root" in msg
+        assert is_error is True
 
     def test_add_dir_enables_file_access(self, tmp_path):
         """After /add-dir, read_file can access files in the added directory."""
@@ -878,37 +868,36 @@ class TestAddDirRoCommand:
         assert tmp_path.resolve() in read_roots
         assert write_roots == []
 
-    def test_add_dir_ro_missing_arg(self, capsys):
-        """/add-dir-ro with no argument prints a warning."""
+    def test_add_dir_ro_missing_arg(self):
+        """/add-dir-ro with no argument returns a warning."""
         roots = []
-        _repl_add_dir_ro("", roots)
+        msg, is_error = _repl_add_dir_ro("", roots)
         assert roots == []
-        captured = capsys.readouterr()
-        assert "requires a path" in captured.err
+        assert "requires a path" in msg
+        assert is_error is True
 
-    def test_add_dir_ro_nonexistent(self, capsys):
-        """/add-dir-ro with nonexistent path prints a warning."""
+    def test_add_dir_ro_nonexistent(self):
+        """/add-dir-ro with nonexistent path returns a warning."""
         roots = []
-        _repl_add_dir_ro("/nonexistent_path_abc123", roots)
+        msg, is_error = _repl_add_dir_ro("/nonexistent_path_abc123", roots)
         assert roots == []
-        captured = capsys.readouterr()
-        assert "not a directory" in captured.err
+        assert "not a directory" in msg
+        assert is_error is True
 
-    def test_add_dir_ro_duplicate(self, tmp_path, capsys):
+    def test_add_dir_ro_duplicate(self, tmp_path):
         """Adding same dir twice doesn't duplicate it."""
         roots = [tmp_path.resolve()]
-        _repl_add_dir_ro(str(tmp_path), roots)
+        msg, is_error = _repl_add_dir_ro(str(tmp_path), roots)
         assert len(roots) == 1
-        captured = capsys.readouterr()
-        assert "already in read-only whitelist" in captured.err
+        assert "already in read-only whitelist" in msg
 
-    def test_add_dir_ro_root_rejected(self, capsys):
+    def test_add_dir_ro_root_rejected(self):
         """/add-dir-ro / is rejected."""
         roots = []
-        _repl_add_dir_ro("/", roots)
+        msg, is_error = _repl_add_dir_ro("/", roots)
         assert roots == []
-        captured = capsys.readouterr()
-        assert "filesystem root" in captured.err
+        assert "filesystem root" in msg
+        assert is_error is True
 
     def test_add_dir_ro_enables_read_access(self, tmp_path):
         """After /add-dir-ro, read_file can access files but write_file cannot."""
@@ -953,11 +942,10 @@ class TestAddDirRoCommand:
         )
         assert result.startswith("error:")
 
-    def test_help_includes_add_dir_ro(self, capsys):
+    def test_help_includes_add_dir_ro(self):
         """'/help' includes /add-dir-ro in the command list."""
-        _repl_help()
-        captured = capsys.readouterr()
-        assert "/add-dir-ro" in captured.err
+        text = _repl_help()
+        assert "/add-dir-ro" in text
 
 
 # ---------------------------------------------------------------------------
@@ -966,7 +954,7 @@ class TestAddDirRoCommand:
 
 
 class TestCompactCommand:
-    def test_compact_truncates_old_results(self, tmp_path, capsys):
+    def test_compact_truncates_old_results(self, tmp_path):
         """Messages with large tool results get truncated."""
         big_result = "x" * 5000
         messages = [
@@ -990,15 +978,14 @@ class TestCompactCommand:
             {"role": "assistant", "content": "a4"},
         ]
 
-        _repl_compact(messages, [], None, "")
+        result = _repl_compact(messages, [], None, "")
 
-        captured = capsys.readouterr()
-        assert "compacted:" in captured.err
+        assert "compacted:" in result
         # The big tool result should have been truncated
         tool_msg = next(m for m in messages if m.get("role") == "tool")
         assert len(tool_msg["content"]) < len(big_result)
 
-    def test_compact_drop_flag(self, tmp_path, capsys):
+    def test_compact_drop_flag(self, tmp_path):
         """/compact --drop additionally drops middle turns."""
         messages = [
             _sys("system"),
@@ -1015,10 +1002,9 @@ class TestCompactCommand:
         ]
         before_count = len(messages)
 
-        _repl_compact(messages, [], None, "--drop")
+        result = _repl_compact(messages, [], None, "--drop")
 
-        captured = capsys.readouterr()
-        assert "compacted:" in captured.err
+        assert "compacted:" in result
         # Should have fewer messages after dropping middle turns
         assert len(messages) < before_count
 
@@ -1029,43 +1015,44 @@ class TestCompactCommand:
 
 
 class TestExtendCommand:
-    def test_extend_doubles_by_default(self, capsys):
+    def test_extend_doubles_by_default(self):
         """'/extend' with no arg doubles max_turns."""
         state = {"max_turns": 50}
-        _repl_extend("", state)
+        msg, is_error = _repl_extend("", state)
         assert state["max_turns"] == 100
-        captured = capsys.readouterr()
-        assert "50 -> 100" in captured.err
+        assert "50 -> 100" in msg
+        assert is_error is False
 
-    def test_extend_sets_explicit_value(self, capsys):
+    def test_extend_sets_explicit_value(self):
         """'/extend 200' sets max_turns to 200."""
         state = {"max_turns": 50}
-        _repl_extend("200", state)
+        msg, is_error = _repl_extend("200", state)
         assert state["max_turns"] == 200
-        captured = capsys.readouterr()
-        assert "200" in captured.err
+        assert "200" in msg
+        assert is_error is False
 
-    def test_extend_invalid_number(self, capsys):
-        """'/extend abc' prints a warning and doesn't change state."""
+    def test_extend_invalid_number(self):
+        """'/extend abc' returns a warning and doesn't change state."""
         state = {"max_turns": 50}
-        _repl_extend("abc", state)
+        msg, is_error = _repl_extend("abc", state)
         assert state["max_turns"] == 50
-        captured = capsys.readouterr()
-        assert "invalid number" in captured.err
+        assert "invalid number" in msg
+        assert is_error is True
 
-    def test_extend_zero_rejected(self, capsys):
+    def test_extend_zero_rejected(self):
         """'/extend 0' is rejected."""
         state = {"max_turns": 50}
-        _repl_extend("0", state)
+        msg, is_error = _repl_extend("0", state)
         assert state["max_turns"] == 50
-        captured = capsys.readouterr()
-        assert "at least 1" in captured.err
+        assert "at least 1" in msg
+        assert is_error is True
 
-    def test_extend_negative_rejected(self, capsys):
+    def test_extend_negative_rejected(self):
         """'/extend -5' is rejected."""
         state = {"max_turns": 50}
-        _repl_extend("-5", state)
+        msg, is_error = _repl_extend("-5", state)
         assert state["max_turns"] == 50
+        assert is_error is True
 
     def test_extend_in_repl(self, tmp_path):
         """/extend in REPL affects the max_turns passed to run_agent_loop."""
@@ -1269,11 +1256,10 @@ class TestLearnCommand:
         mock_session.prompt.side_effect = side
         return mock_session
 
-    def test_help_includes_learn(self, capsys):
+    def test_help_includes_learn(self):
         """/learn appears in the help output."""
-        _repl_help()
-        captured = capsys.readouterr()
-        assert "/learn" in captured.err
+        text = _repl_help()
+        assert "/learn" in text
 
     def test_learn_appends_user_message(self, tmp_path):
         """/learn appends the LEARN_PROMPT as a user message."""
@@ -1911,39 +1897,39 @@ class TestUnknownSlashCommand:
 
 
 class TestSnapshotSaveCommand:
-    def test_save_sets_checkpoint(self, capsys):
+    def test_save_sets_checkpoint(self):
         state = SnapshotState()
         msgs = [_sys("system"), _user("q1")]
-        _repl_snapshot_save("my-label", msgs, state)
+        msg, is_error = _repl_snapshot_save("my-label", msgs, state)
         assert state.explicit_active is True
         assert state.explicit_label == "my-label"
         assert state.explicit_begin_index == 2
-        captured = capsys.readouterr()
-        assert "checkpoint saved" in captured.err
+        assert "checkpoint saved" in msg
+        assert is_error is False
 
-    def test_save_default_label(self, capsys):
+    def test_save_default_label(self):
         state = SnapshotState()
         msgs = [_sys("system")]
         _repl_snapshot_save("user-checkpoint", msgs, state)
         assert state.explicit_label == "user-checkpoint"
 
-    def test_save_error_duplicate(self, capsys):
+    def test_save_error_duplicate(self):
         state = SnapshotState()
         msgs = [_sys("system")]
         _repl_snapshot_save("first", msgs, state)
-        _repl_snapshot_save("second", msgs, state)
-        captured = capsys.readouterr()
-        assert "already active" in captured.err
+        msg, is_error = _repl_snapshot_save("second", msgs, state)
+        assert "already active" in msg
+        assert is_error is True
 
-    def test_save_none_snapshot_state(self, capsys):
+    def test_save_none_snapshot_state(self):
         msgs = [_sys("system")]
-        _repl_snapshot_save("test", msgs, None)
-        captured = capsys.readouterr()
-        assert "not available" in captured.err
+        msg, is_error = _repl_snapshot_save("test", msgs, None)
+        assert "not available" in msg
+        assert is_error is True
 
 
 class TestSnapshotRestoreCommand:
-    def test_restore_collapses_messages(self, capsys):
+    def test_restore_collapses_messages(self):
         state = SnapshotState()
         msgs = [_sys("system"), _user("q1"), {"role": "assistant", "content": "a1"}]
         state.save_at_index("test", 1)
@@ -1951,7 +1937,7 @@ class TestSnapshotRestoreCommand:
         with patch("swival.agent.call_llm") as mock_llm:
             resp = SimpleNamespace(content="LLM summary", tool_calls=None)
             mock_llm.return_value = (resp, "stop")
-            _repl_snapshot_restore(
+            msg, is_error = _repl_snapshot_restore(
                 msgs,
                 state,
                 model_id="test",
@@ -1964,13 +1950,13 @@ class TestSnapshotRestoreCommand:
 
         assert state.explicit_active is False
         assert len(state.history) == 1
-        captured = capsys.readouterr()
-        assert "collapsed" in captured.err
+        assert "collapsed" in msg
+        assert is_error is False
 
-    def test_restore_no_messages_warns(self, capsys):
+    def test_restore_no_messages_warns(self):
         state = SnapshotState()
         msgs = [_sys("system")]
-        _repl_snapshot_restore(
+        msg, is_error = _repl_snapshot_restore(
             msgs,
             state,
             model_id="test",
@@ -1980,12 +1966,12 @@ class TestSnapshotRestoreCommand:
             seed=None,
             provider="lmstudio",
         )
-        captured = capsys.readouterr()
-        assert "nothing to collapse" in captured.err
+        assert "nothing to collapse" in msg
+        assert is_error is True
 
-    def test_restore_none_snapshot_state(self, capsys):
+    def test_restore_none_snapshot_state(self):
         msgs = [_sys("system"), _user("q")]
-        _repl_snapshot_restore(
+        msg, is_error = _repl_snapshot_restore(
             msgs,
             None,
             model_id="test",
@@ -1995,38 +1981,37 @@ class TestSnapshotRestoreCommand:
             seed=None,
             provider="lmstudio",
         )
-        captured = capsys.readouterr()
-        assert "not available" in captured.err
+        assert "not available" in msg
+        assert is_error is True
 
 
 class TestSnapshotUnsaveCommand:
-    def test_unsave_clears_checkpoint(self, capsys):
+    def test_unsave_clears_checkpoint(self):
         state = SnapshotState()
         state.save_at_index("test", 5)
-        _repl_snapshot_unsave(state)
+        msg, is_error = _repl_snapshot_unsave(state)
         assert state.explicit_active is False
-        captured = capsys.readouterr()
-        assert "cancelled" in captured.err
+        assert "cancelled" in msg
+        assert is_error is False
 
-    def test_unsave_no_checkpoint(self, capsys):
+    def test_unsave_no_checkpoint(self):
         state = SnapshotState()
-        _repl_snapshot_unsave(state)
-        captured = capsys.readouterr()
-        assert "no active checkpoint" in captured.err
+        msg, is_error = _repl_snapshot_unsave(state)
+        assert "no active checkpoint" in msg
+        assert is_error is True
 
-    def test_unsave_none_snapshot_state(self, capsys):
-        _repl_snapshot_unsave(None)
-        captured = capsys.readouterr()
-        assert "not available" in captured.err
+    def test_unsave_none_snapshot_state(self):
+        msg, is_error = _repl_snapshot_unsave(None)
+        assert "not available" in msg
+        assert is_error is True
 
 
 class TestSnapshotHelpInclusion:
-    def test_help_includes_snapshot_commands(self, capsys):
-        _repl_help()
-        captured = capsys.readouterr()
-        assert "/save" in captured.err
-        assert "/restore" in captured.err
-        assert "/unsave" in captured.err
+    def test_help_includes_snapshot_commands(self):
+        text = _repl_help()
+        assert "/save" in text
+        assert "/restore" in text
+        assert "/unsave" in text
 
 
 class TestSnapshotReplIntegration:
@@ -2230,10 +2215,10 @@ class TestCopyCommand:
             _repl_copy("hello")
         assert "clipboard copy failed" in capsys.readouterr().err
 
-    def test_help_includes_copy(self, capsys):
+    def test_help_includes_copy(self):
         """/help text mentions /copy."""
-        _repl_help()
-        assert "/copy" in capsys.readouterr().err
+        text = _repl_help()
+        assert "/copy" in text
 
     def test_copy_in_repl_after_turn(self, tmp_path):
         """/copy after a model turn copies that answer; no extra model call."""
@@ -2419,13 +2404,14 @@ class TestRemember:
         assert new_idx < notes_idx
         assert "Some notes." in content
 
-    def test_repl_remember_empty_warns(self, capsys):
-        _repl_remember("", "/tmp", [])
+    def test_repl_remember_empty_warns(self):
+        msg, is_error = _repl_remember("", "/tmp", [])
+        assert is_error is True
+        assert "requires text" in msg
 
-    def test_repl_remember_help_lists_command(self, capsys):
-        _repl_help()
-        captured = capsys.readouterr()
-        assert "/remember" in captured.err
+    def test_repl_remember_help_lists_command(self):
+        text = _repl_help()
+        assert "/remember" in text
 
 
 class TestStatusCommand:
@@ -2452,9 +2438,8 @@ class TestStatusCommand:
         defaults.update(overrides)
         return defaults
 
-    def test_basic_output(self, tmp_path, capsys):
-        _repl_status(**self._status_kwargs(tmp_path))
-        out = capsys.readouterr().err
+    def test_basic_output(self, tmp_path):
+        out = _repl_status(**self._status_kwargs(tmp_path))
         assert "model: test-model" in out
         assert "endpoint: http://127.0.0.1:1234" in out
         assert "131,072" in out
@@ -2464,19 +2449,17 @@ class TestStatusCommand:
         assert "commands=" in out
         assert "verbose=" in out
 
-    def test_context_percentage(self, tmp_path, capsys):
-        _repl_status(**self._status_kwargs(tmp_path, context_length=100000))
-        out = capsys.readouterr().err
+    def test_context_percentage(self, tmp_path):
+        out = _repl_status(**self._status_kwargs(tmp_path, context_length=100000))
         assert "%" in out
         assert "100,000" in out
 
-    def test_unknown_context_length(self, tmp_path, capsys):
-        _repl_status(**self._status_kwargs(tmp_path, context_length=None))
-        out = capsys.readouterr().err
+    def test_unknown_context_length(self, tmp_path):
+        out = _repl_status(**self._status_kwargs(tmp_path, context_length=None))
         assert "%" not in out
         assert "tokens" in out
 
-    def test_state_summaries_appear(self, tmp_path, capsys):
+    def test_state_summaries_appear(self, tmp_path):
         from swival.todo import TodoItem
 
         ts = ThinkingState(verbose=False)
@@ -2492,98 +2475,86 @@ class TestStatusCommand:
             TodoItem("d", done=False),
             TodoItem("e", done=False),
         ]
-        _repl_status(
+        out = _repl_status(
             **self._status_kwargs(
                 tmp_path,
                 thinking_state=ts,
                 todo_state=td,
             )
         )
-        out = capsys.readouterr().err
         assert "think: 3 calls" in out
         assert "todo: 5 added, 3 done, 2 remaining" in out
 
-    def test_snapshot_summary(self, tmp_path, capsys):
+    def test_snapshot_summary(self, tmp_path):
         ss = SnapshotState(verbose=False)
         ss.stats["restores"] = 1
         ss.stats["tokens_saved"] = 4200
-        _repl_status(**self._status_kwargs(tmp_path, snapshot_state=ss))
-        out = capsys.readouterr().err
+        out = _repl_status(**self._status_kwargs(tmp_path, snapshot_state=ss))
         assert "snapshot: 1 restore(s)" in out
         assert "4200" in out
 
-    def test_checkpoints_shown(self, tmp_path, capsys):
+    def test_checkpoints_shown(self, tmp_path):
         cs = CompactionState()
         cs.summaries = ["s1", "s2"]
-        _repl_status(**self._status_kwargs(tmp_path, compaction_state=cs))
-        out = capsys.readouterr().err
+        out = _repl_status(**self._status_kwargs(tmp_path, compaction_state=cs))
         assert "checkpoints: 2" in out
 
-    def test_no_state_lines_when_empty(self, tmp_path, capsys):
-        _repl_status(**self._status_kwargs(tmp_path))
-        out = capsys.readouterr().err
+    def test_no_state_lines_when_empty(self, tmp_path):
+        out = _repl_status(**self._status_kwargs(tmp_path))
         assert "think:" not in out
         assert "todo:" not in out
         assert "snapshot:" not in out
         assert "checkpoints:" not in out
 
-    def test_turn_state_integration(self, tmp_path, capsys):
+    def test_turn_state_integration(self, tmp_path):
         ts = {"max_turns": 20, "turns_used": 5}
-        _repl_status(**self._status_kwargs(tmp_path, turn_state=ts))
-        out = capsys.readouterr().err
+        out = _repl_status(**self._status_kwargs(tmp_path, turn_state=ts))
         assert "turns: 5 / 20" in out
 
-    def test_fresh_session_zero_turns(self, tmp_path, capsys):
+    def test_fresh_session_zero_turns(self, tmp_path):
         ts = {"max_turns": 20, "turns_used": 0}
-        _repl_status(**self._status_kwargs(tmp_path, turn_state=ts))
-        out = capsys.readouterr().err
+        out = _repl_status(**self._status_kwargs(tmp_path, turn_state=ts))
         assert "turns: 0 / 20" in out
 
-    def test_continue_file_present(self, tmp_path, capsys):
+    def test_continue_file_present(self, tmp_path):
         swival_dir = tmp_path / ".swival"
         swival_dir.mkdir()
         (swival_dir / "continue.md").write_text("resume from here")
-        _repl_status(**self._status_kwargs(tmp_path))
-        out = capsys.readouterr().err
+        out = _repl_status(**self._status_kwargs(tmp_path))
         assert "continue file: yes" in out
         assert "16 chars" in out
 
-    def test_continue_file_absent(self, tmp_path, capsys):
-        _repl_status(**self._status_kwargs(tmp_path))
-        out = capsys.readouterr().err
+    def test_continue_file_absent(self, tmp_path):
+        out = _repl_status(**self._status_kwargs(tmp_path))
         assert "continue file" not in out
 
-    def test_file_tracker_counts(self, tmp_path, capsys):
+    def test_file_tracker_counts(self, tmp_path):
         from swival.tracker import FileAccessTracker
 
         ft = FileAccessTracker()
         ft.record_read("a.py")
         ft.record_read("b.py")
         ft.record_write("c.py")
-        _repl_status(**self._status_kwargs(tmp_path, file_tracker=ft))
-        out = capsys.readouterr().err
+        out = _repl_status(**self._status_kwargs(tmp_path, file_tracker=ft))
         assert "2 read, 1 written" in out
 
-    def test_file_tracker_reset_clears_counts(self, tmp_path, capsys):
+    def test_file_tracker_reset_clears_counts(self, tmp_path):
         from swival.tracker import FileAccessTracker
 
         ft = FileAccessTracker()
         ft.record_read("a.py")
         ft.record_write("b.py")
         ft.reset()
-        _repl_status(**self._status_kwargs(tmp_path, file_tracker=ft))
-        out = capsys.readouterr().err
+        out = _repl_status(**self._status_kwargs(tmp_path, file_tracker=ft))
         assert "files: none" in out
 
-    def test_no_system_messages(self, tmp_path, capsys):
-        _repl_status(**self._status_kwargs(tmp_path, messages=[]))
-        out = capsys.readouterr().err
+    def test_no_system_messages(self, tmp_path):
+        out = _repl_status(**self._status_kwargs(tmp_path, messages=[]))
         assert "messages: 0" in out
         assert "turns: 0 / 20" in out
 
-    def test_help_lists_status(self, capsys):
-        _repl_help()
-        out = capsys.readouterr().err
+    def test_help_lists_status(self):
+        out = _repl_help()
         assert "/status" in out
         assert "/continue-status" not in out
 
