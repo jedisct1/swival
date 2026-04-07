@@ -131,6 +131,15 @@ def is_high_risk(bucket: str) -> bool:
 _VALID_MODES = frozenset({"full", "none", "allowlist", "ask"})
 
 
+def _read_bucket_file(path: str) -> set[str]:
+    with open(path) as f:
+        return {
+            line.strip()
+            for line in f
+            if line.strip() and not line.strip().startswith("#")
+        }
+
+
 class CommandPolicy:
     def __init__(
         self,
@@ -243,12 +252,7 @@ def load_persisted_buckets(base_dir: str) -> set[str]:
     path = os.path.join(base_dir, ".swival", "approved_buckets")
     if not os.path.isfile(path):
         return set()
-    with open(path) as f:
-        return {
-            line.strip()
-            for line in f
-            if line.strip() and not line.strip().startswith("#")
-        }
+    return _read_bucket_file(path)
 
 
 def persist_approved_bucket(bucket: str, base_dir: str) -> None:
@@ -256,15 +260,7 @@ def persist_approved_bucket(bucket: str, base_dir: str) -> None:
     os.makedirs(dir_path, exist_ok=True)
     file_path = os.path.join(dir_path, "approved_buckets")
 
-    existing = set()
-    if os.path.isfile(file_path):
-        with open(file_path) as f:
-            existing = {
-                line.strip()
-                for line in f
-                if line.strip() and not line.strip().startswith("#")
-            }
-
+    existing = _read_bucket_file(file_path) if os.path.isfile(file_path) else set()
     if bucket in existing:
         return
 

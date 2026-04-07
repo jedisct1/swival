@@ -29,6 +29,22 @@ _GIT_ENV_MAP = {
 }
 
 
+def _git_output(argv: list[str], cwd: str) -> str:
+    return (
+        subprocess.check_output(
+            argv,
+            cwd=cwd,
+            stderr=subprocess.DEVNULL,
+        )
+        .decode()
+        .strip()
+    )
+
+
+def _hash48(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()[:48]
+
+
 def _git_metadata(base_dir: str) -> dict[str, str]:
     """Discover Git metadata for the project rooted at *base_dir*.
 
@@ -38,15 +54,7 @@ def _git_metadata(base_dir: str) -> dict[str, str]:
     result: dict[str, str] = {}
 
     try:
-        repo_root = (
-            subprocess.check_output(
-                ["git", "rev-parse", "--show-toplevel"],
-                cwd=base_dir,
-                stderr=subprocess.DEVNULL,
-            )
-            .decode()
-            .strip()
-        )
+        repo_root = _git_output(["git", "rev-parse", "--show-toplevel"], base_dir)
     except (subprocess.CalledProcessError, FileNotFoundError):
         result["git_present"] = "0"
         return result
@@ -56,44 +64,21 @@ def _git_metadata(base_dir: str) -> dict[str, str]:
 
     # HEAD sha
     try:
-        head_sha = (
-            subprocess.check_output(
-                ["git", "rev-parse", "HEAD"],
-                cwd=base_dir,
-                stderr=subprocess.DEVNULL,
-            )
-            .decode()
-            .strip()
-        )
-        result["git_head"] = head_sha
+        result["git_head"] = _git_output(["git", "rev-parse", "HEAD"], base_dir)
     except (subprocess.CalledProcessError, FileNotFoundError):
         pass
 
     # Dirty? (includes staged changes, unstaged changes, and untracked files)
     try:
-        status_out = (
-            subprocess.check_output(
-                ["git", "status", "--porcelain"],
-                cwd=base_dir,
-                stderr=subprocess.DEVNULL,
-            )
-            .decode()
-            .strip()
-        )
+        status_out = _git_output(["git", "status", "--porcelain"], base_dir)
         result["git_dirty"] = "1" if status_out else "0"
     except (subprocess.CalledProcessError, FileNotFoundError):
         pass
 
     # Remote origin URL
     try:
-        origin_url = (
-            subprocess.check_output(
-                ["git", "config", "--get", "remote.origin.url"],
-                cwd=base_dir,
-                stderr=subprocess.DEVNULL,
-            )
-            .decode()
-            .strip()
+        origin_url = _git_output(
+            ["git", "config", "--get", "remote.origin.url"], base_dir
         )
         if origin_url:
             result["git_remote"] = origin_url
@@ -115,13 +100,13 @@ def _git_metadata(base_dir: str) -> dict[str, str]:
 
     # repo_hash and project_hash
     if normalized:
-        result["repo_hash"] = hashlib.sha256(normalized.encode()).hexdigest()[:48]
+        result["repo_hash"] = _hash48(normalized)
         project_key = normalized + ":" + result.get("project_rel", "")
-        result["project_hash"] = hashlib.sha256(project_key.encode()).hexdigest()[:48]
+        result["project_hash"] = _hash48(project_key)
     elif repo_root:
-        result["repo_hash"] = hashlib.sha256(repo_root.encode()).hexdigest()[:48]
+        result["repo_hash"] = _hash48(repo_root)
         project_key = repo_root + ":" + result.get("project_rel", "")
-        result["project_hash"] = hashlib.sha256(project_key.encode()).hexdigest()[:48]
+        result["project_hash"] = _hash48(project_key)
 
     return result
 
