@@ -1061,8 +1061,8 @@ class TestA2aOutputGuard:
 
         guarded = _guard_a2a_output(result, str(tmp_path), "a2a__agent__skill")
 
-        # The guard must NOT return the raw content inline
-        assert len(guarded.encode("utf-8")) < 1024
+        # The guard must NOT return the raw content inline (summary + preview ≤ ~4KB)
+        assert len(guarded.encode("utf-8")) < 4096
         # It should be a file-save notice
         assert "read_file" in guarded or "cmd_output" in guarded
         # And no fake metadata header

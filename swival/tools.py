@@ -2040,6 +2040,8 @@ MAX_INLINE_OUTPUT = 10 * 1024  # 10KB — max output returned inline
 MAX_FILE_OUTPUT = 1 * 1024 * 1024  # 1MB — max output saved to file
 MCP_INLINE_LIMIT = 20 * 1024  # 20KB — MCP tool inline threshold
 MCP_FILE_LIMIT = 10 * 1024 * 1024  # 10MB — MCP tool max saved to file
+LARGE_OUTPUT_PREVIEW_LINES = 50  # max lines in inline preview
+LARGE_OUTPUT_PREVIEW_BYTES = 2048  # max bytes in inline preview body
 SWIVAL_DIR = ".swival"
 OUTPUT_FILE_TTL = 600  # seconds before temp file cleanup
 MAX_TIMEOUT = 120
@@ -2102,6 +2104,38 @@ def _kill_process_tree(proc: subprocess.Popen) -> None:
         proc.wait(timeout=_KILL_WAIT_TIMEOUT)
     except subprocess.TimeoutExpired:
         pass  # give up — process is unkillable
+
+
+class _PreviewMeta:
+    __slots__ = ("text", "last_line", "partial_line")
+
+    def __init__(self, text: str, last_line: int, partial_line: bool):
+        self.text = text
+        self.last_line = last_line
+        self.partial_line = partial_line
+
+
+def _extract_preview(output: str) -> _PreviewMeta:
+    """Extract the first lines of *output* for inline preview.
+
+    Returns a _PreviewMeta with the preview text, the 1-based number of
+    the last fully included line, and whether the final line is partial
+    (byte-budget cut mid-line).
+    """
+    lines = output.split("\n", LARGE_OUTPUT_PREVIEW_LINES)
+    selected = lines[:LARGE_OUTPUT_PREVIEW_LINES]
+    text = "\n".join(selected)
+    partial = False
+    encoded = text.encode("utf-8")
+    if len(encoded) > LARGE_OUTPUT_PREVIEW_BYTES:
+        text = encoded[:LARGE_OUTPUT_PREVIEW_BYTES].decode("utf-8", errors="ignore")
+        last_nl = text.rfind("\n")
+        if last_nl > 0:
+            text = text[:last_nl]
+        else:
+            partial = True
+    line_count = text.count("\n") + 1 if text else 0
+    return _PreviewMeta(text=text, last_line=line_count, partial_line=partial)
 
 
 def _save_large_output(
@@ -2184,11 +2218,34 @@ def _save_large_output(
         else "Full output saved to"
     )
 
-    return (
+    summary = (
         f"{source_label} too large for context ({size_kb:.1f}KB).\n"
         f"{saved_label}: {rel_path}\n"
         f"Use read_file to examine the output (supports offset and limit for pagination)."
     )
+
+    meta = _extract_preview(output)
+    truncated = len(meta.text) < len(output)
+
+    preview_parts = ["[preview]"]
+    if _untrusted_hdr:
+        preview_parts.append(_untrusted_hdr.rstrip("\n"))
+    preview_parts.append(meta.text)
+    if truncated:
+        if meta.partial_line:
+            preview_parts.append(
+                f"[... preview truncated within line {meta.last_line};"
+                " use read_file for full output]"
+            )
+        else:
+            next_offset = meta.last_line + 1
+            preview_parts.append(
+                f"[... preview includes lines 1-{meta.last_line};"
+                f" use read_file offset={next_offset} for more]"
+            )
+    preview_parts.append("[/preview]")
+
+    return summary + "\n\n" + "\n".join(preview_parts)
 
 
 def _untrusted_header(source: str, origin: str = "") -> str:
