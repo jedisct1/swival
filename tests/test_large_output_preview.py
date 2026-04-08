@@ -19,9 +19,7 @@ _TRUNCATION_LINES_RE = re.compile(
 _TRUNCATION_PARTIAL_RE = re.compile(
     r"\[\.\.\. preview truncated within line (\d+); use read_file for full output\]"
 )
-_ANY_TRUNCATION_RE = re.compile(
-    r"\[\.\.\. preview (?:includes|truncated)[^\]]*\]"
-)
+_ANY_TRUNCATION_RE = re.compile(r"\[\.\.\. preview (?:includes|truncated)[^\]]*\]")
 
 
 def _between_sentinels(text: str) -> str:
@@ -192,9 +190,7 @@ class TestUntrustedPreview:
 
     def test_untrusted_header_in_file(self, tmp_path):
         payload = "z" * 20_000
-        _save_large_output(
-            payload, str(tmp_path), untrusted_source="mcp__s__t"
-        )
+        _save_large_output(payload, str(tmp_path), untrusted_source="mcp__s__t")
 
         files = list((tmp_path / ".swival").glob("cmd_output_*.txt"))
         assert len(files) == 1
@@ -217,9 +213,7 @@ class TestCaptureProcessPreview:
             "-c",
             "import sys; print('A' * 25_000); sys.exit(42)",
         ]
-        proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-        )
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         result = _capture_process(proc, timeout=30, base_dir=str(tmp_path))
 
         assert "[preview]" in result

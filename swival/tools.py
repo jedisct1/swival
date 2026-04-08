@@ -2645,9 +2645,9 @@ def _run_argv_command(
 
         proc = subprocess.Popen([resolved_path] + command[1:], **popen_kwargs)
     except FileNotFoundError:
-        return f"error: command executable not found: {resolved_path}"
+        return f'error: command executable not found: "{resolved_path}"'
     except PermissionError:
-        return f"error: permission denied executing: {resolved_path}"
+        return f'error: permission denied executing: "{resolved_path}"'
     except OSError as e:
         return f"error: failed to start command: {e}"
 
