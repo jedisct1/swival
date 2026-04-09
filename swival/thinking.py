@@ -79,14 +79,11 @@ class ThinkingState:
             args.pop("revises_thought", None)
             args.pop("branch_from_thought", None)
             args.pop("branch_id", None)
-            args["is_revision"] = False
         elif mode == "revision":
             args.pop("branch_from_thought", None)
             args.pop("branch_id", None)
-            args["is_revision"] = True
         else:  # branch
             args.pop("revises_thought", None)
-            args["is_revision"] = False
 
         # Remove legacy field from args (internal only)
         args.pop("is_revision", None)
