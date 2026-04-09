@@ -5,7 +5,11 @@ import types
 
 import pytest
 
-from swival.agent import load_instructions, MAX_INSTRUCTIONS_CHARS
+from swival.agent import (
+    _collect_project_dirs,
+    load_instructions,
+    MAX_INSTRUCTIONS_CHARS,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -711,3 +715,79 @@ class TestCommentStripping:
         assert "Real rules." in result
         # Provenance comment injected by load_instructions survives
         assert f"<!-- project: {tmp_path.resolve() / 'AGENTS.md'} -->" in result
+
+
+# ---------------------------------------------------------------------------
+# _collect_project_dirs
+# ---------------------------------------------------------------------------
+
+
+class TestCollectProjectDirs:
+    def test_equal_paths(self, tmp_path):
+        result = _collect_project_dirs(tmp_path, tmp_path)
+        assert result == [tmp_path.resolve()]
+
+    def test_two_levels_below(self, tmp_path):
+        mid = tmp_path / "mid"
+        start = mid / "leaf"
+        mid.mkdir()
+        start.mkdir()
+        result = _collect_project_dirs(tmp_path, start)
+        assert result == [tmp_path.resolve(), mid.resolve(), start.resolve()]
+
+    def test_start_not_under_base(self, tmp_path):
+        other = tmp_path / "other"
+        other.mkdir()
+        base = tmp_path / "base"
+        base.mkdir()
+        result = _collect_project_dirs(base, other)
+        assert result == [base.resolve()]
+
+
+# ---------------------------------------------------------------------------
+# Multi-level load_instructions with start_dir
+# ---------------------------------------------------------------------------
+
+
+class TestMultiLevelLoadInstructions:
+    def test_single_dir_no_start_dir(self, tmp_path):
+        (tmp_path / "AGENTS.md").write_text(
+            "## Workflow\nstuff\n## Conventions\n- root\n"
+        )
+        result, loaded = load_instructions(str(tmp_path))
+        assert "root" in result
+        assert len(loaded) == 1
+
+    def test_two_levels_general_to_specific(self, tmp_path):
+        start = tmp_path / "sub"
+        start.mkdir()
+        (tmp_path / "AGENTS.md").write_text("root instructions")
+        (start / "AGENTS.md").write_text("sub instructions")
+        result, loaded = load_instructions(str(tmp_path), start_dir=start)
+        assert "root instructions" in result
+        assert "sub instructions" in result
+        assert result.index("root instructions") < result.index("sub instructions")
+        assert len(loaded) == 2
+
+    def test_skips_empty_intermediate(self, tmp_path):
+        mid = tmp_path / "mid"
+        start = mid / "leaf"
+        mid.mkdir()
+        start.mkdir()
+        (tmp_path / "AGENTS.md").write_text("root")
+        (start / "AGENTS.md").write_text("leaf")
+        result, loaded = load_instructions(str(tmp_path), start_dir=start)
+        assert "root" in result
+        assert "leaf" in result
+        assert len(loaded) == 2
+
+    def test_budget_exhausted_skips_later(self, tmp_path, monkeypatch):
+        import swival.agent as agent_mod
+
+        monkeypatch.setattr(agent_mod, "MAX_INSTRUCTIONS_CHARS", 10)
+        start = tmp_path / "sub"
+        start.mkdir()
+        (tmp_path / "AGENTS.md").write_text("x" * 20)
+        (start / "AGENTS.md").write_text("sub content")
+        result, loaded = load_instructions(str(tmp_path), start_dir=start)
+        assert len(loaded) == 1

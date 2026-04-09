@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from .snapshot import SnapshotState
     from .thinking import ThinkingState
     from .todo import TodoState
@@ -41,6 +43,7 @@ class InputContext:
     subagent_manager: object = None
     subagent_holder: list | None = None
     # Misc.
+    start_dir: "Path | None" = None
     extra_write_roots: list = field(default_factory=list)
     skill_read_roots: list = field(default_factory=list)
     skills_catalog: dict = field(default_factory=dict)

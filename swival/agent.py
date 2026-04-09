@@ -1712,6 +1712,7 @@ def load_instructions(
     base_dir: str,
     config_dir: "Path | None" = None,
     *,
+    start_dir: "Path | None" = None,
     verbose: bool = False,
 ) -> tuple[str, list[str]]:
     """Load CLAUDE.md and/or AGENTS.md, if present.
@@ -1720,6 +1721,10 @@ def load_instructions(
     *config_dir*, global cross-agent from ``~/.agents/``, and project-level
     from *base_dir*) inside a single ``<agent-instructions>`` block.  All
     three share a combined budget of ``MAX_INSTRUCTIONS_CHARS``.
+
+    When *start_dir* is provided and is a subdirectory of *base_dir*, project-
+    level AGENTS.md files are loaded from each directory on the path from
+    *base_dir* down to *start_dir* (general-to-specific order).
 
     Returns (combined_text, filenames_loaded) where combined_text is
     XML-tagged sections (or "" if none found) and filenames_loaded lists
@@ -1813,27 +1818,34 @@ def load_instructions(
             )
             loaded.append(str(global_agents_path))
 
-    # Project-level AGENTS.md
-    proj_agents_path = Path(base_dir).resolve() / "AGENTS.md"
-    if proj_agents_path.is_file() and budget > 0:
+    # Project-level AGENTS.md: walk from base_dir down to start_dir
+    proj_dirs = (
+        _collect_project_dirs(Path(base_dir).resolve(), start_dir)
+        if start_dir is not None
+        else [Path(base_dir).resolve()]
+    )
+    for proj_dir in proj_dirs:
+        if budget <= 0:
+            break
+        proj_agents_path = proj_dir / "AGENTS.md"
+        if not proj_agents_path.is_file():
+            continue
         try:
             file_size = proj_agents_path.stat().st_size
             with proj_agents_path.open(encoding="utf-8", errors="replace") as f:
                 proj_content = strip_markdown_comments(f.read(read_cap))
         except OSError:
-            pass
-        else:
-            if len(proj_content) > budget:
-                proj_content = (
-                    proj_content[:budget]
-                    + f"\n[truncated — AGENTS.md exceeds {budget} character limit]"
-                )
-            if verbose:
-                fmt.info(
-                    f"Loaded AGENTS.md ({file_size} bytes) from {proj_agents_path.parent}"
-                )
-            agent_parts.append(f"<!-- project: {proj_agents_path} -->\n{proj_content}")
-            loaded.append(str(proj_agents_path))
+            continue
+        if len(proj_content) > budget:
+            proj_content = (
+                proj_content[:budget]
+                + f"\n[truncated — AGENTS.md exceeds {budget} character limit]"
+            )
+        budget -= len(proj_content)
+        if verbose:
+            fmt.info(f"Loaded AGENTS.md ({file_size} bytes) from {proj_dir}")
+        agent_parts.append(f"<!-- project: {proj_agents_path} -->\n{proj_content}")
+        loaded.append(str(proj_agents_path))
 
     if agent_parts:
         inner = "\n\n".join(agent_parts)
@@ -3892,6 +3904,29 @@ def _find_project_root(start: Path) -> Path:
         current = parent
 
 
+def _collect_project_dirs(base_dir: Path, start_dir: Path) -> list[Path]:
+    """Return directories from base_dir down to start_dir, inclusive.
+
+    base_dir must be an ancestor of start_dir (or equal to it). If start_dir
+    is not under base_dir, returns [base_dir] — safe fallback to today's behavior.
+    """
+    base = base_dir.resolve()
+    start = start_dir.resolve()
+    try:
+        start.relative_to(base)
+    except ValueError:
+        return [base]
+    dirs: list[Path] = []
+    current = start
+    while True:
+        dirs.append(current)
+        if current == base:
+            break
+        current = current.parent
+    dirs.reverse()
+    return dirs
+
+
 def _should_try_onboarding(args, base_dir: Path) -> bool:
     """Quick pre-check for first-run onboarding without importing onboarding.py."""
     from .config import global_config_dir
@@ -4048,10 +4083,12 @@ def main():
         print(version)
         sys.exit(0)
 
+    _start_dir = Path.cwd().resolve()
     if args.base_dir is _UNSET:
-        args.base_dir = str(_find_project_root(Path.cwd()))
+        args.base_dir = str(_find_project_root(_start_dir))
     else:
         args.base_dir = str(Path(args.base_dir).resolve())
+    args._start_dir = _start_dir
 
     # Handle --init-config before anything else
     if getattr(args, "init_config", False):
@@ -4887,6 +4924,7 @@ def build_system_prompt(
     provider: str | None = None,
     command_tool_schemas: list | None = None,
     files_mode: str = "some",
+    start_dir: "Path | None" = None,
 ) -> tuple[str | None, list[str]]:
     """Assemble full system prompt with instructions, date, skills, memory.
 
@@ -4925,6 +4963,7 @@ def build_system_prompt(
             instructions, instructions_loaded = load_instructions(
                 base_dir,
                 config_dir,
+                start_dir=start_dir,
                 verbose=verbose,
             )
             if instructions:
@@ -5159,6 +5198,7 @@ def _run_main(args, report, _write_report, parser):
         allowed_dirs_ro.append(p)
 
     base_dir = args.base_dir
+    start_dir = getattr(args, "_start_dir", None)
     files_mode = args._resolved_files_mode
 
     # Resolve commands mode (yolo upgrades default but not explicit --commands)
@@ -5368,6 +5408,7 @@ def _run_main(args, report, _write_report, parser):
         provider=llm_kwargs.get("provider"),
         command_tool_schemas=_command_tool_schemas,
         files_mode=files_mode,
+        start_dir=start_dir,
     )
     policy: _InteractionPolicy = "interactive" if args.repl else "autonomous"
     if system_content is not None:
@@ -5516,6 +5557,7 @@ def _run_main(args, report, _write_report, parser):
                     messages=messages,
                     tools=tools,
                     base_dir=base_dir,
+                    start_dir=start_dir,
                     turn_state=_script_turn_state,
                     thinking_state=thinking_state,
                     todo_state=todo_state,
@@ -5778,6 +5820,7 @@ def _run_main(args, report, _write_report, parser):
             raw_llm_baseline=getattr(args, "_raw_llm_baseline", None),
             pre_profile_baseline=getattr(args, "_pre_profile_baseline", None),
             on_exit=_on_repl_exit if report else None,
+            start_dir=start_dir,
         )
     finally:
         if _sa_holder[0] is not None:
@@ -7404,7 +7447,9 @@ def _repl_snapshot_unsave(snapshot_state: "SnapshotState | None") -> tuple[str, 
         return result, False
 
 
-def _patch_system_instructions(messages: list, base_dir: str) -> None:
+def _patch_system_instructions(
+    messages: list, base_dir: str, start_dir: "Path | None" = None
+) -> None:
     """Re-read AGENTS.md from disk and replace the live <agent-instructions> block.
 
     Only acts when the system message already contains the block — sessions
@@ -7424,6 +7469,7 @@ def _patch_system_instructions(messages: list, base_dir: str) -> None:
     new_instructions, _ = load_instructions(
         base_dir,
         config_dir=global_config_dir(),
+        start_dir=start_dir,
         verbose=False,
     )
     new_tag = (
@@ -7434,7 +7480,9 @@ def _patch_system_instructions(messages: list, base_dir: str) -> None:
     _set_msg_content(messages[0], updated)
 
 
-def _repl_remember(text: str, base_dir: str, messages: list) -> tuple[str, bool]:
+def _repl_remember(
+    text: str, base_dir: str, messages: list, start_dir: "Path | None" = None
+) -> tuple[str, bool]:
     """Handle /remember command: add a convention to project AGENTS.md.
 
     Returns ``(message, is_error)``.
@@ -7446,7 +7494,7 @@ def _repl_remember(text: str, base_dir: str, messages: list) -> tuple[str, bool]
     except ValueError as exc:
         return str(exc), True
     if changed:
-        _patch_system_instructions(messages, base_dir)
+        _patch_system_instructions(messages, base_dir, start_dir=start_dir)
     return msg, is_error
 
 
@@ -7657,7 +7705,9 @@ def execute_input(
             return StepResult(kind="state_change", text=msg, is_error=err)
 
         if cmd == "/remember":
-            msg, err = _repl_remember(cmd_arg, ctx.base_dir, ctx.messages)
+            msg, err = _repl_remember(
+                cmd_arg, ctx.base_dir, ctx.messages, start_dir=ctx.start_dir
+            )
             return StepResult(kind="state_change", text=msg, is_error=err)
 
         if cmd == "/restore":
@@ -7902,6 +7952,7 @@ def repl_loop(
     verbose: bool,
     llm_kwargs: dict,
     file_tracker: FileAccessTracker | None = None,
+    start_dir: "Path | None" = None,
     no_history: bool = False,
     compaction_state: "CompactionState | None" = None,
     mcp_manager=None,
@@ -7995,6 +8046,7 @@ def repl_loop(
         messages=messages,
         tools=tools,
         base_dir=base_dir,
+        start_dir=start_dir,
         turn_state=turn_state,
         thinking_state=thinking_state,
         todo_state=todo_state,

@@ -96,3 +96,33 @@ def test_remember_command_provider_no_mutation(tmp_path, monkeypatch):
     _repl_remember("new fact", str(tmp_path), messages)
 
     assert messages[0]["content"] == original
+
+
+def test_patch_preserves_intermediate_files(tmp_path, monkeypatch):
+    """After /remember, _patch_system_instructions must keep intermediate AGENTS.md files."""
+    from swival.agent import _patch_system_instructions, load_instructions
+
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    root_md = tmp_path / "AGENTS.md"
+    sub_md = sub / "AGENTS.md"
+    root_md.write_text("## Workflow\nstuff\n\n## Conventions\n\n- root fact\n")
+    sub_md.write_text("sub instructions")
+
+    monkeypatch.setattr(
+        "swival.config.global_config_dir",
+        lambda: tmp_path / "_no_config",
+    )
+
+    initial, _ = load_instructions(str(tmp_path), start_dir=sub)
+    messages = [{"role": "system", "content": f"preamble\n\n{initial}"}]
+
+    root_md.write_text(
+        "## Workflow\nstuff\n\n## Conventions\n\n- root fact\n- new fact\n"
+    )
+
+    _patch_system_instructions(messages, str(tmp_path), start_dir=sub)
+
+    content = messages[0]["content"]
+    assert "new fact" in content
+    assert "sub instructions" in content
