@@ -38,10 +38,10 @@ def test_tool_result_role(tmp_path):
 
     lines = _read_lines(path)
     tool_line = [
-        ln for ln in lines if ln.get("type") == "user" and ln.get("toolUseResult")
+        ln for ln in lines if ln.get("type") == "user" and "toolUseResult" in ln
     ]
     assert len(tool_line) == 1
-    msg = json.loads(tool_line[0]["message"])
+    msg = tool_line[0]["message"]
     assert msg["role"] == "user"
     assert msg["content"][0]["type"] == "tool_result"
     assert msg["content"][0]["tool_use_id"] == "tc1"
@@ -58,7 +58,7 @@ def test_tool_result_error(tmp_path):
     write_trace(messages, path=path, session_id="s1", base_dir="/tmp", model="m1")
 
     lines = _read_lines(path)
-    assert json.loads(lines[0]["message"])["content"][0]["is_error"] is True
+    assert lines[0]["message"]["content"][0]["is_error"] is True
 
 
 def test_tool_call_translation(tmp_path):
@@ -83,7 +83,7 @@ def test_tool_call_translation(tmp_path):
     write_trace(messages, path=path, session_id="s1", base_dir="/tmp", model="m1")
 
     lines = _read_lines(path)
-    msg = json.loads(lines[0]["message"])
+    msg = lines[0]["message"]
     content = msg["content"]
     text_block = [b for b in content if b["type"] == "text"]
     tool_block = [b for b in content if b["type"] == "tool_use"]
@@ -97,7 +97,7 @@ def test_tool_call_translation(tmp_path):
 
 
 def test_hf_detection_fields(tmp_path):
-    """All rows share the same column set and message is a JSON string."""
+    """Rows have sparse keys and message is a native dict (not a JSON string)."""
     messages = [
         {"role": "system", "content": "sys prompt"},
         {"role": "user", "content": "hello"},
@@ -107,18 +107,28 @@ def test_hf_detection_fields(tmp_path):
     write_trace(messages, path=path, session_id="s1", base_dir="/tmp", model="m1")
 
     lines = _read_lines(path)
-    # All rows must have identical top-level keys (HuggingFace schema consistency).
-    key_sets = {frozenset(ln.keys()) for ln in lines}
-    assert len(key_sets) == 1, f"inconsistent row schemas: {key_sets}"
-
     for line in lines:
         assert isinstance(line["type"], str)
         assert line["sessionId"] == "s1"
-        assert line["harness"] == "swival"
+        if line.get("harness"):
+            assert line["harness"] == "swival"
         if line["type"] in ("user", "assistant"):
-            assert line["message"] is not None
-            assert isinstance(line["message"], str)
-            json.loads(line["message"])  # must be valid JSON
+            assert "message" in line
+            assert isinstance(line["message"], dict)
+
+
+def test_system_only_trace_not_written(tmp_path):
+    """A trace with only a system message is not written — it would cause HuggingFace
+    schema inference failures (message/toolUseResult absent → typed as null)."""
+    path = str(tmp_path / "trace.jsonl")
+    write_trace(
+        [{"role": "system", "content": "sys"}],
+        path=path,
+        session_id="s1",
+        base_dir="/tmp",
+        model="m1",
+    )
+    assert not (tmp_path / "trace.jsonl").exists()
 
 
 def test_namespace_messages(tmp_path):
@@ -142,7 +152,7 @@ def test_namespace_messages(tmp_path):
     lines = _read_lines(path)
     assert len(lines) == 1
     assert lines[0]["type"] == "assistant"
-    msg = json.loads(lines[0]["message"])
+    msg = lines[0]["message"]
     assert msg["content"][0]["text"] == "response text"
     assert msg["stop_reason"] == "end_turn"
     assert msg["id"] == "msg-123"
@@ -153,16 +163,18 @@ def test_namespace_messages(tmp_path):
 
 def test_system_message(tmp_path):
     """role: "system" becomes type: "system" with content and level."""
-    messages = [{"role": "system", "content": "You are a helpful assistant."}]
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "hi"},
+    ]
     path = str(tmp_path / "trace.jsonl")
     write_trace(messages, path=path, session_id="s1", base_dir="/tmp", model="m1")
 
     lines = _read_lines(path)
-    assert len(lines) == 1
-    assert lines[0]["type"] == "system"
-    assert lines[0]["content"] == "You are a helpful assistant."
-    assert lines[0]["level"] == "info"
-    assert lines[0]["isMeta"] is False
+    sys_line = next(ln for ln in lines if ln["type"] == "system")
+    assert sys_line["content"] == "You are a helpful assistant."
+    assert sys_line["level"] == "info"
+    assert sys_line["isMeta"] is False
 
 
 def test_malformed_tool_arguments(tmp_path):
@@ -184,18 +196,17 @@ def test_malformed_tool_arguments(tmp_path):
     write_trace(messages, path=path, session_id="s1", base_dir="/tmp", model="m1")
 
     lines = _read_lines(path)
-    tool_block = json.loads(lines[0]["message"])["content"][0]
+    tool_block = lines[0]["message"]["content"][0]
     assert tool_block["type"] == "tool_use"
     assert tool_block["input"] == {"_raw": "not json at all"}
 
 
 def test_empty_conversation(tmp_path):
-    """Empty messages list produces empty file."""
+    """Empty messages list produces no file."""
     path = str(tmp_path / "trace.jsonl")
     write_trace(messages=[], path=path, session_id="s1", base_dir="/tmp", model="m1")
 
-    lines = _read_lines(path)
-    assert lines == []
+    assert not (tmp_path / "trace.jsonl").exists()
 
 
 def test_last_prompt_line(tmp_path):
@@ -254,7 +265,7 @@ def test_assistant_text_only(tmp_path):
     write_trace(messages, path=path, session_id="s1", base_dir="/tmp", model="m1")
 
     lines = _read_lines(path)
-    msg = json.loads(lines[0]["message"])
+    msg = lines[0]["message"]
     assert msg["stop_reason"] == "end_turn"
     assert msg["content"] == [{"type": "text", "text": "just text"}]
 
@@ -339,7 +350,7 @@ class TestSessionTraces:
         session_ids = {ln["sessionId"] for ln in lines if "sessionId" in ln}
         assert len(session_ids) == 1
 
-        user_msgs = [ln for ln in lines if ln["type"] == "user" and ln.get("message")]
+        user_msgs = [ln for ln in lines if ln["type"] == "user" and "message" in ln]
         assert len(user_msgs) >= 2
 
     def test_session_ask_rollback_excludes_failed(self, tmp_path, monkeypatch):
@@ -373,11 +384,11 @@ class TestSessionTraces:
             ln
             for ln in lines
             if ln["type"] == "user"
-            and ln.get("message")
-            and isinstance(json.loads(ln["message"]).get("content"), str)
+            and "message" in ln
+            and isinstance(ln["message"].get("content"), str)
         ]
         assert len(user_prompts) == 1
-        assert json.loads(user_prompts[0]["message"])["content"] == "first"
+        assert user_prompts[0]["message"]["content"] == "first"
 
     def test_no_trace_without_trace_dir(self, tmp_path, monkeypatch):
         """No trace file when trace_dir is not set."""
@@ -583,7 +594,7 @@ def test_trace_tool_use_input_encrypted(tmp_path):
     lines = _read_lines(str(files[0]))
     assistant_lines = [ln for ln in lines if ln.get("type") == "assistant"]
     assert assistant_lines
-    msg = json.loads(assistant_lines[0]["message"])
+    msg = assistant_lines[0]["message"]
     tool_use_blocks = [b for b in msg["content"] if b["type"] == "tool_use"]
     assert tool_use_blocks
     inp = tool_use_blocks[0]["input"]
@@ -608,8 +619,8 @@ def test_trace_tool_result_encrypted(tmp_path):
     )
     files = list(tmp_path.glob("*.jsonl"))
     lines = _read_lines(str(files[0]))
-    tool_lines = [ln for ln in lines if ln.get("toolUseResult")]
+    tool_lines = [ln for ln in lines if "toolUseResult" in ln]
     assert tool_lines
     ln = tool_lines[0]
     assert _FAKE_TOKEN not in ln["toolUseResult"]
-    assert _FAKE_TOKEN not in json.loads(ln["message"])["content"][0]["content"]
+    assert _FAKE_TOKEN not in ln["message"]["content"][0]["content"]
