@@ -329,15 +329,14 @@ class McpManager:
             self._sessions[name] = session
 
             # Convert schemas
-            server_tool_schemas: list[dict] = []
-            server_tool_original_names: dict[str, str] = {}
-            for tool in tools_result.tools:
-                schema, original_name = _mcp_tool_to_openai(name, tool)
-                server_tool_schemas.append(schema)
-                server_tool_original_names[schema["function"]["name"]] = original_name
-
-            self._tool_schemas[name] = server_tool_schemas
-            self._tool_original_names[name] = server_tool_original_names
+            tool_pairs = [
+                _mcp_tool_to_openai(name, tool) for tool in tools_result.tools
+            ]
+            self._tool_schemas[name] = [schema for schema, _original_name in tool_pairs]
+            self._tool_original_names[name] = {
+                schema["function"]["name"]: original_name
+                for schema, original_name in tool_pairs
+            }
 
             self._server_start_notice(name, len(tools_result.tools))
 
