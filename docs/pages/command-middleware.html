@@ -85,7 +85,7 @@
 session = Session(command_middleware=&quot;./scripts/rtk-adapter.py&quot;)
 result = session.run(&quot;task&quot;)
 </code></pre>
-<p>The value is a shell command string. It is split with <code>shlex.split</code>, and path-like first tokens (<code>./</code>, <code>../</code>, <code>~</code>) resolve against the config file's parent directory, consistent with <code>llm_filter</code> and other command-valued config keys.</p>
+<p>The value is a shell command string. It is split with <code>shlex.split</code>, and path-like first tokens — anything starting with <code>/</code>, <code>~</code>, or containing a <code>/</code> (e.g. <code>./</code>, <code>../</code>, <code>.rtk/</code>, <code>scripts/</code>) — resolve against the config file's parent directory, consistent with <code>llm_filter</code> and other command-valued config keys.</p>
 <h2 id="contract">Contract</h2>
 <p>Swival sends a JSON object to the middleware's stdin:</p>
 <pre><code class="language-json">{
