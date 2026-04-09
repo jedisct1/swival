@@ -73,6 +73,11 @@ NAV = [
                 "Outbound LLM Filter",
                 "User-defined scripts that redact or block content before it reaches the LLM provider",
             ),
+            (
+                "command-middleware",
+                "Command Middleware",
+                "Intercept, rewrite, or block shell commands before execution — RTK integration included",
+            ),
             ("skills", "Skills", "Creating and using SKILL.md-based agent skills"),
             (
                 "web-browsing",

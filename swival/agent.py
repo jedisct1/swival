@@ -2160,6 +2160,7 @@ def handle_tool_call(
     scratch_dir=None,
     subagent_manager=None,
     command_policy=None,
+    command_middleware=None,
     is_subagent=False,
     report=None,
 ):
@@ -2226,6 +2227,7 @@ def handle_tool_call(
             scratch_dir=scratch_dir,
             subagent_manager=subagent_manager,
             command_policy=command_policy,
+            command_middleware=command_middleware,
             is_subagent=is_subagent,
             report=report,
         )
@@ -3455,6 +3457,18 @@ def build_parser():
         help="Filter command (shell-split) run before each outbound LLM request. "
         "Receives JSON on stdin, writes filtered messages JSON to stdout. "
         'Non-zero exit or {"allow": false} blocks the request.',
+    )
+    integrations_group.add_argument(
+        "--command-middleware",
+        metavar="COMMAND",
+        dest="command_middleware",
+        default=_UNSET,
+        help="Command run before each run_command/run_shell_command call. "
+        "Receives a JSON payload on stdin describing the command; responds with "
+        '{"action": "allow"} to pass through, '
+        '{"action": "allow", "mode": ..., "command": ...} to rewrite, or '
+        '{"action": "deny", "reason": ...} to block. '
+        "Failures are fail-open by default.",
     )
 
     encrypt_group = behavior_group.add_mutually_exclusive_group()
@@ -5416,6 +5430,11 @@ def _run_main(args, report, _write_report, parser):
         _validate_external_command(llm_filter_cmd, "llm_filter")
         loop_kwargs["llm_filter"] = llm_filter_cmd
 
+    command_middleware_cmd = getattr(args, "command_middleware", None)
+    if command_middleware_cmd:
+        _validate_external_command(command_middleware_cmd, "command_middleware")
+        loop_kwargs["command_middleware"] = command_middleware_cmd
+
     if getattr(args, "proactive_summaries", False):
         loop_kwargs["compaction_state"] = CompactionState()
 
@@ -5808,6 +5827,7 @@ def run_agent_loop(
     cancel_flag: "threading.Event | None" = None,
     turn_state: dict | None = None,
     command_policy=None,
+    command_middleware=None,
     is_subagent: bool = False,
 ) -> tuple[str | None, bool]:
     """Run the tool-calling loop until a final answer or max turns.
@@ -5909,6 +5929,7 @@ def run_agent_loop(
             image_stash=None,
             scratch_dir=scratch_dir,
             command_policy=command_policy,
+            command_middleware=command_middleware,
             is_subagent=is_subagent,
             report=report,
         )
@@ -6519,6 +6540,7 @@ def run_agent_loop(
                 scratch_dir=scratch_dir,
                 subagent_manager=subagent_manager,
                 command_policy=command_policy,
+                command_middleware=command_middleware,
                 is_subagent=is_subagent,
                 report=report,
             )

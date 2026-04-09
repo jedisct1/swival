@@ -87,7 +87,7 @@ model = "gpt-5.4"
 
 Relative paths in `allowed_dirs`, `allowed_dirs_ro`, `skills_dir`, `cache_dir`, `objective`, and `verify` resolve against the config file's parent directory, not the working directory. Tilde paths like `~/projects` expand to the home directory.
 
-The `reviewer`, `llm_filter`, and `lifecycle_command` values are shell-split; only path-like first tokens (`./`, `../`, `~`, `/`) are resolved against the config directory, while bare command names like `swival` are left for PATH lookup at runtime. The same resolution applies to `model` when `provider = "command"`.
+The `reviewer`, `llm_filter`, `lifecycle_command`, and `command_middleware` values are shell-split; only path-like first tokens (`./`, `../`, `~`, `/`) are resolved against the config directory, while bare command names like `swival` are left for PATH lookup at runtime. The same resolution applies to `model` when `provider = "command"`.
 
 If a project config contains `api_key` — at the top level or inside a profile — inside a git repository, Swival prints a warning because the key could be committed accidentally. Prefer environment variables for credentials.
 
@@ -351,6 +351,10 @@ Swival can transparently encrypt recognized credential tokens before they leave 
 ## Lifecycle Hooks
 
 Swival can run a user-defined command at startup and exit, useful for syncing `.swival/` state to and from remote storage. See [Lifecycle Hooks](lifecycle-hooks.md) for the full documentation, including environment variables, execution ordering, failure semantics, and a complete Hugging Face Buckets example.
+
+## Command Middleware
+
+Swival can run a user-defined command before each shell command the agent issues, allowing you to rewrite, block, or pass through commands before they execute. The primary use case is integrating with RTK to produce token-optimized command output. See [Command Middleware](command-middleware.md) for the full documentation, including the JSON contract, RTK setup, and a ready-to-use adapter script.
 
 ## Turn And Token Limits
 

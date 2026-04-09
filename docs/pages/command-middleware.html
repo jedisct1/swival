@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Command Middleware — Swival</title>
+    <meta name="description" content="Command Middleware — Swival documentation">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Command Middleware — Swival">
+    <meta property="og:description" content="Command Middleware — Swival documentation">
+    <meta property="og:image" content="https://swival.dev/img/logo.png">
+    <meta property="og:url" content="https://swival.dev/pages/command-middleware.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Command Middleware — Swival">
+    <meta name="twitter:description" content="Command Middleware — Swival documentation">
+    <meta name="twitter:image" content="https://swival.dev/img/logo.png">
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="../" class="header-logo">
+                <img src="../img/logo.png" alt="Swival">
+            </a>
+            <nav class="header-nav">
+                <a href="./">Docs</a>
+                <a href="https://github.com/swival/swival">GitHub</a>
+            </nav>
+        </div>
+    </header>
+    <div class="docs-layout">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+<h4>Basics</h4>
+<ul>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="usage.html">Usage</a></li>
+<li><a href="tools.html">Tools</a></li>
+<li><a href="context-management.html">Context Management</a></li>
+<li><a href="open-models.html">Not Just for Frontier Models</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Configuration & Deployment</h4>
+<ul>
+<li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
+<li><a href="secrets.html">Secret Encryption</a></li>
+<li><a href="llm-filter.html">Outbound LLM Filter</a></li>
+<li><a href="command-middleware.html" class="active">Command Middleware</a></li>
+<li><a href="skills.html">Skills</a></li>
+<li><a href="web-browsing.html">Web Browsing</a></li>
+<li><a href="mcp.html">MCP</a></li>
+<li><a href="a2a.html">A2A</a></li>
+<li><a href="lifecycle-hooks.html">Lifecycle Hooks</a></li>
+<li><a href="custom-commands.html">Custom Commands</a></li>
+<li><a href="customization.html">Customization</a></li>
+<li><a href="providers.html">Providers</a></li>
+<li><a href="reports.html">Reports</a></li>
+<li><a href="reviews.html">Reviews</a></li>
+<li><a href="agentfs.html">AgentFS</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Reference</h4>
+<ul>
+<li><a href="python-api.html">Python API</a></li>
+</ul>
+</div>
+        </aside>
+        <article class="docs-content">
+            <h1 id="command-middleware">Command Middleware</h1>
+<p>Swival can run a user-defined command before each <code>run_command</code> or <code>run_shell_command</code> tool call. The middleware receives a JSON description of the pending command and can pass it through unchanged, rewrite it, or block it entirely.</p>
+<p>The most common use is pairing Swival with <a href="https://github.com/rtk-ai/rtk">RTK</a>, which rewrites commands like <code>git status</code> to <code>rtk git status</code> so the output is token-optimized before it reaches the model's context window.</p>
+<h2 id="enabling-middleware">Enabling Middleware</h2>
+<p>On the command line:</p>
+<pre><code class="language-sh">swival --command-middleware &quot;./scripts/rtk-adapter.py&quot; &quot;task&quot;
+</code></pre>
+<p>In a config file:</p>
+<pre><code class="language-toml">command_middleware = &quot;./scripts/rtk-adapter.py&quot;
+</code></pre>
+<p>In the library API:</p>
+<pre><code class="language-python">from swival import Session
+
+session = Session(command_middleware=&quot;./scripts/rtk-adapter.py&quot;)
+result = session.run(&quot;task&quot;)
+</code></pre>
+<p>The value is a shell command string. It is split with <code>shlex.split</code>, and path-like first tokens (<code>./</code>, <code>../</code>, <code>~</code>) resolve against the config file's parent directory, consistent with <code>llm_filter</code> and other command-valued config keys.</p>
+<h2 id="contract">Contract</h2>
+<p>Swival sends a JSON object to the middleware's stdin:</p>
+<pre><code class="language-json">{
+  &quot;phase&quot;: &quot;before&quot;,
+  &quot;tool&quot;: &quot;run_shell_command&quot;,
+  &quot;cwd&quot;: &quot;/path/to/project&quot;,
+  &quot;mode&quot;: &quot;shell&quot;,
+  &quot;command&quot;: &quot;git status&quot;,
+  &quot;timeout&quot;: 30,
+  &quot;is_subagent&quot;: false
+}
+</code></pre>
+<p>For <code>run_command</code> (array argv), <code>mode</code> is <code>"argv"</code> and <code>command</code> is a list:</p>
+<pre><code class="language-json">{
+  &quot;phase&quot;: &quot;before&quot;,
+  &quot;tool&quot;: &quot;run_command&quot;,
+  &quot;cwd&quot;: &quot;/path/to/project&quot;,
+  &quot;mode&quot;: &quot;argv&quot;,
+  &quot;command&quot;: [&quot;git&quot;, &quot;log&quot;, &quot;--oneline&quot;, &quot;-5&quot;],
+  &quot;timeout&quot;: 30,
+  &quot;is_subagent&quot;: false
+}
+</code></pre>
+<p>The middleware writes a JSON object to stdout. Three response shapes are supported.</p>
+<p><strong>Pass through unchanged:</strong></p>
+<pre><code class="language-json">{&quot;action&quot;: &quot;allow&quot;}
+</code></pre>
+<p><strong>Rewrite the command:</strong></p>
+<pre><code class="language-json">{&quot;action&quot;: &quot;allow&quot;, &quot;mode&quot;: &quot;shell&quot;, &quot;command&quot;: &quot;rtk git status&quot;}
+</code></pre>
+<p>The rewritten command can switch between <code>"shell"</code> and <code>"argv"</code> modes. For <code>"argv"</code>, <code>"command"</code> must be a list of strings.</p>
+<p><strong>Block the command:</strong></p>
+<pre><code class="language-json">{&quot;action&quot;: &quot;deny&quot;, &quot;reason&quot;: &quot;command not permitted by policy&quot;}
+</code></pre>
+<p>A blocked command returns an <code>error:</code> result to the model with the denial reason.</p>
+<h2 id="behavior-rules">Behavior Rules</h2>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>{"action": "allow"}</code></td>
+<td>Execute original command</td>
+</tr>
+<tr>
+<td><code>{"action": "allow", "command": …}</code></td>
+<td>Execute rewritten command</td>
+</tr>
+<tr>
+<td><code>{"action": "deny", "reason": …}</code></td>
+<td>Return error to model, skip execution</td>
+</tr>
+<tr>
+<td>Non-zero exit</td>
+<td>Warn (verbose), execute original command</td>
+</tr>
+<tr>
+<td>Malformed JSON on stdout</td>
+<td>Warn (verbose), execute original command</td>
+</tr>
+<tr>
+<td>Executable not found</td>
+<td>Warn (verbose), execute original command</td>
+</tr>
+<tr>
+<td>Timeout (10 seconds)</td>
+<td>Warn (verbose), execute original command</td>
+</tr>
+</tbody>
+</table>
+<p>Middleware fails open. If the middleware process errors, the original command runs unchanged. Swival never silently drops a command due to middleware failure. Warnings appear on stderr in verbose mode (<code>--verbose</code>).</p>
+<h2 id="policy-re-check-after-rewrite">Policy Re-check After Rewrite</h2>
+<p>After a successful rewrite, the rewritten command is re-evaluated against Swival's built-in command policy before execution. This means middleware cannot bypass <code>--commands none</code>, allowlists, or interactive approval (<code>--commands ask</code>). The user's safety settings remain authoritative.</p>
+<h2 id="rtk-integration">RTK Integration</h2>
+<p><a href="https://github.com/RTaskforce/rtk">RTK</a> is a CLI proxy that rewrites common commands to token-optimized equivalents. For example, <code>git status</code> becomes <code>rtk git status</code>, which produces a compact, structured summary instead of raw Git output.</p>
+<p>RTK's <code>rewrite</code> subcommand takes a raw command string and prints the RTK equivalent if one exists, or produces no output if the command has no RTK counterpart.</p>
+<h3 id="adapter-script">Adapter Script</h3>
+<p>Save this to <code>scripts/rtk-adapter.py</code> (or anywhere you prefer):</p>
+<pre><code class="language-python">#!/usr/bin/env python3
+
+import json
+import shlex
+import subprocess
+import sys
+
+
+def main():
+    payload = json.load(sys.stdin)
+    if payload.get(&quot;phase&quot;) != &quot;before&quot;:
+        json.dump({&quot;action&quot;: &quot;allow&quot;}, sys.stdout)
+        return
+
+    mode = payload.get(&quot;mode&quot;)
+    command = payload.get(&quot;command&quot;)
+
+    if mode == &quot;shell&quot;:
+        raw = command
+    elif mode == &quot;argv&quot;:
+        raw = shlex.join(command)
+    else:
+        json.dump({&quot;action&quot;: &quot;allow&quot;}, sys.stdout)
+        return
+
+    proc = subprocess.run(
+        [&quot;rtk&quot;, &quot;rewrite&quot;, raw],
+        capture_output=True,
+        text=True,
+    )
+
+    rewritten = proc.stdout.strip()
+    if rewritten:
+        json.dump({&quot;action&quot;: &quot;allow&quot;, &quot;mode&quot;: &quot;shell&quot;, &quot;command&quot;: rewritten}, sys.stdout)
+    else:
+        json.dump({&quot;action&quot;: &quot;allow&quot;}, sys.stdout)
+
+
+if __name__ == &quot;__main__&quot;:
+    main()
+</code></pre>
+<p>Make it executable:</p>
+<pre><code class="language-sh">chmod +x scripts/rtk-adapter.py
+</code></pre>
+<h3 id="testing-the-adapter">Testing the Adapter</h3>
+<p>You can test the adapter directly without running Swival:</p>
+<pre><code class="language-sh"># git status → rtk git status
+echo '{&quot;phase&quot;:&quot;before&quot;,&quot;tool&quot;:&quot;run_shell_command&quot;,&quot;cwd&quot;:&quot;.&quot;,&quot;mode&quot;:&quot;shell&quot;,&quot;command&quot;:&quot;git status&quot;,&quot;timeout&quot;:30,&quot;is_subagent&quot;:false}' \
+  | python3 scripts/rtk-adapter.py
+# → {&quot;action&quot;: &quot;allow&quot;, &quot;mode&quot;: &quot;shell&quot;, &quot;command&quot;: &quot;rtk git status&quot;}
+
+# ls -la → rtk ls -la
+echo '{&quot;phase&quot;:&quot;before&quot;,&quot;tool&quot;:&quot;run_command&quot;,&quot;cwd&quot;:&quot;.&quot;,&quot;mode&quot;:&quot;argv&quot;,&quot;command&quot;:[&quot;ls&quot;,&quot;-la&quot;],&quot;timeout&quot;:30,&quot;is_subagent&quot;:false}' \
+  | python3 scripts/rtk-adapter.py
+# → {&quot;action&quot;: &quot;allow&quot;, &quot;mode&quot;: &quot;shell&quot;, &quot;command&quot;: &quot;rtk ls -la&quot;}
+
+# echo hello → pass through (no RTK equivalent)
+echo '{&quot;phase&quot;:&quot;before&quot;,&quot;tool&quot;:&quot;run_command&quot;,&quot;cwd&quot;:&quot;.&quot;,&quot;mode&quot;:&quot;argv&quot;,&quot;command&quot;:[&quot;echo&quot;,&quot;hello&quot;],&quot;timeout&quot;:30,&quot;is_subagent&quot;:false}' \
+  | python3 scripts/rtk-adapter.py
+# → {&quot;action&quot;: &quot;allow&quot;}
+</code></pre>
+<h3 id="configuration">Configuration</h3>
+<p>Enable it for a single run:</p>
+<pre><code class="language-sh">swival --command-middleware &quot;./scripts/rtk-adapter.py&quot; &quot;Investigate the failing tests&quot;
+</code></pre>
+<p>Or set it permanently in <code>swival.toml</code>:</p>
+<pre><code class="language-toml">command_middleware = &quot;./scripts/rtk-adapter.py&quot;
+</code></pre>
+<p>When RTK is active, commands the model issues against the codebase are automatically rewritten. For example, if the model calls <code>git log --oneline -10</code>, Swival passes <code>rtk git log --oneline -10</code> to the shell instead, and the compact RTK output goes back to the model.</p>
+<h2 id="limitations">Limitations</h2>
+<ul>
+<li>Only one middleware command is supported. Chain multiple behaviors inside a single adapter script.</li>
+<li>Middleware runs only for <code>run_command</code> and <code>run_shell_command</code>. Other tools (file reads, web fetches, etc.) are not affected.</li>
+<li>Middleware is stateless across calls. Each invocation is a fresh subprocess.</li>
+<li>The <code>timeout</code> field in the payload is the command's execution timeout, not the middleware's own deadline. Middleware itself has a 10-second limit.</li>
+</ul>
+        </article>
+    </div>
+    <footer class="site-footer">
+        MIT License &middot;
+        <a href="https://github.com/swival/swival">GitHub</a>
+    </footer>
+</body>
+</html>

@@ -47,6 +47,7 @@
 <li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
 <li><a href="secrets.html">Secret Encryption</a></li>
 <li><a href="llm-filter.html">Outbound LLM Filter</a></li>
+<li><a href="command-middleware.html">Command Middleware</a></li>
 <li><a href="skills.html">Skills</a></li>
 <li><a href="web-browsing.html">Web Browsing</a></li>
 <li><a href="mcp.html">MCP</a></li>
@@ -141,7 +142,7 @@ auth_token = &quot;sk-...&quot;
 model = &quot;gpt-5.4&quot;
 </code></pre>
 <p>Relative paths in <code>allowed_dirs</code>, <code>allowed_dirs_ro</code>, <code>skills_dir</code>, <code>cache_dir</code>, <code>objective</code>, and <code>verify</code> resolve against the config file's parent directory, not the working directory. Tilde paths like <code>~/projects</code> expand to the home directory.</p>
-<p>The <code>reviewer</code>, <code>llm_filter</code>, and <code>lifecycle_command</code> values are shell-split; only path-like first tokens (<code>./</code>, <code>../</code>, <code>~</code>, <code>/</code>) are resolved against the config directory, while bare command names like <code>swival</code> are left for PATH lookup at runtime. The same resolution applies to <code>model</code> when <code>provider = "command"</code>.</p>
+<p>The <code>reviewer</code>, <code>llm_filter</code>, <code>lifecycle_command</code>, and <code>command_middleware</code> values are shell-split; only path-like first tokens (<code>./</code>, <code>../</code>, <code>~</code>, <code>/</code>) are resolved against the config directory, while bare command names like <code>swival</code> are left for PATH lookup at runtime. The same resolution applies to <code>model</code> when <code>provider = "command"</code>.</p>
 <p>If a project config contains <code>api_key</code> — at the top level or inside a profile — inside a git repository, Swival prints a warning because the key could be committed accidentally. Prefer environment variables for credentials.</p>
 <p>The <code>--system-prompt</code> and <code>no_system_prompt</code> settings are mutually exclusive in config files, just as they are on the command line.</p>
 <p>The library API (<code>Session</code> class) does not auto-load config files. If you want config file support in library code, call <code>load_config()</code> and <code>config_to_session_kwargs()</code> explicitly. Note that <code>config_to_session_kwargs()</code> drops <code>approved_buckets</code> — for <code>commands="ask"</code>, pass <code>approved_buckets</code> to <code>Session</code> directly, optionally using <code>load_persisted_buckets()</code> from <code>swival.command_policy</code> to include runtime-persisted approvals.</p>
@@ -295,6 +296,8 @@ Don't add dependencies without asking.
 <p>Swival can transparently encrypt recognized credential tokens before they leave your machine. See <a href="secrets.html">Secret Encryption</a> for the full documentation, including built-in token patterns, custom patterns, key management, and threat model.</p>
 <h2 id="lifecycle-hooks">Lifecycle Hooks</h2>
 <p>Swival can run a user-defined command at startup and exit, useful for syncing <code>.swival/</code> state to and from remote storage. See <a href="lifecycle-hooks.html">Lifecycle Hooks</a> for the full documentation, including environment variables, execution ordering, failure semantics, and a complete Hugging Face Buckets example.</p>
+<h2 id="command-middleware">Command Middleware</h2>
+<p>Swival can run a user-defined command before each shell command the agent issues, allowing you to rewrite, block, or pass through commands before they execute. The primary use case is integrating with RTK to produce token-optimized command output. See <a href="command-middleware.html">Command Middleware</a> for the full documentation, including the JSON contract, RTK setup, and a ready-to-use adapter script.</p>
 <h2 id="turn-and-token-limits">Turn And Token Limits</h2>
 <p><code>--max-turns</code> limits how many agent-loop iterations are allowed.</p>
 <pre><code class="language-sh">swival --max-turns 10 &quot;quick task&quot;

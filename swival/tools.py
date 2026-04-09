@@ -3010,11 +3010,30 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
         if err is not None:
             return err
 
+        _middleware_cmd = kwargs.get("command_middleware")
+        if _middleware_cmd is not None:
+            from .command_middleware import run_command_middleware
+
+            _mw_result = run_command_middleware(
+                _middleware_cmd,
+                tool_name=name,
+                normalized=normalized,
+                base_dir=base_dir,
+                timeout=args.get("timeout", 30),
+                is_subagent=kwargs.get("is_subagent", False),
+            )
+            if kwargs.get("verbose", False) and _mw_result.warning:
+                from . import fmt
+
+                fmt.warning(_mw_result.warning)
+            if _mw_result.action == "deny":
+                return f"error: command blocked by middleware: {_mw_result.reason}"
+            if _mw_result.normalized is not None:
+                normalized = _mw_result.normalized
+
         command_policy = kwargs.get("command_policy")
         if command_policy is not None:
-            policy_input = (
-                normalized.command if normalized.mode == "argv" else args["command"]
-            )
+            policy_input = normalized.command
             rejection = _check_command_policy(
                 policy_input,
                 command_policy,

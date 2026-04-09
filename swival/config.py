@@ -103,6 +103,7 @@ CONFIG_KEYS: dict[str, type | tuple[type, ...]] = {
     "lifecycle_timeout": int,
     "lifecycle_fail_closed": bool,
     "no_lifecycle": bool,
+    "command_middleware": str,
     "subagents": bool,
     "approved_buckets": list,
     "oneshot_commands": bool,
@@ -197,6 +198,7 @@ _ARGPARSE_DEFAULTS: dict[str, Any] = {
     "lifecycle_timeout": 300,
     "lifecycle_fail_closed": False,
     "no_lifecycle": False,
+    "command_middleware": None,
     "aws_profile": None,
     "approved_buckets": [],
     "oneshot_commands": False,
@@ -354,7 +356,12 @@ def _resolve_paths(config: dict, config_dir: Path, source: str = "") -> None:
                     resolved.append(str(config_dir / p))
             config[key] = resolved
 
-    for cmd_key in ("llm_filter", "reviewer", "lifecycle_command"):
+    for cmd_key in (
+        "llm_filter",
+        "reviewer",
+        "lifecycle_command",
+        "command_middleware",
+    ):
         if cmd_key in config:
             _resolve_config_command(config, cmd_key, config_dir, source)
 
@@ -1001,6 +1008,7 @@ def args_to_session_kwargs(args, base_dir: str) -> dict:
         "lifecycle_command",
         "lifecycle_timeout",
         "lifecycle_fail_closed",
+        "command_middleware",
         "trace_dir",
     ]
 

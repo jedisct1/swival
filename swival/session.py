@@ -104,6 +104,7 @@ class Session:
         lifecycle_timeout: int = 300,
         lifecycle_fail_closed: bool = False,
         lifecycle_enabled: bool = True,
+        command_middleware: str | None = None,
         aws_profile: str | None = None,
         approved_buckets: set[str] | None = None,
     ):
@@ -169,6 +170,7 @@ class Session:
         self.lifecycle_timeout = lifecycle_timeout
         self.lifecycle_fail_closed = lifecycle_fail_closed
         self.lifecycle_enabled = lifecycle_enabled
+        self.command_middleware = command_middleware
         self.aws_profile = aws_profile
         self.approved_buckets = approved_buckets
 
@@ -392,6 +394,12 @@ class Session:
                 verbose=self.verbose,
             )
 
+        # Validate command middleware executable at startup
+        if self.command_middleware:
+            from .agent import _validate_external_command
+
+            _validate_external_command(self.command_middleware, "command_middleware")
+
         # Build system prompt (without memory — memory is injected per-call
         # in run()/ask() so it can be keyed from the user's question).
         mcp_tool_info = self._mcp_manager.get_tool_info() if self._mcp_manager else None
@@ -521,6 +529,8 @@ class Session:
             kwargs["a2a_manager"] = self._a2a_manager
         if self.llm_filter is not None:
             kwargs["llm_filter"] = self.llm_filter
+        if self.command_middleware is not None:
+            kwargs["command_middleware"] = self.command_middleware
         if self._secret_shield is not None:
             kwargs["secret_shield"] = self._secret_shield
         if self.event_callback is not None:
