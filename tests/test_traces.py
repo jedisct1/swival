@@ -41,7 +41,7 @@ def test_tool_result_role(tmp_path):
         ln for ln in lines if ln.get("type") == "user" and "toolUseResult" in ln
     ]
     assert len(tool_line) == 1
-    msg = json.loads(tool_line[0]["message"])
+    msg = tool_line[0]["message"]
     assert msg["role"] == "user"
     assert msg["content"][0]["type"] == "tool_result"
     assert msg["content"][0]["tool_use_id"] == "tc1"
@@ -58,7 +58,7 @@ def test_tool_result_error(tmp_path):
     write_trace(messages, path=path, session_id="s1", base_dir="/tmp", model="m1")
 
     lines = _read_lines(path)
-    assert json.loads(lines[0]["message"])["content"][0]["is_error"] is True
+    assert lines[0]["message"]["content"][0]["is_error"] is True
 
 
 def test_tool_call_translation(tmp_path):
@@ -83,7 +83,7 @@ def test_tool_call_translation(tmp_path):
     write_trace(messages, path=path, session_id="s1", base_dir="/tmp", model="m1")
 
     lines = _read_lines(path)
-    msg = json.loads(lines[0]["message"])
+    msg = lines[0]["message"]
     content = msg["content"]
     text_block = [b for b in content if b["type"] == "text"]
     tool_block = [b for b in content if b["type"] == "tool_use"]
@@ -97,9 +97,8 @@ def test_tool_call_translation(tmp_path):
 
 
 def test_hf_detection_fields(tmp_path):
-    """message is serialized as a JSON string so PyArrow sees a uniform string
-    column rather than a struct whose content field alternates between string
-    and list across row types."""
+    """message is emitted as a JSON object so HuggingFace's mixed-struct
+    detection can infer it as datasets.Json() and trigger agent-traces mode."""
     messages = [
         {"role": "system", "content": "sys prompt"},
         {"role": "user", "content": "hello"},
@@ -116,8 +115,7 @@ def test_hf_detection_fields(tmp_path):
             assert line["harness"] == "swival"
         if line["type"] in ("user", "assistant"):
             assert "message" in line
-            assert isinstance(line["message"], str)
-            json.loads(line["message"])  # must be valid JSON
+            assert isinstance(line["message"], dict)
 
 
 def test_system_only_trace_not_written(tmp_path):
@@ -155,7 +153,7 @@ def test_namespace_messages(tmp_path):
     lines = _read_lines(path)
     assert len(lines) == 2
     assert lines[0]["type"] == "assistant"
-    msg = json.loads(lines[0]["message"])
+    msg = lines[0]["message"]
     assert msg["content"][0]["text"] == "response text"
     assert msg["stop_reason"] == "end_turn"
     assert msg["id"] == "msg-123"
@@ -199,7 +197,7 @@ def test_malformed_tool_arguments(tmp_path):
     write_trace(messages, path=path, session_id="s1", base_dir="/tmp", model="m1")
 
     lines = _read_lines(path)
-    tool_block = json.loads(lines[0]["message"])["content"][0]
+    tool_block = lines[0]["message"]["content"][0]
     assert tool_block["type"] == "tool_use"
     assert tool_block["input"] == {"_raw": "not json at all"}
 
@@ -274,7 +272,7 @@ def test_assistant_text_only(tmp_path):
     write_trace(messages, path=path, session_id="s1", base_dir="/tmp", model="m1")
 
     lines = _read_lines(path)
-    msg = json.loads(lines[0]["message"])
+    msg = lines[0]["message"]
     assert msg["stop_reason"] == "end_turn"
     assert msg["content"] == [{"type": "text", "text": "just text"}]
 
@@ -394,10 +392,10 @@ class TestSessionTraces:
             for ln in lines
             if ln["type"] == "user"
             and "message" in ln
-            and isinstance(json.loads(ln["message"]).get("content"), str)
+            and isinstance(ln["message"].get("content"), str)
         ]
         assert len(user_prompts) == 1
-        assert json.loads(user_prompts[0]["message"])["content"] == "first"
+        assert user_prompts[0]["message"]["content"] == "first"
 
     def test_no_trace_without_trace_dir(self, tmp_path, monkeypatch):
         """No trace file when trace_dir is not set."""
@@ -603,7 +601,7 @@ def test_trace_tool_use_input_encrypted(tmp_path):
     lines = _read_lines(str(files[0]))
     assistant_lines = [ln for ln in lines if ln.get("type") == "assistant"]
     assert assistant_lines
-    msg = json.loads(assistant_lines[0]["message"])
+    msg = assistant_lines[0]["message"]
     tool_use_blocks = [b for b in msg["content"] if b["type"] == "tool_use"]
     assert tool_use_blocks
     inp = tool_use_blocks[0]["input"]
@@ -632,4 +630,4 @@ def test_trace_tool_result_encrypted(tmp_path):
     assert tool_lines
     ln = tool_lines[0]
     assert _FAKE_TOKEN not in ln["toolUseResult"]
-    assert _FAKE_TOKEN not in json.loads(ln["message"])["content"][0]["content"]
+    assert _FAKE_TOKEN not in ln["message"]["content"][0]["content"]
