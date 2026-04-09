@@ -813,14 +813,12 @@ class TestCollisionDetection:
                     "type": "function",
                     "function": {
                         "name": "mcp__server1__tool",
-                        "_mcp_original_name": "tool.v1",
                     },
                 },
                 {
                     "type": "function",
                     "function": {
                         "name": "mcp__server1__tool",
-                        "_mcp_original_name": "tool.v2",
                     },
                 },
             ],
@@ -846,14 +844,12 @@ class TestCollisionDetection:
                     "type": "function",
                     "function": {
                         "name": "mcp__server1__tool",
-                        "_mcp_original_name": "tool.v1",
                     },
                 },
                 {
                     "type": "function",
                     "function": {
                         "name": "mcp__server1__tool",
-                        "_mcp_original_name": "tool.v2",
                     },
                 },
             ],
@@ -877,7 +873,6 @@ class TestCollisionDetection:
                     "type": "function",
                     "function": {
                         "name": "mcp__good__tool_a",
-                        "_mcp_original_name": "tool_a",
                     },
                 },
             ],
@@ -886,14 +881,12 @@ class TestCollisionDetection:
                     "type": "function",
                     "function": {
                         "name": "mcp__bad__tool",
-                        "_mcp_original_name": "tool.v1",
                     },
                 },
                 {
                     "type": "function",
                     "function": {
                         "name": "mcp__bad__tool",
-                        "_mcp_original_name": "tool.v2",
                     },
                 },
             ],
