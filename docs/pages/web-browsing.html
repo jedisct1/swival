@@ -189,7 +189,11 @@ agent-browser install        # downloads Chrome for Testing (first time only)
 agent-browser install
 </code></pre>
 <h3 id="configure-swival">Configure Swival</h3>
-<p>Allow the <code>agent-browser</code> command in <code>swival.toml</code>:</p>
+<p>Add the skill:</p>
+<pre><code class="language-sh">npx skills add vercel-labs/agent-browser
+</code></pre>
+<p>Select the default, "universal" agent type.</p>
+<p>Then, allow the <code>agent-browser</code> command in <code>swival.toml</code>:</p>
 <pre><code class="language-toml">commands = [&quot;agent-browser&quot;]
 </code></pre>
 <p>Or pass it on the command line:</p>

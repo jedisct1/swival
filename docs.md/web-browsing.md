@@ -165,7 +165,15 @@ agent-browser install
 
 ### Configure Swival
 
-Allow the `agent-browser` command in `swival.toml`:
+Add the skill:
+
+```sh
+npx skills add vercel-labs/agent-browser
+```
+
+Select the default, "universal" agent type.
+
+Then, allow the `agent-browser` command in `swival.toml`:
 
 ```toml
 commands = ["agent-browser"]
