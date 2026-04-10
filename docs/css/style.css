@@ -431,6 +431,11 @@ img {
     color: #e2e8f0;
 }
 
+.terminal-body .comment {
+    color: #64748b;
+    font-style: italic;
+}
+
 .terminal-body .cursor {
     display: inline-block;
     width: 0.55em;
