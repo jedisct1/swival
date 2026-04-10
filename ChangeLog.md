@@ -2,6 +2,11 @@
 
 All notable user-facing changes to Swival.
 
+## 0.11.1
+
+- `fetch_url` now allows connecting to `localhost`, `127.0.0.1`, and `::1`. Agents frequently run a local server and then need to test or inspect it, and the previous blanket loopback block made that workflow awkward. Other private, link-local, and reserved addresses are still blocked.
+- MCP tool names are now stored separately from the tool schema rather than as an internal `_mcp_original_name` field. This fixes Gemini rejecting MCP tool schemas that contained an unrecognized property.
+
 ## 0.11.0
 
 - `--command-middleware` adds a hook point before every `run_command` and `run_shell_command` call. The middleware receives a JSON payload on stdin and can pass the command through unchanged, rewrite it, or block it with a reason. Rewritten commands are still validated against Swival's own command policy so the middleware cannot bypass allowlists or `--commands none`.
