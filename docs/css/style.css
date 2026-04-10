@@ -81,7 +81,7 @@ img {
 /* ===== Header ===== */
 
 .site-header {
-    background: rgba(255,255,255,0.85);
+    background: rgba(255,255,255,0.92);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border);
@@ -119,6 +119,9 @@ img {
 .header-logo img {
     height: 1.75rem;
     width: auto;
+    background: rgba(255,255,255,0.85);
+    border-radius: var(--radius-sm);
+    padding: 0.2rem;
 }
 
 .header-nav {
@@ -1434,11 +1437,15 @@ img {
     }
 
     .site-header {
-        background: rgba(15,23,42,0.85);
+        background: rgba(15,23,42,0.92);
     }
 
     .header-logo {
         color: var(--text);
+    }
+
+    .header-logo img {
+        background: rgba(30,41,59,0.9);
     }
 
     .header-nav a {
