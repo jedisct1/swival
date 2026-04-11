@@ -3,6 +3,12 @@
 from __future__ import annotations
 
 
+_READ_BEFORE_WRITE_ERROR = (
+    "error: cannot write to an existing file that hasn't been read first. "
+    "Use read_file to inspect the current contents before modifying."
+)
+
+
 class FileAccessTracker:
     """Tracks which files have been read or written, enforcing read-before-write.
 
@@ -25,10 +31,7 @@ class FileAccessTracker:
         """Return an error string if the write should be blocked, None if OK."""
         if not exists or path in self.read_files or path in self.written_files:
             return None
-        return (
-            "error: cannot write to an existing file that hasn't been read first. "
-            "Use read_file to inspect the current contents before modifying."
-        )
+        return _READ_BEFORE_WRITE_ERROR
 
     def reset(self) -> None:
         """Clear all tracked state (used by /clear)."""

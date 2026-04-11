@@ -111,9 +111,9 @@ def _canonicalize_tool_calls(messages: list) -> None:
 
 def _has_image_content(messages: list) -> bool:
     """Check if any message contains image_url parts."""
-    for m in messages:
-        if isinstance(m, dict) and isinstance(m.get("content"), list):
-            for part in m["content"]:
-                if isinstance(part, dict) and part.get("type") == "image_url":
-                    return True
-    return False
+    return any(
+        isinstance(part, dict) and part.get("type") == "image_url"
+        for msg in messages
+        if isinstance(msg, dict) and isinstance(msg.get("content"), list)
+        for part in msg["content"]
+    )
