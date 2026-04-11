@@ -6767,18 +6767,19 @@ def run_agent_loop(
 
 def _repl_run_custom_command(
     line: str, base_dir: str, *, model_id: str = ""
-) -> tuple[str, str] | None:
+) -> tuple[str, str, Path | None] | None:
     """Look up and run a custom command from the user's commands directory.
 
-    *line* starts with ``!``.  Returns ``(cmd_name, stdout_text)`` on success,
-    or ``None`` if the command could not be run (errors printed to stderr).
+    *line* starts with ``!``.  Returns ``(cmd_name, content, inline_path)``
+    on success, where *inline_path* is ``None`` for subprocess output or the
+    resolved ``Path`` for an inlined text template.  Returns ``None`` if the
+    command could not be run (errors printed to stderr).
     """
     from .config import global_config_dir
 
     raw = line[1:].lstrip()
 
-    # Split command name from the raw argument string
-    parts = raw.split(None, 1)  # split on whitespace, max 1 split
+    parts = raw.split(None, 1)
     if not parts:
         return None
     cmd_name = parts[0]
@@ -6793,29 +6794,59 @@ def _repl_run_custom_command(
         fmt.error(f"no commands directory at {commands_dir}")
         return None
 
-    cmd_path = commands_dir / cmd_name
-    if not cmd_path.is_file():
-        _ci = sys.platform == "win32"
-        _key = cmd_name.lower() if _ci else cmd_name
-        candidates = [
-            f
-            for f in commands_dir.iterdir()
-            if (f.stem.lower() if _ci else f.stem) == _key
-            and f.is_file()
-            and os.access(f, os.X_OK)
-        ]
-        if len(candidates) == 1:
-            cmd_path = candidates[0]
-        elif len(candidates) > 1:
-            names = ", ".join(f.name for f in sorted(candidates))
+    _ci = sys.platform == "win32"
+    _key = cmd_name.lower() if _ci else cmd_name
+
+    exact_exec: list[Path] = []
+    stem_exec: list[Path] = []
+    exact_text: list[Path] = []
+    stem_text: list[Path] = []
+    has_unreadable_match = False
+
+    for f in commands_dir.iterdir():
+        if not _is_command_candidate(f):
+            continue
+        fname = f.name.lower() if _ci else f.name
+        fstem = f.stem.lower() if _ci else f.stem
+        is_name_match = fname == _key
+        is_stem_match = (not is_name_match) and fstem == _key
+        if not (is_name_match or is_stem_match):
+            continue
+        if os.access(f, os.X_OK):
+            (exact_exec if is_name_match else stem_exec).append(f)
+        elif _is_text_file(f):
+            (exact_text if is_name_match else stem_text).append(f)
+        else:
+            has_unreadable_match = True
+
+    cmd_path: Path | None = None
+    for tier in (exact_exec, stem_exec, exact_text, stem_text):
+        if len(tier) == 1:
+            cmd_path = tier[0]
+            break
+        elif len(tier) > 1:
+            names = ", ".join(f.name for f in sorted(tier))
             fmt.error(f"ambiguous command {cmd_name}: {names}")
             return None
+
+    if cmd_path is None:
+        if has_unreadable_match:
+            fmt.error(f"command not executable: {cmd_name}")
         else:
             fmt.error(f"command not found: {cmd_name}")
-            return None
-    if not os.access(cmd_path, os.X_OK):
-        fmt.error(f"command not executable: {cmd_name}")
         return None
+
+    if not os.access(cmd_path, os.X_OK):
+        content = _read_text_command(cmd_path)
+        if content is None:
+            fmt.error(f"command not executable: {cmd_name}")
+            return None
+        if arg_string:
+            content = content.replace("$1", arg_string).replace("$@", arg_string)
+        if not content.strip():
+            fmt.info("command produced no output, skipping.")
+            return None
+        return cmd_name, content, cmd_path
 
     env = None
     if model_id:
@@ -6852,19 +6883,95 @@ def _repl_run_custom_command(
         fmt.info("command produced no output, skipping.")
         return None
 
-    return cmd_name, stdout
+    return cmd_name, stdout, None
 
 
 _CUSTOM_CMD_NAME_RE = re.compile(r"[a-zA-Z0-9_-]+$")
 
+_BACKUP_SUFFIXES = frozenset(
+    {
+        ".bak",
+        ".orig",
+        ".swp",
+        ".swo",
+        ".tmp",
+        ".pyc",
+    }
+)
+
+
+def _is_command_candidate(f: Path) -> bool:
+    """Structural gate: regular file, not a dot-file or backup artefact."""
+    name = f.name
+    if name.startswith("."):
+        return False
+    if name.endswith("~"):
+        return False
+    if f.suffix.lower() in _BACKUP_SUFFIXES:
+        return False
+    return f.is_file()
+
+
+def _is_text_file(f: Path) -> bool:
+    """Return True if *f* looks like a UTF-8 text file (null-byte heuristic).
+
+    Reads at most 512 bytes; intentionally lightweight for use during
+    completion and discovery.  Must apply identical heuristics to
+    :func:`_read_text_command` so files visible in tab completion are never
+    rejected at execution time for a different reason.
+    """
+    try:
+        with open(f, "rb") as fh:
+            header = fh.read(512)
+    except OSError:
+        return False
+    if b"\x00" in header:
+        return False
+    try:
+        header.decode("utf-8")
+        return True
+    except UnicodeDecodeError:
+        # The 512-byte boundary may split a multibyte character (up to 4 bytes
+        # wide).  Trim the last 3 bytes and retry before concluding the file is
+        # non-UTF-8.  A genuine encoding error earlier in the buffer still
+        # fails here.
+        try:
+            header[:-3].decode("utf-8")
+            return True
+        except UnicodeDecodeError:
+            return False
+
+
+def _is_available_command(f: Path) -> bool:
+    """Return True if *f* is a candidate that can be executed or inlined."""
+    return _is_command_candidate(f) and (os.access(f, os.X_OK) or _is_text_file(f))
+
+
+def _read_text_command(path: Path) -> str | None:
+    """Return the full UTF-8 content of *path*, or None if it is binary.
+
+    Uses the same null-byte + UTF-8 heuristic as :func:`_is_text_file`
+    (differing only in read size) so the two functions stay in sync.
+    """
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    if b"\x00" in raw[:512]:
+        return None
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
 
 def discover_custom_commands() -> list[str]:
-    """Return sorted names of runnable custom commands.
+    """Return sorted names of available custom commands.
 
     Applies the same resolution rules as :func:`_repl_run_custom_command`:
-    executable files in ``global_config_dir() / "commands"`` whose name
-    (or stem on Windows) matches ``[a-zA-Z0-9_-]+``.  Ambiguous stems on
-    Windows are excluded.
+    files in ``global_config_dir() / "commands"`` that are executable or
+    non-executable UTF-8 text, whose name (or stem on Windows) matches
+    ``[a-zA-Z0-9_-]+``.  Ambiguous stems on Windows are excluded.
     """
     from .config import global_config_dir
 
@@ -6878,7 +6985,7 @@ def discover_custom_commands() -> list[str]:
     if ci:
         stems: dict[str, list[Path]] = {}
         for f in commands_dir.iterdir():
-            if f.is_file() and os.access(f, os.X_OK):
+            if _is_available_command(f):
                 key = f.stem.lower()
                 stems.setdefault(key, []).append(f)
         for key, files in stems.items():
@@ -6888,7 +6995,7 @@ def discover_custom_commands() -> list[str]:
         exact_names: set[str] = set()
         stem_files: dict[str, list[Path]] = {}
         for f in commands_dir.iterdir():
-            if not f.is_file() or not os.access(f, os.X_OK):
+            if not _is_available_command(f):
                 continue
             if _CUSTOM_CMD_NAME_RE.fullmatch(f.name):
                 exact_names.add(f.name)
@@ -7611,7 +7718,7 @@ def execute_input(
         )
         if result is None:
             return StepResult(kind="state_change")
-        cmd_name, prompt_content = result
+        cmd_name, prompt_content, inline_path = result
         prompt_content = _truncate_for_context(
             prompt_content,
             ctx.messages,
@@ -7621,7 +7728,15 @@ def execute_input(
         if prompt_content is None:
             return StepResult(kind="state_change")
 
-        fmt.info(f"[!{cmd_name}] output:\n{prompt_content}")
+        if inline_path is not None:
+            home = str(Path.home())
+            path_str = str(inline_path)
+            hint = (
+                ("~" + path_str[len(home) :]) if path_str.startswith(home) else path_str
+            )
+            fmt.info(f"[!{cmd_name}] inline: {hint}")
+        else:
+            fmt.info(f"[!{cmd_name}] output:\n{prompt_content}")
         return _run_agent_step(
             prompt_content,
             f"[!{cmd_name}] {parsed.raw}",

@@ -73,17 +73,19 @@
         </aside>
         <article class="docs-content">
             <h1 id="custom-commands">Custom Commands</h1>
-<p>Custom commands let you run external scripts and feed their output into the conversation. Type <code>!name</code> and Swival looks up an executable called <code>name</code> in your commands directory, runs it, and injects its stdout as the next user message.</p>
+<p>Custom commands extend Swival with personal scripts and prompt templates stored in your commands directory. Type <code>!name</code> and Swival resolves <code>name</code> to a file in <code>~/.config/swival/commands/</code>, then either runs it and injects its stdout, or inlines its text content directly into the conversation.</p>
 <p>In interactive mode, custom commands are always available. In one-shot mode, they require <code>--oneshot-commands</code> because the input may come from an untrusted source:</p>
 <pre><code class="language-sh">swival --oneshot-commands &quot;!context&quot;
 </code></pre>
 <h2 id="setup">Setup</h2>
-<p>Create the commands directory and add executable scripts:</p>
+<p>Create the commands directory:</p>
 <pre><code class="language-sh">mkdir -p ~/.config/swival/commands
 </code></pre>
 <p>If you set <code>XDG_CONFIG_HOME</code>, the directory is <code>$XDG_CONFIG_HOME/swival/commands</code> instead.</p>
-<p>Each file in this directory is a command. The file must be executable and its name (or stem, ignoring extension) must contain only letters, digits, hyphens, and underscores.</p>
-<p>On Unix, extensionless files work fine. On Windows, name the file with an extension (<code>greet.bat</code>, <code>greet.cmd</code>, <code>greet.exe</code>). Swival first tries an exact match on the bare name; if that fails, it scans for executable files whose stem matches. The stem comparison is case-insensitive on Windows. If multiple executable files share the same stem (e.g. <code>greet.sh</code> and <code>greet.bat</code>), Swival reports an ambiguity error. Non-executable files with the same stem are ignored.</p>
+<p>A file in this directory is a valid command if its name (or stem, ignoring extension) contains only letters, digits, hyphens, and underscores, and the file is not a dot-file or backup artefact (names starting with <code>.</code>, ending with <code>~</code>, or with extensions <code>.bak</code>, <code>.orig</code>, <code>.swp</code>, <code>.swo</code>, <code>.tmp</code>, <code>.pyc</code> are silently skipped).</p>
+<p>There are two kinds of commands:</p>
+<h3 id="executable-scripts">Executable scripts</h3>
+<p>An executable script is run as a subprocess, and its stdout is injected as the next user message. Any language with a shebang line works.</p>
 <pre><code class="language-sh">cat &gt; ~/.config/swival/commands/context &lt;&lt;'EOF'
 #!/bin/sh
 base_dir=&quot;$1&quot;
@@ -95,20 +97,44 @@ git log --oneline -5
 EOF
 chmod +x ~/.config/swival/commands/context
 </code></pre>
+<h3 id="text-templates">Text templates</h3>
+<p>A plain text file without the execute bit is treated as a prompt template. Its content is read and inlined directly into the conversation — no subprocess is started. The file must be valid UTF-8 and contain no null bytes (binary files are rejected with "command not executable").</p>
+<pre><code class="language-sh">cat &gt; ~/.config/swival/commands/review &lt;&lt;'EOF'
+Review the changes in $1 for correctness, style, and test coverage. Flag any security issues first.
+EOF
+</code></pre>
+<p>No <code>chmod +x</code> is needed. The file is inlined as-is, with leading and trailing whitespace preserved.</p>
 <h2 id="usage">Usage</h2>
 <p>Prefix the command name with <code>!</code>:</p>
 <pre><code class="language-text">swival&gt; !context
+swival&gt; !review main branch
 </code></pre>
-<p>This runs the <code>context</code> script and sends its stdout to the model as if you had typed it. Everything after the command name is passed as a single argument (<code>$2</code>):</p>
-<pre><code class="language-text">swival&gt; !deploy staging environment --dry-run
-</code></pre>
-<p>The command receives <code>$2</code> = <code>staging environment --dry-run</code>. Leading and trailing whitespace is stripped, but the text is otherwise passed through verbatim — no shell parsing or quote handling.</p>
-<h2 id="how-commands-are-called">How Commands Are Called</h2>
-<p>The command receives <code>base_dir</code> (the project root) as <code>$1</code>. If arguments are given, the raw text after the command name is stripped and passed as <code>$2</code>. If no arguments are given, only <code>$1</code> is passed. The working directory is also set to <code>base_dir</code>.</p>
+<p>Everything after the command name is the argument string. How it is used depends on the command type (see below).</p>
+<h2 id="resolution-and-precedence">Resolution and Precedence</h2>
+<p>Swival scans the commands directory for all eligible files whose name or stem matches the command name (case-insensitive on Windows), then picks the best match using this priority order:</p>
+<ol>
+<li>Exact-name executable (<code>commands/name</code> with execute bit)</li>
+<li>Stem-match executable (<code>commands/name.sh</code>, <code>commands/name.py</code>, …)</li>
+<li>Exact-name text template (<code>commands/name</code> without execute bit)</li>
+<li>Stem-match text template (<code>commands/name.md</code>, <code>commands/name.txt</code>, …)</li>
+</ol>
+<p>Executables always win over text templates. If more than one file ties within a tier, Swival reports an ambiguity error. On Unix, extensionless files take the exact-name slots; on Windows, name scripts with an extension (<code>greet.bat</code>, <code>greet.cmd</code>) and Swival resolves them via the stem.</p>
+<h2 id="argument-passing">Argument Passing</h2>
+<h3 id="executable-scripts_1">Executable scripts</h3>
+<p>The script receives the project root as <code>$1</code>. If arguments are provided after the command name, the raw argument string is passed as <code>$2</code>. If no arguments are given, only <code>$1</code> is passed. The working directory is also set to the project root.</p>
 <pre><code class="language-text">$COMMANDS_DIR/name $base_dir &quot;$args&quot;
 </code></pre>
+<p>So <code>!deploy staging --dry-run</code> sets <code>$1</code> to the project root and <code>$2</code> to <code>staging --dry-run</code>.</p>
+<h3 id="text-templates_1">Text templates</h3>
+<p>For text templates there is no subprocess, so <code>$1</code> is not reserved for the project root. Instead, <code>$1</code> and <code>$@</code> in the file content are both replaced with the argument string verbatim before injection. If no arguments are given, <code>$1</code> and <code>$@</code> are left as-is in the content.</p>
+<pre><code class="language-sh"># commands/review (no execute bit)
+Review the changes in $1 for correctness and test coverage.
+
+# !review src/auth.py  →  &quot;Review the changes in src/auth.py for correctness and test coverage.&quot;
+</code></pre>
+<p>Note the difference from executable commands: if you convert a text template into a shell script, rename <code>$1</code> to <code>$2</code> and add the <code>base_dir</code> parameter.</p>
 <h2 id="environment-variables">Environment Variables</h2>
-<p>Commands inherit the parent environment. Swival also sets:</p>
+<p>Executable scripts inherit the parent environment. Swival also sets:</p>
 <table>
 <thead>
 <tr>
@@ -123,11 +149,13 @@ chmod +x ~/.config/swival/commands/context
 </tr>
 </tbody>
 </table>
+<p>Environment variables are not relevant for text templates since no process is spawned.</p>
 <h2 id="output-handling">Output Handling</h2>
-<p>The command's stdout is stripped, printed to the terminal for review, and then injected as a user message. If the output is too large for the remaining context window, it is truncated to fit. When the context window size is unknown, a hard cap of 100KB applies.</p>
-<p>The command's stderr is printed to the terminal on success. On failure (non-zero exit), Swival prints a single error message using stderr, stdout, or the exit code (in that priority order) and does not inject anything into the conversation.</p>
+<p>For executable scripts, the command's stdout is stripped, printed to the terminal for review, and injected as a user message. For text templates, the content is inlined silently with a brief status line (<code>[!name] inline: ~/path</code>). Both paths respect the context window: if the content is too large for the remaining window, it is truncated to fit. When the context window size is unknown, a hard cap of 100KB applies.</p>
+<p>A whitespace-only result (after stripping) is treated as no output and skipped.</p>
+<p>For executable scripts, stderr is printed to the terminal on success. On failure (non-zero exit), Swival prints a single error message using stderr, stdout, or the exit code (in that priority order) and injects nothing.</p>
 <h2 id="timeouts">Timeouts</h2>
-<p>Commands have a 30-second timeout. If the command does not finish in time, Swival prints a timeout error and skips the injection.</p>
+<p>Executable scripts have a 30-second timeout. Text templates have no timeout since no process is spawned.</p>
 <h2 id="history">History</h2>
 <p>Custom command output is logged to <code>.swival/HISTORY.md</code> with the label <code>[!name] !name [args...]</code> so you can distinguish command-driven turns from typed input.</p>
         </article>

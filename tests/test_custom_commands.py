@@ -41,9 +41,10 @@ class TestReplRunCustomCommand:
 
         result = _repl_run_custom_command("!greet", str(tmp_path))
         assert result is not None
-        cmd_name, stdout = result
+        cmd_name, stdout, inline_path = result
         assert cmd_name == "greet"
         assert stdout == "hi there"
+        assert inline_path is None
 
     def test_with_arguments(self, tmp_path, monkeypatch):
         cmd_dir = _commands_dir(tmp_path)
@@ -55,7 +56,7 @@ class TestReplRunCustomCommand:
             '!echo-args "hello world" --flag', str(tmp_path)
         )
         assert result is not None
-        _, stdout = result
+        _, stdout, _ = result
         assert stdout == '"hello world" --flag'
 
     def test_swival_model_env_var(self, tmp_path, monkeypatch):
@@ -67,7 +68,7 @@ class TestReplRunCustomCommand:
             "!show-model", str(tmp_path), model_id="qwen3.5-9b"
         )
         assert result is not None
-        _, stdout = result
+        _, stdout, _ = result
         assert stdout == "qwen3.5-9b"
 
     def test_base_dir_passed_as_first_arg(self, tmp_path, monkeypatch):
@@ -77,7 +78,7 @@ class TestReplRunCustomCommand:
 
         result = _repl_run_custom_command("!show-base", str(tmp_path))
         assert result is not None
-        _, stdout = result
+        _, stdout, _ = result
         assert stdout == str(tmp_path)
 
     def test_extension_fallback(self, tmp_path, monkeypatch):
@@ -127,7 +128,7 @@ class TestReplRunCustomCommand:
         project_dir.mkdir()
         result = _repl_run_custom_command("!show-cwd", str(project_dir))
         assert result is not None
-        _, stdout = result
+        _, stdout, _ = result
         assert stdout == str(project_dir)
 
     def test_command_not_found(self, tmp_path, monkeypatch, capsys):
@@ -137,12 +138,34 @@ class TestReplRunCustomCommand:
         result = _repl_run_custom_command("!nosuch", str(tmp_path))
         assert result is None
 
-    def test_command_not_executable(self, tmp_path, monkeypatch, capsys):
+    def test_text_file_inlined(self, tmp_path, monkeypatch):
         cmd_dir = _commands_dir(tmp_path)
-        _make_script(cmd_dir / "noexec", executable=False)
+        (cmd_dir / "prompt").write_text("explain $1 in detail")
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
 
-        result = _repl_run_custom_command("!noexec", str(tmp_path))
+        result = _repl_run_custom_command("!prompt recursion", str(tmp_path))
+        assert result is not None
+        cmd_name, content, inline_path = result
+        assert cmd_name == "prompt"
+        assert content == "explain recursion in detail"
+        assert inline_path is not None
+
+    def test_text_file_no_arg_placeholder_preserved(self, tmp_path, monkeypatch):
+        cmd_dir = _commands_dir(tmp_path)
+        (cmd_dir / "tmpl").write_text("describe $1")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+        result = _repl_run_custom_command("!tmpl", str(tmp_path))
+        assert result is not None
+        _, content, _ = result
+        assert content == "describe $1"
+
+    def test_binary_file_not_executable(self, tmp_path, monkeypatch, capsys):
+        cmd_dir = _commands_dir(tmp_path)
+        (cmd_dir / "binary").write_bytes(b"\x00\x01\x02\x03binary data")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+        result = _repl_run_custom_command("!binary", str(tmp_path))
         assert result is None
 
     def test_nonzero_exit_with_stderr(self, tmp_path, monkeypatch):
@@ -218,7 +241,7 @@ class TestReplRunCustomCommand:
 
         result = _repl_run_custom_command('!cmd "unclosed', str(tmp_path))
         assert result is not None
-        _, stdout = result
+        _, stdout, _ = result
         assert stdout == '"unclosed'
 
     def test_xdg_config_home_override(self, tmp_path, monkeypatch):
@@ -239,7 +262,7 @@ class TestReplRunCustomCommand:
 
         result = _repl_run_custom_command("!warn", str(tmp_path))
         assert result is not None
-        _, stdout = result
+        _, stdout, _ = result
         assert stdout == "output"
         captured = capsys.readouterr()
         assert "warning" in captured.err
@@ -264,7 +287,7 @@ class TestReplRunCustomCommand:
 
         result = _repl_run_custom_command("!mycmd a b c", str(tmp_path))
         assert result is not None
-        _, stdout = result
+        _, stdout, _ = result
         assert stdout == "a b c"
 
     def test_no_args_only_base_dir(self, tmp_path, monkeypatch):
@@ -274,7 +297,7 @@ class TestReplRunCustomCommand:
 
         result = _repl_run_custom_command("!mycmd", str(tmp_path))
         assert result is not None
-        _, stdout = result
+        _, stdout, _ = result
         assert stdout == "1"
 
     def test_leading_trailing_spaces_stripped(self, tmp_path, monkeypatch):
@@ -284,7 +307,7 @@ class TestReplRunCustomCommand:
 
         result = _repl_run_custom_command("!mycmd   a b   ", str(tmp_path))
         assert result is not None
-        _, stdout = result
+        _, stdout, _ = result
         assert stdout == "a b"
 
     def test_whitespace_after_bang(self, tmp_path, monkeypatch):
@@ -294,9 +317,143 @@ class TestReplRunCustomCommand:
 
         result = _repl_run_custom_command("!  greet", str(tmp_path))
         assert result is not None
-        cmd_name, stdout = result
+        cmd_name, stdout, _ = result
         assert cmd_name == "greet"
         assert stdout == "hi"
+
+    def test_text_file_preserves_whitespace(self, tmp_path, monkeypatch):
+        cmd_dir = _commands_dir(tmp_path)
+        (cmd_dir / "padded").write_text("\n  preamble\n\ncontent\n\n  postamble\n")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+        result = _repl_run_custom_command("!padded", str(tmp_path))
+        assert result is not None
+        _, content, _ = result
+        assert content == "\n  preamble\n\ncontent\n\n  postamble\n"
+
+    def test_text_file_multibyte_at_512_boundary(self, tmp_path, monkeypatch):
+        cmd_dir = _commands_dir(tmp_path)
+        (cmd_dir / "emoji").write_text("a" * 511 + "\U0001f642 hello")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+        result = _repl_run_custom_command("!emoji", str(tmp_path))
+        assert result is not None
+        _, content, inline_path = result
+        assert inline_path is not None
+        assert "\U0001f642 hello" in content
+
+    def test_exec_beats_text_same_stem(self, tmp_path, monkeypatch):
+        cmd_dir = _commands_dir(tmp_path)
+        _make_script(cmd_dir / "tool.sh", '#!/bin/sh\necho "exec"')
+        (cmd_dir / "tool").write_text("text template")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+        result = _repl_run_custom_command("!tool", str(tmp_path))
+        assert result is not None
+        _, content, inline_path = result
+        assert content == "exec"
+        assert inline_path is None
+
+    def test_stem_exec_beats_exact_text(self, tmp_path, monkeypatch):
+        cmd_dir = _commands_dir(tmp_path)
+        _make_script(cmd_dir / "deploy.sh", '#!/bin/sh\necho "deployed"')
+        (cmd_dir / "deploy").write_text("text fallback")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+        result = _repl_run_custom_command("!deploy", str(tmp_path))
+        assert result is not None
+        _, content, inline_path = result
+        assert content == "deployed"
+        assert inline_path is None
+
+    def test_multiple_text_candidates_ambiguous(self, tmp_path, monkeypatch):
+        cmd_dir = _commands_dir(tmp_path)
+        (cmd_dir / "ask.txt").write_text("text a")
+        (cmd_dir / "ask.md").write_text("text b")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+        result = _repl_run_custom_command("!ask", str(tmp_path))
+        assert result is None
+
+    def test_dotfile_invisible(self, tmp_path, monkeypatch):
+        cmd_dir = _commands_dir(tmp_path)
+        (cmd_dir / ".hidden").write_text("should not be found")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+        result = _repl_run_custom_command("!.hidden", str(tmp_path))
+        assert result is None
+
+    def test_backup_file_not_matched_by_stem(self, tmp_path, monkeypatch):
+        cmd_dir = _commands_dir(tmp_path)
+        (cmd_dir / "ask~").write_text("backup")
+        (cmd_dir / "ask.bak").write_text("also backup")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+        result = _repl_run_custom_command("!ask", str(tmp_path))
+        assert result is None
+
+
+class TestDiscoverCustomCommandsTextFiles:
+    def test_text_file_included(self, tmp_path):
+        from swival.agent import discover_custom_commands
+
+        cmd_dir = tmp_path / "commands"
+        cmd_dir.mkdir()
+        (cmd_dir / "mytemplate").write_text("a prompt template")
+
+        with patch("swival.config.global_config_dir", return_value=tmp_path):
+            result = discover_custom_commands()
+
+        assert "mytemplate" in result
+
+    def test_multibyte_at_512_boundary_included(self, tmp_path):
+        from swival.agent import discover_custom_commands
+
+        cmd_dir = tmp_path / "commands"
+        cmd_dir.mkdir()
+        (cmd_dir / "emoji").write_text("a" * 511 + "\U0001f642 end")
+
+        with patch("swival.config.global_config_dir", return_value=tmp_path):
+            result = discover_custom_commands()
+
+        assert "emoji" in result
+
+    def test_binary_file_excluded(self, tmp_path):
+        from swival.agent import discover_custom_commands
+
+        cmd_dir = tmp_path / "commands"
+        cmd_dir.mkdir()
+        (cmd_dir / "binary").write_bytes(b"\x00\x01\x02binary data")
+
+        with patch("swival.config.global_config_dir", return_value=tmp_path):
+            result = discover_custom_commands()
+
+        assert "binary" not in result
+
+    def test_dotfile_excluded(self, tmp_path):
+        from swival.agent import discover_custom_commands
+
+        cmd_dir = tmp_path / "commands"
+        cmd_dir.mkdir()
+        (cmd_dir / ".hidden").write_text("hidden")
+
+        with patch("swival.config.global_config_dir", return_value=tmp_path):
+            result = discover_custom_commands()
+
+        assert result == []
+
+    def test_backup_excluded(self, tmp_path):
+        from swival.agent import discover_custom_commands
+
+        cmd_dir = tmp_path / "commands"
+        cmd_dir.mkdir()
+        (cmd_dir / "tool~").write_text("backup")
+        (cmd_dir / "tool.bak").write_text("backup")
+
+        with patch("swival.config.global_config_dir", return_value=tmp_path):
+            result = discover_custom_commands()
+
+        assert result == []
 
 
 # ---------------------------------------------------------------------------

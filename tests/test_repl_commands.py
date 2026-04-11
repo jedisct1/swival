@@ -85,12 +85,24 @@ class TestDiscoverCustomCommands:
 
         assert "deploy" in result
 
-    def test_non_executable_excluded(self, tmp_path):
+    def test_non_executable_text_included(self, tmp_path):
         from swival.agent import discover_custom_commands
 
         cmd_dir = tmp_path / "commands"
         cmd_dir.mkdir()
-        (cmd_dir / "readme").write_text("not a command")
+        (cmd_dir / "readme").write_text("a prompt template")
+
+        with patch("swival.config.global_config_dir", return_value=tmp_path):
+            result = discover_custom_commands()
+
+        assert "readme" in result
+
+    def test_non_executable_binary_excluded(self, tmp_path):
+        from swival.agent import discover_custom_commands
+
+        cmd_dir = tmp_path / "commands"
+        cmd_dir.mkdir()
+        (cmd_dir / "readme").write_bytes(b"\x00\x01binary data")
 
         with patch("swival.config.global_config_dir", return_value=tmp_path):
             result = discover_custom_commands()
