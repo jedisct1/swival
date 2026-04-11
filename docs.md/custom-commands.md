@@ -2,6 +2,8 @@
 
 Custom commands extend Swival with personal scripts and prompt templates stored in your commands directory. Type `!name` and Swival resolves `name` to a file in `~/.config/swival/commands/`, then either runs it and injects its stdout, or inlines its text content directly into the conversation.
 
+Not to be confused with `!! <command>` (quick shell), which runs an arbitrary shell command and prints the output without any LLM involvement. See the [Input Commands](usage.md#input-commands) section for details.
+
 In interactive mode, custom commands are always available. In one-shot mode, they require `--oneshot-commands` because the input may come from an untrusted source:
 
 ```sh

@@ -96,6 +96,8 @@ Without `--oneshot-commands`, input that looks like a command script is treated 
 
 `/exit` and `/quit` leave the REPL. Pressing `Ctrl-D` exits as well.
 
+`!! <command>` runs a shell command directly and prints the output. The LLM is not involved — nothing is added to the conversation and no agent turn runs. This is a quick way to check `git status`, run `make test`, or inspect files without leaving the REPL. Pipes, redirects, and `&&` all work. REPL-only; not available in one-shot mode.
+
 `!command [args]` resolves a file from your commands directory (`$XDG_CONFIG_HOME/swival/commands/` or `~/.config/swival/commands/`). Executable files are run as scripts and their stdout is injected; plain text files are inlined directly as a prompt template. In one-shot mode, bang commands require `--oneshot-commands`. See [Custom Commands](custom-commands.md) for setup and details.
 
 ## CLI Flags

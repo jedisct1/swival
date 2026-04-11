@@ -74,6 +74,7 @@
         <article class="docs-content">
             <h1 id="custom-commands">Custom Commands</h1>
 <p>Custom commands extend Swival with personal scripts and prompt templates stored in your commands directory. Type <code>!name</code> and Swival resolves <code>name</code> to a file in <code>~/.config/swival/commands/</code>, then either runs it and injects its stdout, or inlines its text content directly into the conversation.</p>
+<p>Not to be confused with <code>!! &lt;command&gt;</code> (quick shell), which runs an arbitrary shell command and prints the output without any LLM involvement. See the <a href="usage.html#input-commands">Input Commands</a> section for details.</p>
 <p>In interactive mode, custom commands are always available. In one-shot mode, they require <code>--oneshot-commands</code> because the input may come from an untrusted source:</p>
 <pre><code class="language-sh">swival --oneshot-commands &quot;!context&quot;
 </code></pre>

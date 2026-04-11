@@ -14,6 +14,12 @@ class CommandInfo(NamedTuple):
 
 
 INPUT_COMMANDS: dict[str, CommandInfo] = {
+    "!!": CommandInfo(
+        desc="Run a shell command and print output (no LLM)",
+        arg="<command>",
+        kind="state_change",
+        modes=("repl",),
+    ),
     "/add-dir": CommandInfo(
         desc="Grant read+write access to a directory",
         arg="<path>",

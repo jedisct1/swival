@@ -7694,6 +7694,23 @@ def _run_agent_step(
     return step
 
 
+def _run_quick_shell(cmd: str, cwd: str) -> tuple[int, str]:
+    """Run a user-initiated shell command for ``!!``."""
+    try:
+        proc = subprocess.run(
+            cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=cwd,
+        )
+        output = (proc.stdout + proc.stderr).rstrip()
+        return proc.returncode, output
+    except subprocess.TimeoutExpired:
+        return 1, "(timed out after 30s)"
+
+
 def execute_input(
     parsed: ParsedInput,
     ctx: InputContext,
@@ -7757,6 +7774,17 @@ def execute_input(
                     kind="info",
                     text=f"{cmd} is not available in {mode} mode.",
                 )
+
+        # Quick shell — run and print, no LLM.
+        if cmd == "!!":
+            cmd_str = cmd_arg.strip()
+            if not cmd_str:
+                return StepResult(
+                    kind="info", text="usage: !! <command>", is_error=True
+                )
+            returncode, output = _run_quick_shell(cmd_str, ctx.base_dir)
+            fmt.quick_shell(cmd_str, returncode, output)
+            return StepResult(kind="state_change")
 
         # Flow control.
         if cmd in ("/exit", "/quit"):

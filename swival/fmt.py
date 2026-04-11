@@ -378,6 +378,16 @@ def error(msg: str) -> None:
 sandbox_hint = info
 
 
+def quick_shell(cmd: str, returncode: int, output: str) -> None:
+    header = Text()
+    header.append(f"  $ {cmd}", style="bold dim")
+    _console.print(header)
+    if output:
+        _console.print(output)
+    if returncode != 0:
+        _console.print(Text(f"  exit {returncode}", style="red dim"))
+
+
 def repl_banner() -> None:
     _console.print(Text("Interactive mode. Type /exit or Ctrl-D to quit.", style="dim"))
 

@@ -108,6 +108,40 @@ class TestParseInputLine:
         p = parse_input_line("some text\n!command")
         assert not p.is_custom_command
 
+    def test_quick_shell(self):
+        p = parse_input_line("!! git status")
+        assert p.is_command
+        assert p.cmd == "!!"
+        assert p.cmd_arg == "git status"
+        assert not p.is_custom_command
+
+    def test_quick_shell_preserves_arg_whitespace(self):
+        p = parse_input_line("!!  echo  hello ")
+        assert p.cmd == "!!"
+        assert p.cmd_arg == " echo  hello"
+
+    def test_double_bang_no_space_is_custom_command(self):
+        """!!foo (no space) is a custom command named !foo, not quick shell."""
+        p = parse_input_line("!!foo")
+        assert p.is_custom_command
+        assert not p.is_command
+
+    def test_double_bang_alone_is_custom_command(self):
+        """!! alone (no trailing content) is a custom command."""
+        p = parse_input_line("!!")
+        assert p.is_custom_command
+        assert not p.is_command
+
+    def test_single_bang_unchanged(self):
+        p = parse_input_line("!deploy")
+        assert p.is_custom_command
+        assert not p.is_command
+
+    def test_bang_space_unchanged(self):
+        p = parse_input_line("! text")
+        assert not p.is_custom_command
+        assert not p.is_command
+
 
 class TestIsCommandScript:
     def test_plain_text(self):
@@ -136,6 +170,14 @@ class TestIsCommandScript:
 
     def test_plain_multiline(self):
         assert not is_command_script("please fix this\n/simplify")
+
+    def test_quick_shell_not_script(self):
+        """!! is REPL-only and must not trigger command-script detection."""
+        assert not is_command_script("!! git status")
+
+    def test_quick_shell_then_slash_not_script(self):
+        """First line governs; !! on first line means not a script."""
+        assert not is_command_script("!! git status\n/help")
 
 
 class TestRunInputScript:
@@ -289,6 +331,33 @@ class TestExecuteInput:
             result.text
             == "error: unknown command /nonexistent. Run /help to list commands."
         )
+
+    def test_quick_shell_repl_only_in_oneshot(self):
+        from swival.agent import execute_input
+
+        parsed = parse_input_line("!! echo hi")
+        result = execute_input(parsed, self._make_ctx(), mode="oneshot")
+        assert "not available" in result.text
+
+    def test_quick_shell_empty_arg(self):
+        from swival.agent import execute_input
+
+        # "!! " with trailing space: first_line is "!!" after strip, which starts
+        # with "!" but isn't "!! " (3+ chars), so it's a custom command.
+        # We test the empty-arg guard via a hand-built ParsedInput.
+        from swival.input_dispatch import ParsedInput
+
+        p = ParsedInput(raw="!! ", cmd="!!", cmd_arg="", is_command=True)
+        result = execute_input(p, self._make_ctx(), mode="repl")
+        assert result.is_error
+        assert "usage" in result.text
+
+    def test_quick_shell_help_included(self):
+        from swival.agent import execute_input
+
+        parsed = parse_input_line("/help")
+        result = execute_input(parsed, self._make_ctx(), mode="repl")
+        assert "!!" in result.text
 
     def test_empty_line(self):
         from swival.agent import execute_input

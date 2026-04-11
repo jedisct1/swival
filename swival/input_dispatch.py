@@ -95,6 +95,10 @@ def parse_input_line(line: str) -> ParsedInput:
     first_line, _, rest = line.partition("\n")
     first_line = first_line.strip()
 
+    # Quick shell: !! <command> — run and print, no LLM.
+    if first_line.startswith("!! ") and len(first_line) > 3:
+        return ParsedInput(raw=line, cmd="!!", cmd_arg=first_line[3:], is_command=True)
+
     if (
         first_line.startswith("!")
         and len(first_line) > 1
@@ -135,6 +139,8 @@ def is_command_script(text: str) -> bool:
             continue
         if parsed.is_custom_command:
             return True
+        if parsed.is_command and parsed.cmd == "!!":
+            return False
         if parsed.is_command:
             return True
         return False
