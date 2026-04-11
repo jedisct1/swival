@@ -55,6 +55,7 @@ class TestAutonomousMode:
         result = _apply_interaction_policy(content, "autonomous")
         assert "do not stop to ask for confirmation" in result
         assert "pick the most likely intent" in result
+        assert "optimal" in result
 
     def test_no_interactive_phrases(self, tmp_path):
         content, _ = _build(tmp_path)

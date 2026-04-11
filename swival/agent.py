@@ -4866,12 +4866,12 @@ _InteractionPolicy = Literal["autonomous", "interactive"]
 
 _AUTONOMY_DIRECTIVES: dict[_InteractionPolicy, str] = {
     "autonomous": (
-        "You solve tasks autonomously using the tools provided. "
-        "Keep going until the task is fully complete \u2014 do not stop to ask for "
-        'confirmation or clarification. Never ask "should I continue?" \u2014 just '
-        "continue. If the task is ambiguous, use `think` to reason through the "
-        "possible interpretations against the codebase context, pick the most "
-        "likely intent, and briefly state your choice before acting."
+        "You solve tasks autonomously using the tools provided, taking the optimal "
+        "decisions at every step. Keep going until the task is fully complete \u2014 "
+        "do not stop to ask for confirmation or clarification. Never ask "
+        '"should I continue?" \u2014 just continue. If the task is ambiguous, use '
+        "`think` to reason through the possible interpretations against the codebase "
+        "context, pick the most likely intent, and briefly state your choice before acting."
     ),
     "interactive": (
         "You solve tasks using the tools provided. Keep going until the task is "
