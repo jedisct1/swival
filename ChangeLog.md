@@ -2,6 +2,10 @@
 
 All notable user-facing changes to Swival.
 
+## 0.11.3
+
+- All the underscore-prefixed internal keys are now stripped from outbound messages.
+
 ## 0.11.2
 
 - Added a quick shell command (`!!`) to the REPL, allowing users to run shell commands without LLM involvement.
