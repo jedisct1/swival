@@ -426,6 +426,8 @@ _TOOLS_NOT_SUPPORTED_RE = re.compile(
     re.IGNORECASE,
 )
 
+_HF_NOT_CHAT_MODEL_RE = re.compile(r"not a chat model", re.IGNORECASE)
+
 _TRANSIENT_PATTERNS = re.compile(
     r"Connection reset by peer|Connection refused|timed out"
     r"|RemoteDisconnected|Temporary failure in name resolution"
@@ -2587,6 +2589,85 @@ def _make_synthetic_message(text):
     return _SyntheticMessage(text)
 
 
+def _render_huggingface_text_generation_prompt(messages) -> str:
+    """Render conversation history as a plain prompt for HF text-generation fallback."""
+    transcript = _render_transcript(messages)
+    if transcript:
+        return transcript + "\n\n[assistant]\n"
+    return "[assistant]\n"
+
+
+def _call_huggingface_text_generation(
+    base_url,
+    model_id,
+    messages,
+    max_output_tokens,
+    temperature,
+    top_p,
+    seed,
+    api_key,
+):
+    """Fallback for HF models that support text-generation but not chat completions."""
+    from huggingface_hub import HfApi, InferenceClient
+
+    if not base_url:
+        try:
+            info = HfApi(token=api_key).model_info(
+                model_id,
+                expand=["inference", "inferenceProviderMapping", "pipeline_tag"],
+            )
+        except Exception:
+            info = None
+        if info is not None:
+            mappings = getattr(info, "inference_provider_mapping", None) or []
+            live_mappings = [
+                m for m in mappings if getattr(m, "status", None) != "error"
+            ]
+            if getattr(info, "inference", None) != "warm" and not live_mappings:
+                pipeline_tag = getattr(info, "pipeline_tag", None)
+                task_note = (
+                    f" Hugging Face currently classifies it under the '{pipeline_tag}' task."
+                    if pipeline_tag
+                    else ""
+                )
+                raise AgentError(
+                    f"Model '{model_id}' exists on the Hugging Face Hub but is not deployed by any "
+                    f"Hugging Face Inference Provider.{task_note} "
+                    "The `huggingface` provider only works for models that Hugging Face serves through "
+                    "Inference Providers. Use a dedicated Hugging Face Inference Endpoint via `--base-url`, "
+                    "or run the model locally / behind an OpenAI-compatible server and use `--provider generic` "
+                    "or `--provider llamacpp` instead."
+                )
+
+    prompt = _render_huggingface_text_generation_prompt(messages)
+    client_kwargs = {"api_key": api_key}
+    model_arg = model_id
+    if base_url:
+        client_kwargs["model"] = base_url
+        model_arg = None
+    else:
+        client_kwargs["provider"] = "hf-inference"
+
+    client = InferenceClient(**client_kwargs)
+    try:
+        response_text = client.text_generation(
+            prompt,
+            model=model_arg,
+            max_new_tokens=max_output_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            seed=seed,
+            return_full_text=False,
+        )
+    except Exception as e:
+        raise AgentError(f"Hugging Face text-generation fallback failed: {e}") from e
+
+    if not isinstance(response_text, str):
+        response_text = getattr(response_text, "generated_text", str(response_text))
+
+    return _make_synthetic_message(response_text), "stop", [], 0, (0, 0)
+
+
 def _call_command(command_str, messages, verbose, max_output_tokens=None):
     """Run an external command as the LLM, passing the conversation on stdin."""
     parts = shlex.split(command_str)
@@ -3078,6 +3159,27 @@ def call_llm(
             coe = ContextOverflowError(f"context window exceeded (inferred): {e}")
             coe._provider_retries = _retries_from_exc(e)
             raise coe
+        if provider == "huggingface" and _HF_NOT_CHAT_MODEL_RE.search(msg_text):
+            retries = _retries_from_exc(e)
+            if tools is not None:
+                tne = ToolsNotSupportedError(
+                    f"model does not support chat completions with tools: {e}"
+                )
+                tne._provider_retries = retries
+                raise tne
+            msg, finish_reason, cmd_activity, _, cache_stats = (
+                _call_huggingface_text_generation(
+                    base_url,
+                    model_id,
+                    messages,
+                    max_output_tokens,
+                    temperature,
+                    top_p,
+                    seed,
+                    api_key,
+                )
+            )
+            return msg, finish_reason, cmd_activity, retries, cache_stats
         if _EMPTY_ASSISTANT_RE.search(msg_text):
             # Provider rejected an assistant message with no content and no
             # tool_calls (common with Mistral via OpenRouter).  Fix the
