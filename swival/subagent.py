@@ -372,7 +372,7 @@ def _subagent_thread_fn(
     slot: threading.Semaphore,
 ):
     try:
-        from .agent import run_agent_loop
+        from .agent import run_agent_loop, CompactionState
 
         thinking_state = ThinkingState(verbose=False)
         todo_state = TodoState(verbose=False)
@@ -394,7 +394,7 @@ def _subagent_thread_fn(
             continue_here=False,
             cancel_flag=composite_cancel,
             report=None,
-            compaction_state=None,
+            compaction_state=CompactionState(),
             turn_offset=0,
             cache=None,
             is_subagent=True,
@@ -413,10 +413,22 @@ def _subagent_thread_fn(
         from .report import ContextOverflowError
 
         if isinstance(e, ContextOverflowError):
-            handle.error = (
-                "error: subagent context window exceeded after compaction. "
-                "The task may be too large for the current model's context."
-            )
+            from ._msg import _msg_role, _msg_content
+
+            last_text = None
+            for m in reversed(messages):
+                if _msg_role(m) == "assistant":
+                    c = _msg_content(m)
+                    if c:
+                        last_text = c
+                        break
+            if last_text:
+                handle.result = last_text
+            else:
+                handle.error = (
+                    "error: subagent context window exceeded after compaction. "
+                    "The task may be too large for the current model's context."
+                )
         else:
             handle.error = f"error: subagent crashed: {e}"
     finally:
