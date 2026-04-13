@@ -558,6 +558,7 @@ class Session:
                 parent_cancel_flag=self.cancel_flag,
                 verbose=self.verbose,
                 notify_user=notify,
+                proactive_summaries=self.proactive_summaries,
             )
         return kwargs
 

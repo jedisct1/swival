@@ -172,6 +172,7 @@ class SubagentManager:
         parent_cancel_flag: threading.Event | None,
         verbose: bool,
         notify_user: Callable[[str], None] | None = None,
+        proactive_summaries: bool = False,
     ):
         self._template = loop_kwargs_template
         self._tools = [
@@ -183,6 +184,7 @@ class SubagentManager:
         self._counter = 0
         self._verbose = verbose
         self._notify_user = notify_user
+        self._proactive_summaries = proactive_summaries
         self._lock = threading.Lock()
         self._slots = threading.Semaphore(_MAX_CONCURRENT)
 
@@ -249,6 +251,7 @@ class SubagentManager:
                 self._system_content,
                 composite_cancel,
                 self._slots,
+                self._proactive_summaries,
             ),
             name=f"swival-subagent-{sid}",
             daemon=True,
@@ -343,6 +346,7 @@ class SubagentManager:
             parent_cancel_flag=threading.Event(),
             verbose=self._verbose,
             notify_user=self._notify_user,
+            proactive_summaries=self._proactive_summaries,
         )
 
 
@@ -360,6 +364,9 @@ def _build_subagent_system(parent_system: str | None, system_hint: str | None) -
     return "\n\n".join(parts)
 
 
+_RECAP_MARKER = "[non-instructional context recap"
+
+
 def _subagent_thread_fn(
     handle: SubagentHandle,
     template: dict,
@@ -370,6 +377,7 @@ def _subagent_thread_fn(
     system_content: str | None,
     composite_cancel: _CompositeCancelFlag,
     slot: threading.Semaphore,
+    proactive_summaries: bool = False,
 ):
     try:
         from .agent import run_agent_loop, CompactionState
@@ -394,7 +402,7 @@ def _subagent_thread_fn(
             continue_here=False,
             cancel_flag=composite_cancel,
             report=None,
-            compaction_state=CompactionState(),
+            compaction_state=CompactionState() if proactive_summaries else None,
             turn_offset=0,
             cache=None,
             is_subagent=True,
@@ -419,7 +427,7 @@ def _subagent_thread_fn(
             for m in reversed(messages):
                 if _msg_role(m) == "assistant":
                     c = _msg_content(m)
-                    if c:
+                    if c and not c.startswith(_RECAP_MARKER):
                         last_text = c
                         break
             if last_text:

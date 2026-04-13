@@ -5606,6 +5606,7 @@ def _run_main(args, report, _write_report, parser):
             parent_cancel_flag=threading.Event(),
             verbose=args.verbose,
             notify_user=fmt.info,
+            proactive_summaries=getattr(args, "proactive_summaries", False),
         )
         loop_kwargs["subagent_manager"] = subagent_manager
 

@@ -9,9 +9,11 @@ from swival.subagent import (
     SubagentHandle,
     SubagentManager,
     _CompositeCancelFlag,
+    _RECAP_MARKER,
     _build_subagent_system,
     _subagent_thread_fn,
 )
+from swival.report import ContextOverflowError
 from swival.todo import TodoState
 
 
@@ -195,7 +197,7 @@ class TestSubagentManager:
         def mock_thread_fn(handle, *args):
             barrier.wait(timeout=10)
             handle.done.set()
-            args[-1].release()  # slot is last positional arg
+            args[-2].release()  # slot is second-to-last positional arg
 
         monkeypatch.setattr("swival.subagent._subagent_thread_fn", mock_thread_fn)
 
@@ -254,6 +256,7 @@ class TestSubagentManager:
             system_content,
             composite_cancel,
             slot,
+            proactive_summaries=False,
         ):
             while not composite_cancel.is_set():
                 time.sleep(0.01)
@@ -280,7 +283,7 @@ class TestSubagentManager:
         def mock_thread_fn(handle, *args):
             barrier.wait(timeout=10)
             handle.done.set()
-            args[-1].release()
+            args[-2].release()
 
         monkeypatch.setattr("swival.subagent._subagent_thread_fn", mock_thread_fn)
 
@@ -304,7 +307,7 @@ class TestSubagentManager:
         def mock_thread_fn(handle, *args):
             release_first.wait(timeout=10)
             handle.done.set()
-            args[-1].release()
+            args[-2].release()
 
         monkeypatch.setattr("swival.subagent._subagent_thread_fn", mock_thread_fn)
 
@@ -330,7 +333,7 @@ class TestSubagentManager:
         def mock_thread_fn(handle, *args):
             handle.result = "done"
             handle.done.set()
-            args[-1].release()
+            args[-2].release()
 
         monkeypatch.setattr("swival.subagent._subagent_thread_fn", mock_thread_fn)
 
@@ -351,7 +354,7 @@ class TestSubagentManager:
         def mock_thread_fn(handle, *args):
             barrier.wait(timeout=10)
             handle.done.set()
-            args[-1].release()
+            args[-2].release()
 
         monkeypatch.setattr("swival.subagent._subagent_thread_fn", mock_thread_fn)
 
@@ -709,6 +712,215 @@ class TestFreshCopyLifecycle:
         barrier2.set()
         for h in fresh._handles.values():
             assert h.done.is_set()
+
+
+class TestProactiveSummaries:
+    _TEMPLATE = {
+        "base_dir": "/tmp/test",
+        "api_base": "http://localhost",
+        "model_id": "test",
+        "resolved_commands": {},
+        "skills_catalog": {},
+        "skill_read_roots": [],
+        "extra_write_roots": [],
+        "files_mode": "some",
+        "llm_kwargs": {},
+    }
+
+    def test_compaction_state_none_by_default(self, monkeypatch):
+        captured = {}
+
+        def mock_run(messages, tools, **kwargs):
+            captured.update(kwargs)
+            return "ok", False
+
+        monkeypatch.setattr("swival.agent.run_agent_loop", mock_run)
+
+        handle = SubagentHandle(id="sub_1", task="test")
+        _subagent_thread_fn(
+            handle,
+            self._TEMPLATE,
+            [],
+            "test",
+            5,
+            None,
+            None,
+            _CompositeCancelFlag(None, threading.Event()),
+            threading.Semaphore(1),
+        )
+        assert captured["compaction_state"] is None
+
+    def test_compaction_state_enabled_when_opted_in(self, monkeypatch):
+        captured = {}
+
+        def mock_run(messages, tools, **kwargs):
+            captured.update(kwargs)
+            return "ok", False
+
+        monkeypatch.setattr("swival.agent.run_agent_loop", mock_run)
+
+        handle = SubagentHandle(id="sub_1", task="test")
+        _subagent_thread_fn(
+            handle,
+            self._TEMPLATE,
+            [],
+            "test",
+            5,
+            None,
+            None,
+            _CompositeCancelFlag(None, threading.Event()),
+            threading.Semaphore(1),
+            proactive_summaries=True,
+        )
+        assert captured["compaction_state"] is not None
+
+    def test_manager_threads_proactive_summaries_to_spawn(self, monkeypatch):
+        captured_args = {}
+
+        def mock_thread_fn(handle, *args, **kwargs):
+            captured_args["proactive_summaries"] = args[-1] if args else None
+            handle.result = "done"
+            handle.done.set()
+
+        monkeypatch.setattr("swival.subagent._subagent_thread_fn", mock_thread_fn)
+
+        mgr = SubagentManager(
+            loop_kwargs_template=self._TEMPLATE,
+            tools=[],
+            resolved_system_content=None,
+            parent_cancel_flag=None,
+            verbose=False,
+            proactive_summaries=True,
+        )
+        mgr.spawn(task="test")
+        mgr.collect("sub_1", timeout=5)
+        assert captured_args["proactive_summaries"] is True
+
+    def test_fresh_copy_preserves_proactive_summaries(self):
+        mgr = SubagentManager(
+            loop_kwargs_template={},
+            tools=[],
+            resolved_system_content=None,
+            parent_cancel_flag=None,
+            verbose=False,
+            proactive_summaries=True,
+        )
+        fresh = mgr.fresh_copy()
+        assert fresh._proactive_summaries is True
+
+
+class TestOverflowRecovery:
+    _TEMPLATE = {
+        "base_dir": "/tmp/test",
+        "api_base": "http://localhost",
+        "model_id": "test",
+        "resolved_commands": {},
+        "skills_catalog": {},
+        "skill_read_roots": [],
+        "extra_write_roots": [],
+        "files_mode": "some",
+        "llm_kwargs": {},
+    }
+
+    def test_recovers_real_assistant_text(self, monkeypatch):
+        def mock_run(messages, tools, **kwargs):
+            messages.append({"role": "assistant", "content": "partial answer"})
+            raise ContextOverflowError("boom")
+
+        monkeypatch.setattr("swival.agent.run_agent_loop", mock_run)
+
+        handle = SubagentHandle(id="sub_1", task="test")
+        _subagent_thread_fn(
+            handle,
+            self._TEMPLATE,
+            [],
+            "test",
+            5,
+            None,
+            None,
+            _CompositeCancelFlag(None, threading.Event()),
+            threading.Semaphore(1),
+        )
+        assert handle.result == "partial answer"
+        assert handle.error is None
+
+    def test_skips_recap_messages(self, monkeypatch):
+        def mock_run(messages, tools, **kwargs):
+            messages.append({"role": "assistant", "content": "real work"})
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": _RECAP_MARKER
+                    + " — factual summary ...]\n\nsummary text",
+                }
+            )
+            raise ContextOverflowError("boom")
+
+        monkeypatch.setattr("swival.agent.run_agent_loop", mock_run)
+
+        handle = SubagentHandle(id="sub_1", task="test")
+        _subagent_thread_fn(
+            handle,
+            self._TEMPLATE,
+            [],
+            "test",
+            5,
+            None,
+            None,
+            _CompositeCancelFlag(None, threading.Event()),
+            threading.Semaphore(1),
+        )
+        assert handle.result == "real work"
+        assert handle.error is None
+
+    def test_error_when_only_recap_messages(self, monkeypatch):
+        def mock_run(messages, tools, **kwargs):
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": _RECAP_MARKER + " — summary]\n\nstuff",
+                }
+            )
+            raise ContextOverflowError("boom")
+
+        monkeypatch.setattr("swival.agent.run_agent_loop", mock_run)
+
+        handle = SubagentHandle(id="sub_1", task="test")
+        _subagent_thread_fn(
+            handle,
+            self._TEMPLATE,
+            [],
+            "test",
+            5,
+            None,
+            None,
+            _CompositeCancelFlag(None, threading.Event()),
+            threading.Semaphore(1),
+        )
+        assert handle.result is None
+        assert handle.error is not None
+        assert "context window exceeded" in handle.error
+
+    def test_error_when_no_assistant_messages(self, monkeypatch):
+        def mock_run(messages, tools, **kwargs):
+            raise ContextOverflowError("boom")
+
+        monkeypatch.setattr("swival.agent.run_agent_loop", mock_run)
+
+        handle = SubagentHandle(id="sub_1", task="test")
+        _subagent_thread_fn(
+            handle,
+            self._TEMPLATE,
+            [],
+            "test",
+            5,
+            None,
+            None,
+            _CompositeCancelFlag(None, threading.Event()),
+            threading.Semaphore(1),
+        )
+        assert handle.result is None
+        assert handle.error is not None
 
 
 class TestToolDefinitions:
