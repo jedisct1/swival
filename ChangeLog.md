@@ -2,6 +2,11 @@
 
 All notable user-facing changes to Swival.
 
+## 1.0.2
+
+- Subagents now inherit the parent session's proactive context compaction setting, so long-running subagent tasks get the same graduated summarization as the main loop.
+- When a subagent hits a context overflow, it now recovers partial results from the last real assistant message instead of failing outright. Recap-only messages are skipped so the recovered text reflects actual work.
+
 ## 1.0.0
 
 - Hugging Face models that don't support chat completions now fall back to plain text generation in non-tool turns, and models that exist on the Hub but have no live Inference Provider deployment now fail with a clearer error explaining how to run them instead.
