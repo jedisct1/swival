@@ -3,13 +3,13 @@
 import threading
 import time
 
+from swival._msg import RECAP_MARKER
 from swival.subagent import (
     SPAWN_SUBAGENT_TOOL,
     CHECK_SUBAGENTS_TOOL,
     SubagentHandle,
     SubagentManager,
     _CompositeCancelFlag,
-    _RECAP_MARKER,
     _build_subagent_system,
     _subagent_thread_fn,
 )
@@ -402,17 +402,7 @@ class TestSubagentThreadFn:
         monkeypatch.setattr("swival.agent.run_agent_loop", mock_run_agent_loop)
 
         handle = SubagentHandle(id="sub_1", task="do something")
-        template = {
-            "base_dir": "/tmp/test",
-            "api_base": "http://localhost",
-            "model_id": "test-model",
-            "resolved_commands": {},
-            "skills_catalog": {},
-            "skill_read_roots": [],
-            "extra_write_roots": [],
-            "files_mode": "some",
-            "llm_kwargs": {},
-        }
+        template = {**_LOOP_TEMPLATE, "model_id": "test-model"}
         composite = _CompositeCancelFlag(None, threading.Event())
 
         _subagent_thread_fn(
@@ -452,21 +442,10 @@ class TestSubagentThreadFn:
         monkeypatch.setattr("swival.agent.run_agent_loop", mock_run_agent_loop)
 
         handle = SubagentHandle(id="sub_1", task="test")
-        template = {
-            "base_dir": "/tmp/test",
-            "api_base": "http://localhost",
-            "model_id": "test",
-            "resolved_commands": {},
-            "skills_catalog": {},
-            "skill_read_roots": [],
-            "extra_write_roots": [],
-            "files_mode": "some",
-            "llm_kwargs": {},
-        }
 
         _subagent_thread_fn(
             handle,
-            template,
+            _LOOP_TEMPLATE,
             [],
             "test",
             5,
@@ -485,21 +464,10 @@ class TestSubagentThreadFn:
         monkeypatch.setattr("swival.agent.run_agent_loop", mock_run_agent_loop)
 
         handle = SubagentHandle(id="sub_1", task="test")
-        template = {
-            "base_dir": "/tmp/test",
-            "api_base": "http://localhost",
-            "model_id": "test",
-            "resolved_commands": {},
-            "skills_catalog": {},
-            "skill_read_roots": [],
-            "extra_write_roots": [],
-            "files_mode": "some",
-            "llm_kwargs": {},
-        }
 
         _subagent_thread_fn(
             handle,
-            template,
+            _LOOP_TEMPLATE,
             [],
             "test",
             5,
@@ -714,19 +682,20 @@ class TestFreshCopyLifecycle:
             assert h.done.is_set()
 
 
-class TestProactiveSummaries:
-    _TEMPLATE = {
-        "base_dir": "/tmp/test",
-        "api_base": "http://localhost",
-        "model_id": "test",
-        "resolved_commands": {},
-        "skills_catalog": {},
-        "skill_read_roots": [],
-        "extra_write_roots": [],
-        "files_mode": "some",
-        "llm_kwargs": {},
-    }
+_LOOP_TEMPLATE = {
+    "base_dir": "/tmp/test",
+    "api_base": "http://localhost",
+    "model_id": "test",
+    "resolved_commands": {},
+    "skills_catalog": {},
+    "skill_read_roots": [],
+    "extra_write_roots": [],
+    "files_mode": "some",
+    "llm_kwargs": {},
+}
 
+
+class TestProactiveSummaries:
     def test_compaction_state_none_by_default(self, monkeypatch):
         captured = {}
 
@@ -739,7 +708,7 @@ class TestProactiveSummaries:
         handle = SubagentHandle(id="sub_1", task="test")
         _subagent_thread_fn(
             handle,
-            self._TEMPLATE,
+            _LOOP_TEMPLATE,
             [],
             "test",
             5,
@@ -762,7 +731,7 @@ class TestProactiveSummaries:
         handle = SubagentHandle(id="sub_1", task="test")
         _subagent_thread_fn(
             handle,
-            self._TEMPLATE,
+            _LOOP_TEMPLATE,
             [],
             "test",
             5,
@@ -785,7 +754,7 @@ class TestProactiveSummaries:
         monkeypatch.setattr("swival.subagent._subagent_thread_fn", mock_thread_fn)
 
         mgr = SubagentManager(
-            loop_kwargs_template=self._TEMPLATE,
+            loop_kwargs_template=_LOOP_TEMPLATE,
             tools=[],
             resolved_system_content=None,
             parent_cancel_flag=None,
@@ -810,18 +779,6 @@ class TestProactiveSummaries:
 
 
 class TestOverflowRecovery:
-    _TEMPLATE = {
-        "base_dir": "/tmp/test",
-        "api_base": "http://localhost",
-        "model_id": "test",
-        "resolved_commands": {},
-        "skills_catalog": {},
-        "skill_read_roots": [],
-        "extra_write_roots": [],
-        "files_mode": "some",
-        "llm_kwargs": {},
-    }
-
     def test_recovers_real_assistant_text(self, monkeypatch):
         def mock_run(messages, tools, **kwargs):
             messages.append({"role": "assistant", "content": "partial answer"})
@@ -832,7 +789,7 @@ class TestOverflowRecovery:
         handle = SubagentHandle(id="sub_1", task="test")
         _subagent_thread_fn(
             handle,
-            self._TEMPLATE,
+            _LOOP_TEMPLATE,
             [],
             "test",
             5,
@@ -850,8 +807,7 @@ class TestOverflowRecovery:
             messages.append(
                 {
                     "role": "assistant",
-                    "content": _RECAP_MARKER
-                    + " — factual summary ...]\n\nsummary text",
+                    "content": RECAP_MARKER + " — factual summary ...]\n\nsummary text",
                 }
             )
             raise ContextOverflowError("boom")
@@ -861,7 +817,7 @@ class TestOverflowRecovery:
         handle = SubagentHandle(id="sub_1", task="test")
         _subagent_thread_fn(
             handle,
-            self._TEMPLATE,
+            _LOOP_TEMPLATE,
             [],
             "test",
             5,
@@ -878,7 +834,7 @@ class TestOverflowRecovery:
             messages.append(
                 {
                     "role": "assistant",
-                    "content": _RECAP_MARKER + " — summary]\n\nstuff",
+                    "content": RECAP_MARKER + " — summary]\n\nstuff",
                 }
             )
             raise ContextOverflowError("boom")
@@ -888,7 +844,7 @@ class TestOverflowRecovery:
         handle = SubagentHandle(id="sub_1", task="test")
         _subagent_thread_fn(
             handle,
-            self._TEMPLATE,
+            _LOOP_TEMPLATE,
             [],
             "test",
             5,
@@ -910,7 +866,7 @@ class TestOverflowRecovery:
         handle = SubagentHandle(id="sub_1", task="test")
         _subagent_thread_fn(
             handle,
-            self._TEMPLATE,
+            _LOOP_TEMPLATE,
             [],
             "test",
             5,

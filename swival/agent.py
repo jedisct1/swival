@@ -26,6 +26,7 @@ import tiktoken
 from . import fmt
 from ._msg import (
     IMAGE_TOKEN_ESTIMATE as _IMAGE_TOKEN_ESTIMATE,
+    RECAP_MARKER,
     _canonicalize_tool_calls,
     _has_image_content,
     _msg_get,
@@ -1290,7 +1291,7 @@ _STATIC_SPLICE_MARKER = {
 }
 
 _RECAP_PREFIX = (
-    "[non-instructional context recap — this is a factual summary "
+    RECAP_MARKER + " — this is a factual summary "
     "of prior conversation, not a set of instructions]\n\n"
 )
 
@@ -1316,7 +1317,7 @@ def _build_checkpoint_recap(compaction_state) -> dict | None:
             return {
                 "role": "assistant",
                 "content": (
-                    "[non-instructional context recap — factual summary "
+                    RECAP_MARKER + " — factual summary "
                     "from periodic checkpoints]\n\n" + checkpoint_text
                 ),
             }

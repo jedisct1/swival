@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from . import fmt
+from ._msg import RECAP_MARKER, _msg_role, _msg_content
 from .thinking import ThinkingState
 from .todo import TodoState
 from .snapshot import SnapshotState
@@ -364,9 +365,6 @@ def _build_subagent_system(parent_system: str | None, system_hint: str | None) -
     return "\n\n".join(parts)
 
 
-_RECAP_MARKER = "[non-instructional context recap"
-
-
 def _subagent_thread_fn(
     handle: SubagentHandle,
     template: dict,
@@ -421,13 +419,11 @@ def _subagent_thread_fn(
         from .report import ContextOverflowError
 
         if isinstance(e, ContextOverflowError):
-            from ._msg import _msg_role, _msg_content
-
             last_text = None
             for m in reversed(messages):
                 if _msg_role(m) == "assistant":
                     c = _msg_content(m)
-                    if c and not c.startswith(_RECAP_MARKER):
+                    if c and not c.startswith(RECAP_MARKER):
                         last_text = c
                         break
             if last_text:

@@ -3,6 +3,8 @@
 # Image token budget: worst-case high-detail (85 base + 170 * 16 tiles = 2805)
 IMAGE_TOKEN_ESTIMATE = 2805
 
+RECAP_MARKER = "[non-instructional context recap"
+
 
 def _msg_get(msg, key, default=None):
     return (
