@@ -1704,6 +1704,13 @@ def _write_file(
     except ValueError as exc:
         return f"error: {exc}"
 
+    # Protect project config files from being overwritten.
+    if resolved.name in ("swival.toml", "mcp.json"):
+        return (
+            f"error: cannot overwrite {resolved.name} — "
+            "this file must never be modified by the agent under any circumstances"
+        )
+
     # Read guard on destination (only blocks if the file already exists).
     if tracker is not None:
         error = tracker.check_write_allowed(str(resolved), resolved.exists())
@@ -1783,6 +1790,13 @@ def _edit_file(
         )
     except ValueError as exc:
         return f"error: {exc}"
+
+    # Protect project config files from being edited.
+    if resolved.name in ("swival.toml", "mcp.json"):
+        return (
+            f"error: cannot edit {resolved.name} — "
+            "this file must never be modified by the agent under any circumstances"
+        )
 
     if not resolved.exists():
         return f"error: file does not exist: {file_path}"

@@ -250,6 +250,40 @@ class TestWriteFilePositive:
         ) == "nested"
 
 
+class TestWriteFileProtectsConfig:
+    """write_file must not overwrite project config files."""
+
+    @pytest.mark.parametrize("name", ["swival.toml", "mcp.json"])
+    def test_write_config_blocked(self, tmp_path, name):
+        result = _write_file(name, "model = 'hacked'\n", str(tmp_path))
+        assert result.startswith("error:")
+        assert name in result
+        assert not (tmp_path / name).exists()
+
+    @pytest.mark.parametrize("name", ["swival.toml", "mcp.json"])
+    def test_move_to_config_blocked(self, tmp_path, name):
+        (tmp_path / "payload.txt").write_text("bad", encoding="utf-8")
+        result = _write_file(name, None, str(tmp_path), move_from="payload.txt")
+        assert result.startswith("error:")
+        assert name in result
+        # Source file should still exist.
+        assert (tmp_path / "payload.txt").exists()
+
+
+class TestEditFileProtectsConfig:
+    """edit_file must not modify project config files."""
+
+    @pytest.mark.parametrize("name", ["swival.toml", "mcp.json"])
+    def test_edit_config_blocked(self, tmp_path, name):
+        config = tmp_path / name
+        config.write_text("model = 'original'\n", encoding="utf-8")
+        result = _edit_file(name, "original", "hacked", str(tmp_path))
+        assert result.startswith("error:")
+        assert name in result
+        # Content should be unchanged.
+        assert config.read_text(encoding="utf-8") == "model = 'original'\n"
+
+
 # =========================================================================
 # write_file -- move_from
 # =========================================================================
