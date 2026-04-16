@@ -355,7 +355,17 @@ def _is_auditable(path: str) -> bool:
 
 
 def _git_show(path: str, base_dir: str) -> str:
-    return _git(["show", f"HEAD:{path}"], base_dir)
+    result = subprocess.run(
+        ["git", "show", f"HEAD:{path}"],
+        capture_output=True,
+        cwd=base_dir,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"git show HEAD:{path} failed: {result.stderr.decode(errors='replace').strip()}"
+        )
+    return result.stdout.decode(errors="replace")
 
 
 # ---------------------------------------------------------------------------
