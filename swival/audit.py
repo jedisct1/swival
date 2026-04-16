@@ -49,6 +49,7 @@ _SOURCE_EXTS = frozenset(
         ".swift",
         ".scala",
         ".sh",
+        ".zig",
     }
 )
 
@@ -392,7 +393,8 @@ _IMPORT_RE = re.compile(
     r"|^\s*(?:const|let|var|import)\s+.*?from\s+['\"]([^'\"]+)['\"]"  # JS/TS
     r"|require\s*\(\s*['\"]([^'\"]+)['\"]\s*\)"  # Node require
     r"|^\s*#include\s*[\"<]([^\"'>]+)[\"'>]"  # C/C++
-    r"|^\s*use\s+([\w:]+)"  # Rust
+    r"|^\s*use\s+([\w:\\]+)"  # Rust / PHP
+    r"|@import\s*\(\s*['\"]([^'\"]+)['\"]\s*\)"  # Zig
     r")",
     re.MULTILINE,
 )
@@ -403,7 +405,8 @@ _EXPORT_RE = re.compile(
     r"|^class\s+(\w+)"  # Python class
     r"|^export\s+(?:default\s+)?(?:function|class|const|let|var)\s+(\w+)"  # JS/TS
     r"|^func\s+(\w+)"  # Go
-    r"|^pub\s+fn\s+(\w+)"  # Rust
+    r"|^pub\s+fn\s+(\w+)"  # Rust/Zig
+    r"|^\s*(?:public\s+)?function\s+(\w+)"  # PHP
     r")",
     re.MULTILINE,
 )
@@ -841,6 +844,7 @@ def _phase1_repo_profile(state: AuditRunState, ctx: InputContext) -> dict:
         "pom.xml",
         "build.gradle",
         "Gemfile",
+        "build.zig.zon",
     }
     for f in state.scope.tracked_files:
         if Path(f).name in manifest_names:

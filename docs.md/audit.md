@@ -149,7 +149,7 @@ The audit examines only committed Git-tracked files at HEAD. Unstaged or uncommi
 
 Only files with recognized source or configuration extensions are auditable:
 
-**Source:** `.py`, `.js`, `.ts`, `.tsx`, `.jsx`, `.go`, `.rs`, `.java`, `.kt`, `.rb`, `.php`, `.c`, `.cc`, `.cpp`, `.h`, `.hpp`, `.cs`, `.swift`, `.scala`, `.sh`
+**Source:** `.py`, `.js`, `.ts`, `.tsx`, `.jsx`, `.go`, `.rs`, `.java`, `.kt`, `.rb`, `.php`, `.c`, `.cc`, `.cpp`, `.h`, `.hpp`, `.cs`, `.swift`, `.scala`, `.sh`, `.zig`
 
 **Configuration:** `.json`, `.toml`, `.yaml`, `.yml`, `.xml`, `.ini`, `.conf`, `.sql`, `.graphql`, `.proto`, `.rego`, `.tf`, `.cue`
 
