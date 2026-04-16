@@ -67,12 +67,12 @@ packages = ["swival"]
 [tool.uv]
 package = true
 constraint-dependencies = ["requests>=2.33.1", "cryptography>=46.0.7"]
-override-dependencies = ["aiohttp>=3.13.4"]
+override-dependencies = ["aiohttp>=3.13.5"]
 
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
-    "ruff>=0.15.10",
+    "ruff>=0.15.11",
 ]
 website = [
     "markdown",
