@@ -1222,6 +1222,20 @@ def _phase4c_reproduce(
         wt.__exit__(None, None, None)
 
 
+def _evidence_file_paths(finding: FindingRecord) -> list[str]:
+    """Return deduplicated repo-relative paths referenced by a finding."""
+    seen: set[str] = set()
+    paths: list[str] = []
+    for loc in finding.locations:
+        fpath = loc.split(":")[0]
+        if fpath not in seen:
+            seen.add(fpath)
+            paths.append(fpath)
+    if finding.source_file not in seen:
+        paths.append(finding.source_file)
+    return paths
+
+
 def _phase5_patch(
     vf: VerifiedFinding,
     ctx: InputContext,
@@ -1231,6 +1245,7 @@ def _phase5_patch(
     from .agent import run_agent_loop
 
     finding_json = json.dumps(asdict(vf.finding), indent=2)
+    evidence, n_files = _gather_evidence(vf.finding, ctx)
 
     work_dir = Path(ctx.base_dir) / state.state_dir / state.run_id / "patch-gen"
     try:
@@ -1244,7 +1259,8 @@ def _phase5_patch(
         prompt = (
             f"Fix the following security finding with the smallest correct change. "
             f"Use edit_file to make the fix. Do not make unrelated changes.\n\n"
-            f"{finding_json}"
+            f"{finding_json}\n\n"
+            f"Committed source for affected files:\n{evidence}"
         )
         messages = [
             {
@@ -1254,10 +1270,18 @@ def _phase5_patch(
             {"role": "user", "content": prompt},
         ]
 
-        kw = _make_isolated_loop_kwargs(ctx, work_dir, max_turns=5)
+        kw = _make_isolated_loop_kwargs(ctx, work_dir, max_turns=25)
+
+        # Pre-seed the file tracker so the agent can edit without a read_file
+        # round-trip — the committed source is already in the prompt.
+        tracker = kw.get("file_tracker")
+        if tracker is not None:
+            evidence_paths = _evidence_file_paths(vf.finding)
+            for rel in evidence_paths:
+                tracker.record_read(str(work_dir / rel))
 
         try:
-            run_agent_loop(messages, ctx.tools, **kw)
+            _answer, exhausted = run_agent_loop(messages, ctx.tools, **kw)
         except Exception as e:
             fmt.info(f"    patch: agent loop failed: {e}")
             return None
@@ -1265,6 +1289,10 @@ def _phase5_patch(
             _write_audit_trace(
                 ctx, messages, task=f"audit: phase 5 patch {vf.finding.title}"
             )
+
+        if exhausted:
+            fmt.info("    patch: turn budget exhausted, discarding incomplete work")
+            return None
 
         diff = subprocess.run(
             ["git", "diff"],
