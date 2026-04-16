@@ -2,6 +2,10 @@
 
 All notable user-facing changes to Swival.
 
+## 1.0.3
+
+- A built-in `/audit` command has been added for deep security audits over committed Git-tracked code. It scans source and config files for vulnerabilities using the session's LLM, produces a structured report with severity ratings, and can optionally generate a patch. Supports Python, JavaScript, TypeScript, Go, Rust, C/C++, Zig, and many other languages.
+
 ## 1.0.2
 
 - Subagents now inherit the parent session's proactive context compaction setting, so long-running subagent tasks get the same graduated summarization as the main loop.
