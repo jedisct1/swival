@@ -1,4 +1,4 @@
-# Security Audit
+# Swival Security Scanner
 
 The `/audit` command runs a multi-phase security audit over committed Git-tracked code.
 
