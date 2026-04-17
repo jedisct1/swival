@@ -2183,3 +2183,145 @@ class TestAutoRetry:
         # Second resume: triage fills b.py, no findings, completes
         result2 = run_audit_command("--resume", ctx)
         assert "No provable logic or security bugs" in result2
+
+
+class TestCallAuditLlmOverflowRetry:
+    """Tests for _call_audit_llm context-overflow truncation retry."""
+
+    def _make_ctx(self):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            base_dir="/tmp",
+            trace_dir=None,
+            loop_kwargs={
+                "api_base": "http://localhost",
+                "model_id": "test",
+                "max_output_tokens": 1024,
+                "llm_kwargs": {"provider": "lmstudio"},
+            },
+        )
+
+    def test_no_overflow_returns_full_content(self, monkeypatch):
+        from types import SimpleNamespace
+
+        from swival.audit import _call_audit_llm
+
+        def fake_call_llm(*args, **kwargs):
+            msg = SimpleNamespace(content="ok", role="assistant")
+            return msg, "stop", None, 0, None
+
+        monkeypatch.setattr("swival.agent.call_llm", fake_call_llm)
+        ctx = self._make_ctx()
+        msgs = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "x" * 1000},
+        ]
+        result = _call_audit_llm(ctx, msgs)
+        assert result == "ok"
+
+    def test_overflow_retries_with_truncated_content(self, monkeypatch):
+        from types import SimpleNamespace
+
+        from swival.agent import ContextOverflowError
+        from swival.audit import _call_audit_llm
+
+        seen_texts = []
+
+        def fake_call_llm(*args, **kwargs):
+            messages = args[2]
+            user_text = messages[-1]["content"]
+            seen_texts.append(user_text)
+            if "[truncated" not in user_text:
+                raise ContextOverflowError("too big")
+            msg = SimpleNamespace(content="truncated-ok", role="assistant")
+            return msg, "stop", None, 0, None
+
+        monkeypatch.setattr("swival.agent.call_llm", fake_call_llm)
+        ctx = self._make_ctx()
+        msgs = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "x" * 1000},
+        ]
+        result = _call_audit_llm(ctx, msgs)
+        assert result == "truncated-ok"
+        assert len(seen_texts) == 2
+        assert len(seen_texts[0]) == 1000
+        assert "[truncated" in seen_texts[1]
+        assert len(seen_texts[1]) < 1000
+
+    def test_adaptive_truncation_multiple_halvings(self, monkeypatch):
+        from types import SimpleNamespace
+
+        from swival.agent import ContextOverflowError
+        from swival.audit import _call_audit_llm
+
+        calls = []
+
+        def fake_call_llm(*args, **kwargs):
+            messages = args[2]
+            user_text = messages[-1]["content"]
+            calls.append(len(user_text))
+            if len(user_text) > 400:
+                raise ContextOverflowError("too big")
+            msg = SimpleNamespace(content="ok-after-two", role="assistant")
+            return msg, "stop", None, 0, None
+
+        monkeypatch.setattr("swival.agent.call_llm", fake_call_llm)
+        ctx = self._make_ctx()
+        msgs = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "y" * 2000},
+        ]
+        result = _call_audit_llm(ctx, msgs)
+        assert result == "ok-after-two"
+        assert len(calls) >= 3
+        assert calls[0] == 2000
+        for c in calls[1:]:
+            assert c < calls[0]
+
+    def test_overflow_raises_when_floor_reached(self, monkeypatch):
+        from swival.agent import ContextOverflowError
+        from swival.audit import _call_audit_llm
+
+        def fake_call_llm(*args, **kwargs):
+            raise ContextOverflowError("always too big")
+
+        monkeypatch.setattr("swival.agent.call_llm", fake_call_llm)
+        ctx = self._make_ctx()
+        msgs = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "z" * 500},
+        ]
+        with pytest.raises(ContextOverflowError):
+            _call_audit_llm(ctx, msgs)
+
+    def test_overflow_trace_records_original_attempt(self, monkeypatch):
+        from types import SimpleNamespace
+
+        from swival.agent import ContextOverflowError
+        from swival.audit import _call_audit_llm
+
+        traces = []
+
+        def fake_trace(ctx, messages, task=None):
+            traces.append(task)
+
+        def fake_call_llm(*args, **kwargs):
+            messages = args[2]
+            user_text = messages[-1]["content"]
+            if len(user_text) > 600:
+                raise ContextOverflowError("too big")
+            msg = SimpleNamespace(content="ok", role="assistant")
+            return msg, "stop", None, 0, None
+
+        monkeypatch.setattr("swival.agent.call_llm", fake_call_llm)
+        monkeypatch.setattr("swival.audit._write_audit_trace", fake_trace)
+        ctx = self._make_ctx()
+        msgs = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "w" * 1000},
+        ]
+        _call_audit_llm(ctx, msgs, trace_task="triage foo.py")
+        assert any("overflow" in (t or "") for t in traces)
+        assert any(t == "triage foo.py" for t in traces)

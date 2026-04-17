@@ -23,6 +23,9 @@ from . import fmt
 
 AUDIT_PROVENANCE_URL = "https://swival.dev"
 
+_AUDIT_TRUNCATION_MARKER = "\n\n[truncated — file too large for context window]"
+_AUDIT_TRUNCATION_FLOOR = 200
+
 # ---------------------------------------------------------------------------
 # File extensions
 # ---------------------------------------------------------------------------
@@ -628,28 +631,62 @@ def _call_audit_llm(
     temperature: float = 0.0,
     trace_task: str | None = None,
 ) -> str:
-    from .agent import call_llm
+    from .agent import call_llm, ContextOverflowError
+    from ._msg import _msg_content
 
     kw = ctx.loop_kwargs
     llm_kwargs = kw.get("llm_kwargs", {})
-    msg, _finish, _activity, _retries, _cache = call_llm(
-        kw["api_base"],
-        kw["model_id"],
-        messages,
-        kw.get("max_output_tokens"),
-        temperature,
-        kw.get("top_p", 1.0),
-        kw.get("seed"),
-        None,  # tools
-        False,  # verbose
-        provider=llm_kwargs.get("provider", "lmstudio"),
-        api_key=llm_kwargs.get("api_key"),
-        prompt_cache=True,
-        aws_profile=llm_kwargs.get("aws_profile"),
-    )
-    from ._msg import _msg_content
 
-    content = _msg_content(msg) or ""
+    def _do_call(msgs):
+        msg, _finish, _activity, _retries, _cache = call_llm(
+            kw["api_base"],
+            kw["model_id"],
+            msgs,
+            kw.get("max_output_tokens"),
+            temperature,
+            kw.get("top_p", 1.0),
+            kw.get("seed"),
+            None,  # tools
+            False,  # verbose
+            provider=llm_kwargs.get("provider", "lmstudio"),
+            api_key=llm_kwargs.get("api_key"),
+            prompt_cache=True,
+            aws_profile=llm_kwargs.get("aws_profile"),
+        )
+        return _msg_content(msg) or ""
+
+    user_msg = messages[-1]
+    original_text = user_msg.get("content", "")
+    limit = len(original_text)
+    messages = list(messages)
+    overflowed_once = False
+
+    while True:
+        try:
+            content = _do_call(messages)
+            break
+        except ContextOverflowError:
+            if not overflowed_once:
+                overflowed_once = True
+                _write_audit_trace(
+                    ctx,
+                    messages
+                    + [
+                        {
+                            "role": "assistant",
+                            "content": "[context overflow — retrying with truncation]",
+                        }
+                    ],
+                    task=(trace_task + " (overflow)" if trace_task else "overflow"),
+                )
+            limit = limit // 2
+            if limit < _AUDIT_TRUNCATION_FLOOR:
+                raise
+            messages[-1] = {
+                **user_msg,
+                "content": original_text[:limit] + _AUDIT_TRUNCATION_MARKER,
+            }
+
     trace_messages = list(messages) + [{"role": "assistant", "content": content}]
     _write_audit_trace(ctx, trace_messages, task=trace_task)
     return content
