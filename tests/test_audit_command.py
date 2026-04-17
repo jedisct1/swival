@@ -83,8 +83,61 @@ class TestCommandRegistration:
     def test_audit_is_agent_turn(self):
         assert INPUT_COMMANDS["/audit"].kind == "agent_turn"
 
-    def test_audit_repl_only(self):
-        assert INPUT_COMMANDS["/audit"].modes == ("repl",)
+    def test_audit_modes(self):
+        assert INPUT_COMMANDS["/audit"].modes == ("repl", "oneshot")
+
+
+class TestAuditOneshotDispatch:
+    """Verify /audit dispatches through execute_input in oneshot mode."""
+
+    def test_audit_dispatches_in_oneshot(self, monkeypatch):
+        import types as _types
+
+        from swival.input_dispatch import InputContext, parse_input_line
+        from swival.thinking import ThinkingState
+        from swival.todo import TodoState
+
+        ctx = InputContext(
+            messages=[],
+            tools=[],
+            base_dir="/tmp",
+            turn_state={"max_turns": 10, "turns_used": 0},
+            thinking_state=ThinkingState(),
+            todo_state=TodoState(),
+            snapshot_state=None,
+            file_tracker=None,
+            no_history=True,
+            continue_here=False,
+            verbose=False,
+            loop_kwargs={
+                "model_id": "test",
+                "api_base": "http://test",
+                "context_length": 128000,
+                "files_mode": "some",
+                "compaction_state": None,
+                "command_policy": _types.SimpleNamespace(mode="allowlist"),
+                "top_p": 1.0,
+                "seed": None,
+                "llm_kwargs": {},
+            },
+        )
+
+        called = {}
+
+        def fake_run_audit(cmd_arg, ctx_arg):
+            called["cmd_arg"] = cmd_arg
+            called["ctx"] = ctx_arg
+            return "audit done"
+
+        monkeypatch.setattr("swival.audit.run_audit_command", fake_run_audit)
+
+        from swival.agent import execute_input
+
+        parsed = parse_input_line("/audit")
+        result = execute_input(parsed, ctx, mode="oneshot")
+
+        assert "not available" not in (result.text or "")
+        assert "cmd_arg" in called
 
 
 # ---------------------------------------------------------------------------

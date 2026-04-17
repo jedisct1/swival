@@ -8,7 +8,7 @@ It triages files by attack surface, performs deep review on escalated files, ver
 /audit [path|glob] [--resume] [--regen] [--workers N]
 ```
 
-Available only in interactive mode (REPL). Runs against `HEAD`, so dirty working-directory changes are ignored.
+Works in both interactive (REPL) and one-shot mode (requires `--oneshot-commands`). Runs against `HEAD`, so dirty working-directory changes are ignored.
 
 ## Quick Start
 

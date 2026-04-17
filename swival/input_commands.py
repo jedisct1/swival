@@ -25,7 +25,7 @@ INPUT_COMMANDS: dict[str, CommandInfo] = {
         desc="Run a staged security audit over tracked committed code",
         arg="[path|glob]",
         kind="agent_turn",
-        modes=("repl",),
+        modes=("repl", "oneshot"),
         options=(
             ("--resume", "Resume a previous audit run from its last checkpoint"),
             ("--regen", "Regenerate reports and patches for a completed audit run"),

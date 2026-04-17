@@ -76,9 +76,9 @@
             <h1 id="security-audit">Security Audit</h1>
 <p>The <code>/audit</code> command runs a multi-phase security audit over committed Git-tracked code.</p>
 <p>It triages files by attack surface, performs deep review on escalated files, verifies each finding with an isolated proof-of-concept agent, generates patches, and writes structured reports. Only provable bugs survive to the final output.</p>
-<pre><code class="language-text">/audit [path|glob] [--resume] [--workers N]
+<pre><code class="language-text">/audit [path|glob] [--resume] [--regen] [--workers N]
 </code></pre>
-<p>Available only in interactive mode (REPL). Runs against <code>HEAD</code>, so dirty working-directory changes are ignored.</p>
+<p>Works in both interactive (REPL) and one-shot mode (requires <code>--oneshot-commands</code>). Runs against <code>HEAD</code>, so dirty working-directory changes are ignored.</p>
 <h2 id="quick-start">Quick Start</h2>
 <p>Start an audit from the REPL:</p>
 <pre><code class="language-text">swival&gt; /audit
@@ -156,11 +156,15 @@ Audit complete. 2 finding(s) written to audit-findings/. Run `ls audit-findings/
 <p><code>--resume</code> resumes a previous audit run from its last checkpoint. The resume matches against the current commit and scope (focus argument). If the commit or scope changed since the original run, no match is found and the command returns an error. On resume, completed phases are skipped, and failed verifications are requeued.</p>
 <pre><code class="language-text">swival&gt; /audit --resume
 </code></pre>
+<p><code>--regen</code> regenerates reports and patches for a completed audit run. It reuses the verified findings from the original run and re-runs only phase 5 (artifact generation). This is useful when you want to improve patch quality without repeating the expensive triage, deep review, and verification phases.</p>
+<pre><code class="language-text">swival&gt; /audit --regen
+</code></pre>
 <p><code>--workers N</code> sets the number of parallel workers for triage and verification (default: 4). Verification is always capped at 2 regardless of this value.</p>
 <pre><code class="language-text">swival&gt; /audit --workers 8
 </code></pre>
-<p>Both can be combined with a focus path:</p>
+<p>All options can be combined with a focus path:</p>
 <pre><code class="language-text">swival&gt; /audit src/api/ --resume --workers 6
+swival&gt; /audit src/api/ --regen
 </code></pre>
 <h2 id="scope">Scope</h2>
 <p>The audit examines only committed Git-tracked files at HEAD. Unstaged or uncommitted changes are invisible to the audit.</p>
@@ -187,7 +191,7 @@ Audit complete. 2 finding(s) written to audit-findings/. Run `ls audit-findings/
 <p>If verification produces partial results (some findings verified, some failed), the audit reports the incomplete state and asks you to resume:</p>
 <pre><code class="language-text">Audit incomplete: 2 findings not verified (1 failed). Use /audit --resume to continue.
 </code></pre>
-<p>A completed audit (phase <code>"done"</code>) is not resumable.</p>
+<p>A completed audit (phase <code>"done"</code>) is not resumable with <code>--resume</code>, but can be used with <code>--regen</code> to regenerate artifacts.</p>
 <h2 id="limitations">Limitations</h2>
 <p>The audit depends heavily on the quality of the underlying LLM. Models with weak code understanding will produce lower-quality triage and more false negatives. The verification phase catches many false positives, but a weak verifier model may also miss real bugs or incorrectly confirm speculative findings.</p>
 <p>The audit sees only committed code. Runtime configuration, environment variables, deployment topology, and dynamic code paths that depend on external state are outside its view.</p>
