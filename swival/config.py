@@ -1252,7 +1252,7 @@ def generate_config(
         "# memory_full = false             # inject entire MEMORY.md instead of smart BM25-budgeted excerpts",
         "# no_continue = false",
         "# subagents = false               # enable parallel subagent support (spawn_subagent / check_subagents)",
-        "# proactive_summaries = false     # auto-summarize context to prevent overflow on long runs",
+        "# proactive_summaries = false     # auto-summarize context to prevent overflow on long runs (mainly for models with a small context window)",
         "",
         "# --- UI ---",
         "# color = true       # true = force color, false = force no-color, absent = auto",
