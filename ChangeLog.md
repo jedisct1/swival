@@ -2,6 +2,11 @@
 
 All notable user-facing changes to Swival.
 
+## 1.0.5
+
+- When a file is too large for the LLM's context window during an audit, the audit now progressively truncates it and retries instead of failing outright.
+- Audit LLM calls no longer force a fixed temperature and top_p, letting providers that reject custom sampling parameters (such as Anthropic) work without errors.
+
 ## 1.0.4
 
 - `/audit` can now be used in one-shot mode, not just the REPL.
