@@ -154,9 +154,12 @@ class ReportCollector:
             {"turn": turn, "type": "guardrail", "tool": tool, "level": level}
         )
 
-    def record_truncated_response(self, turn: int):
+    def record_truncated_response(self, turn: int, reason: str | None = None):
         self.truncated_responses += 1
-        self.events.append({"turn": turn, "type": "truncated_response"})
+        event = {"turn": turn, "type": "truncated_response"}
+        if reason is not None:
+            event["reason"] = reason
+        self.events.append(event)
 
     def record_memory(
         self,

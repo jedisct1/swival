@@ -632,6 +632,88 @@ _THINK_TAG_LINE_RE = re.compile(r"(?mi)^\s*</?think>\s*$\n?")
 _LEAKED_THINK_HEAD_RE = re.compile(r"\A\s*</?think>\s*\n+", re.IGNORECASE)
 
 
+TRUNCATED_REASON_LENGTH = "length"
+TRUNCATED_REASON_MALFORMED = "malformed_args"
+
+
+def _normalize_tool_call_args(raw):
+    """Treat the provider 'no arguments' convention (None or '') as '{}'."""
+    return raw if raw not in (None, "") else "{}"
+
+
+def _tool_call_args(tc):
+    fn = tc.function if hasattr(tc, "function") else tc.get("function", {}) or {}
+    if hasattr(fn, "arguments"):
+        return fn.arguments
+    return fn.get("arguments", "")
+
+
+def _has_malformed_tool_args(msg) -> bool:
+    """True if any tool_call on msg carries arguments that don't parse as JSON.
+
+    Empty/None arguments are not considered malformed (they mean no args).
+    Works for both provider response objects and dict-shaped tool calls.
+    """
+    for tc in _msg_tool_calls(msg) or []:
+        raw = _normalize_tool_call_args(_tool_call_args(tc))
+        try:
+            json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return True
+    return False
+
+
+def _classify_tool_call_truncation(msg, finish_reason) -> str | None:
+    """Return a TRUNCATED_REASON_* constant if msg's tool calls are truncated.
+
+    Text-only finish_reason='length' returns None; the loop's existing
+    continuation nudge handles that case.
+    """
+    if not _msg_tool_calls(msg):
+        return None
+    if finish_reason == "length":
+        return TRUNCATED_REASON_LENGTH
+    if _has_malformed_tool_args(msg):
+        return TRUNCATED_REASON_MALFORMED
+    return None
+
+
+def _evict_cache_entry(cache, cache_kwargs):
+    delete = getattr(cache, "delete", None)
+    if delete is None:
+        return
+    try:
+        delete(cache_kwargs)
+    except Exception:
+        pass
+
+
+def _raise_if_truncated_tool_call(
+    msg, finish_reason, *, provider_retries, turn, report, verbose, where=""
+):
+    """Reject truncated tool-call responses by raising ContextOverflowError.
+
+    Records the truncation in the report (with reason), preserves
+    provider_retries on the exception so the existing overflow handlers
+    can attribute the cost, and emits a verbose warning.  Does nothing
+    for text-only finish_reason='length' or clean responses.
+    """
+    reason = _classify_tool_call_truncation(msg, finish_reason)
+    if reason is None:
+        return
+    if report:
+        report.record_truncated_response(turn, reason=reason)
+    if verbose:
+        suffix = f" {where}" if where else ""
+        fmt.warning(
+            f"discarding truncated tool-call response ({reason}){suffix}, "
+            "triggering compaction"
+        )
+    coe = ContextOverflowError(f"truncated tool-call response ({reason})")
+    coe._provider_retries = provider_retries
+    raise coe
+
+
 def _sanitize_assistant_messages(messages: list) -> bool:
     """Fix assistant messages that have neither content nor tool_calls.
 
@@ -2495,7 +2577,7 @@ def handle_tool_call(
     metadata has stable keys: name, arguments, elapsed, succeeded, repairs.
     """
     name = tool_call.function.name
-    raw_args = tool_call.function.arguments
+    raw_args = _normalize_tool_call_args(tool_call.function.arguments)
 
     try:
         parsed_args = json.loads(raw_args)
@@ -3497,23 +3579,42 @@ def call_llm(
             from .cache import _reconstruct_message
 
             msg_dict, finish_reason = hit
-            if verbose:
-                fmt.info("Cache hit")
             msg = _reconstruct_message(msg_dict)
-            _post_process_assistant_message(msg, sanitize_thinking)
-            # Note: cache is disabled when secret_shield is active, so no
-            # decrypt needed here.  But guard defensively in case the logic
-            # changes.
-            return msg, finish_reason, [], 0, (0, 0)
+            if finish_reason == "length" or _has_malformed_tool_args(msg):
+                if verbose:
+                    fmt.warning(
+                        "Cache hit was truncated/malformed — discarding and "
+                        "falling through to live call"
+                    )
+                _evict_cache_entry(cache, cache_kwargs)
+            else:
+                if verbose:
+                    fmt.info("Cache hit")
+                _post_process_assistant_message(msg, sanitize_thinking)
+                # cache is disabled when secret_shield is active, so no
+                # decrypt is needed here; guarded defensively in case the
+                # logic changes
+                return msg, finish_reason, [], 0, (0, 0)
 
     def _cache_store(choice):
-        if cache is not None:
-            msg_d = (
-                choice.message.model_dump(exclude_none=True)
-                if hasattr(choice.message, "model_dump")
-                else dict(vars(choice.message))
-            )
-            cache.put(cache_kwargs, msg_d, choice.finish_reason)
+        if cache is None:
+            return
+        if choice.finish_reason == "length":
+            return
+        if _has_malformed_tool_args(choice.message):
+            return
+        msg_d = (
+            choice.message.model_dump(exclude_none=True)
+            if hasattr(choice.message, "model_dump")
+            else dict(vars(choice.message))
+        )
+        cache.put(cache_kwargs, msg_d, choice.finish_reason)
+
+    def _finalize_choice(choice):
+        _promote_reasoning_content(choice.message)
+        _post_process_assistant_message(choice.message, sanitize_thinking)
+        _cache_store(choice)
+        return _decrypt_msg(choice.message), choice.finish_reason
 
     def _decrypt_msg(msg):
         """Reverse known encrypted tokens in response content and tool args."""
@@ -3602,16 +3703,8 @@ def call_llm(
                 retries += first_retries
                 cache_stats = _log_cache_stats(response, verbose)
                 choice = _pick_best_choice(response.choices)
-                _promote_reasoning_content(choice.message)
-                _post_process_assistant_message(choice.message, sanitize_thinking)
-                _cache_store(choice)
-                return (
-                    _decrypt_msg(choice.message),
-                    choice.finish_reason,
-                    [],
-                    retries,
-                    cache_stats,
-                )
+                msg, finish_reason = _finalize_choice(choice)
+                return msg, finish_reason, [], retries, cache_stats
         if _ORPHANED_TOOL_CALL_RE.search(msg_text):
             first_retries = _retries_from_exc(e)
             if _fix_orphaned_tool_calls(messages):
@@ -3651,16 +3744,8 @@ def call_llm(
                 retries += first_retries
                 cache_stats = _log_cache_stats(response, verbose)
                 choice = _pick_best_choice(response.choices)
-                _promote_reasoning_content(choice.message)
-                _post_process_assistant_message(choice.message, sanitize_thinking)
-                _cache_store(choice)
-                return (
-                    _decrypt_msg(choice.message),
-                    choice.finish_reason,
-                    [],
-                    retries,
-                    cache_stats,
-                )
+                msg, finish_reason = _finalize_choice(choice)
+                return msg, finish_reason, [], retries, cache_stats
         if tools is not None and _TOOLS_NOT_SUPPORTED_RE.search(msg_text):
             tne = ToolsNotSupportedError(
                 f"model does not support function calling: {e}"
@@ -3702,10 +3787,8 @@ def call_llm(
 
     cache_stats = _log_cache_stats(response, verbose)
     choice = _pick_best_choice(response.choices)
-    _promote_reasoning_content(choice.message)
-    _post_process_assistant_message(choice.message, sanitize_thinking)
-    _cache_store(choice)
-    return _decrypt_msg(choice.message), choice.finish_reason, [], retries, cache_stats
+    msg, finish_reason = _finalize_choice(choice)
+    return msg, finish_reason, [], retries, cache_stats
 
 
 # Provider → env var that resolve_provider() checks for that provider
@@ -6989,6 +7072,14 @@ def run_agent_loop(
                 cmd_activity = _llm_result[2] if len(_llm_result) > 2 else []
                 _provider_retries = _llm_result[3] if len(_llm_result) > 3 else 0
                 _cache_stats = _llm_result[4] if len(_llm_result) > 4 else (0, 0)
+                _raise_if_truncated_tool_call(
+                    msg,
+                    finish_reason,
+                    provider_retries=_provider_retries,
+                    turn=turns + turn_offset,
+                    report=report,
+                    verbose=verbose,
+                )
         except ContextOverflowError as _coe:
             elapsed = time.monotonic() - t0
             if report:
@@ -7106,6 +7197,15 @@ def run_agent_loop(
                         )
                         _cache_stats = (
                             _llm_result[4] if len(_llm_result) > 4 else (0, 0)
+                        )
+                        _raise_if_truncated_tool_call(
+                            msg,
+                            finish_reason,
+                            provider_retries=_provider_retries,
+                            turn=turns + turn_offset,
+                            report=report,
+                            verbose=verbose,
+                            where=f"post-{level_name}",
                         )
                 except ContextOverflowError as _coe:
                     elapsed = time.monotonic() - t0
@@ -7241,6 +7341,15 @@ def run_agent_loop(
                             _cache_stats = (
                                 _llm_result[4] if len(_llm_result) > 4 else (0, 0)
                             )
+                            _raise_if_truncated_tool_call(
+                                msg,
+                                finish_reason,
+                                provider_retries=_provider_retries,
+                                turn=turns + turn_offset,
+                                report=report,
+                                verbose=verbose,
+                                where="post-drop-tools",
+                            )
                     except ContextOverflowError:
                         continue
                     else:
@@ -7324,6 +7433,15 @@ def run_agent_loop(
                                 )
                                 _cache_stats = (
                                     _llm_result[4] if len(_llm_result) > 4 else (0, 0)
+                                )
+                                _raise_if_truncated_tool_call(
+                                    msg,
+                                    finish_reason,
+                                    provider_retries=_provider_retries,
+                                    turn=turns + turn_offset,
+                                    report=report,
+                                    verbose=verbose,
+                                    where="post-emergency-truncate",
                                 )
                         except ContextOverflowError:
                             continue
