@@ -2,6 +2,10 @@
 
 All notable user-facing changes to Swival.
 
+## 1.0.17
+
+- The REPL now has a status toolbar at the bottom of the input area. It shows token usage, context window fill percentage, git dirty file count, running subagents, remaining todo items, active goal, and session elapsed time. When the toolbar is otherwise sparse, it cycles through randomized tips about available commands and shortcuts.
+
 ## 1.0.16
 
 - `/loop` has been added for recurring prompts. In one-shot mode it keeps Swival running as a foreground poller with clean stdout separators, SIGTERM handling, and Ctrl-C behavior for skipping or exiting iterations. In the REPL it runs as an in-memory background scheduler: `/loops` lists active schedules, `/unloop <id>` cancels one, and `/unloop all` clears them.
