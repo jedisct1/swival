@@ -215,16 +215,17 @@ class TestReadFileTail:
         assert "8: line8" in result
         assert "10: line10" in result
 
-    def test_dispatch_tail_ignores_offset(self, tmp_path):
-        """dispatch('read_file') with tail_lines set should ignore a stray offset."""
+    def test_dispatch_tail_with_offset_returns_error(self, tmp_path):
+        """dispatch('read_file') with both tail_lines and offset returns an error."""
         self._make_file(tmp_path, 10)
         result = dispatch(
             "read_file",
             {"file_path": "data.txt", "tail_lines": 3, "offset": 1000},
             str(tmp_path),
         )
-        assert "8: line8" in result
-        assert "10: line10" in result
+        assert result.startswith("error:")
+        assert "mutually exclusive" in result
+        assert "start reading at a line number" in result
 
     def test_tail_1_with_large_limit_uses_limit(self, tmp_path):
         """tail=1 with limit>1 is treated as tail=limit (model meant 'from the end')."""

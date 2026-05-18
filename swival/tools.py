@@ -1669,6 +1669,17 @@ def _read_files(
                 )
                 files_with_errors += 1
                 continue
+            if "offset" in spec:
+                sections.append(
+                    _build_read_multiple_files_section(
+                        file_path,
+                        "error",
+                        _format_read_request(offset, limit, None),
+                        "error: offset (start reading at a line number) and tail_lines (read the last N lines) are mutually exclusive",
+                    )
+                )
+                files_with_errors += 1
+                continue
             offset = 1
 
         request = _format_read_request(offset, limit, tail)
@@ -3029,7 +3040,9 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
                 tail = int(tail)
             except (ValueError, TypeError):
                 return "error: tail_lines must be an integer line count"
-            offset = 1  # tail_lines takes precedence; ignore any offset the model sent
+            if "offset" in args:
+                return "error: offset (start reading at a line number) and tail_lines (read the last N lines) are mutually exclusive"
+            offset = 1
         return _read_file(
             file_path=args["file_path"],
             base_dir=base_dir,
