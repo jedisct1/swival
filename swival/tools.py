@@ -53,7 +53,7 @@ TOOLS = [
                         "minimum": 1,
                         "description": (
                             "Number of lines to return from the end of the file. "
-                            "When set, offset is ignored. "
+                            "Mutually exclusive with offset; pass at most one of the two. "
                             "To paginate within the tail, use the offset from the continuation hint "
                             "in a follow-up call (without tail_lines)."
                         ),
@@ -104,7 +104,7 @@ TOOLS = [
                                     "type": "integer",
                                     "minimum": 1,
                                     "description": (
-                                        "Number of lines to return from the end of the file. When set, offset is ignored."
+                                        "Number of lines to return from the end of the file. Mutually exclusive with offset; pass at most one of the two."
                                     ),
                                 },
                             },
@@ -1436,6 +1436,14 @@ def _format_read_request(offset: int, limit: int, tail: int | None) -> str:
     return f"offset={offset} limit={limit}"
 
 
+def _offset_tail_conflict(offset: int, tail: int) -> str:
+    return (
+        "error: cannot combine 'offset' and 'tail_lines'. "
+        f"To read the last {tail} lines, drop 'offset' and keep tail_lines={tail}. "
+        f"To paginate forward from line {offset}, drop 'tail_lines' and keep offset={offset}."
+    )
+
+
 def _split_read_result(result: str) -> tuple[str, bool, str | None]:
     lines = result.splitlines()
     next_offset = None
@@ -1652,17 +1660,20 @@ def _read_files(
                 )
                 files_with_errors += 1
                 continue
-            if "offset" in spec:
+        if tail is not None and "offset" in spec:
+            if tail > 1:
                 sections.append(
                     _build_read_multiple_files_section(
                         file_path,
                         "error",
                         _format_read_request(offset, limit, None),
-                        "error: offset (start reading at a line number) and tail_lines (read the last N lines) are mutually exclusive",
+                        _offset_tail_conflict(offset, tail),
                     )
                 )
                 files_with_errors += 1
                 continue
+            tail = None
+        elif tail is not None:
             offset = 1
 
         request = _format_read_request(offset, limit, tail)
@@ -3054,8 +3065,11 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
                 tail = int(tail)
             except (ValueError, TypeError):
                 return "error: tail_lines must be an integer line count"
-            if "offset" in args:
-                return "error: offset (start reading at a line number) and tail_lines (read the last N lines) are mutually exclusive"
+        if tail is not None and "offset" in args:
+            if tail > 1:
+                return _offset_tail_conflict(offset, tail)
+            tail = None
+        elif tail is not None:
             offset = 1
         return _read_file(
             file_path=args["file_path"],

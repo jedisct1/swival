@@ -216,7 +216,7 @@ class TestReadFileTail:
         assert "10: line10" in result
 
     def test_dispatch_tail_with_offset_returns_error(self, tmp_path):
-        """dispatch('read_file') with both tail_lines and offset returns an error."""
+        """dispatch('read_file') with both tail_lines>1 and offset returns an error."""
         self._make_file(tmp_path, 10)
         result = dispatch(
             "read_file",
@@ -224,8 +224,33 @@ class TestReadFileTail:
             str(tmp_path),
         )
         assert result.startswith("error:")
-        assert "mutually exclusive" in result
-        assert "start reading at a line number" in result
+        assert "cannot combine 'offset' and 'tail_lines'" in result
+        assert "tail_lines=3" in result
+        assert "offset=1000" in result
+
+    def test_dispatch_tail_1_with_offset_ignores_tail(self, tmp_path):
+        """tail_lines<=1 combined with offset is treated as no tail and a normal offset read."""
+        self._make_file(tmp_path, 10)
+        result = dispatch(
+            "read_file",
+            {"file_path": "data.txt", "tail_lines": 1, "offset": 5},
+            str(tmp_path),
+        )
+        assert not result.startswith("error:")
+        assert "5: line5" in result
+        assert "10: line10" in result
+        assert "4: line4" not in result
+
+    def test_dispatch_tail_0_with_offset_ignores_tail(self, tmp_path):
+        """tail_lines=0 combined with offset is treated as no tail and a normal offset read."""
+        self._make_file(tmp_path, 10)
+        result = dispatch(
+            "read_file",
+            {"file_path": "data.txt", "tail_lines": 0, "offset": 5},
+            str(tmp_path),
+        )
+        assert not result.startswith("error:")
+        assert "5: line5" in result
 
     def test_tail_1_with_large_limit_uses_limit(self, tmp_path):
         """tail=1 with limit>1 is treated as tail=limit (model meant 'from the end')."""
