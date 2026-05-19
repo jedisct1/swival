@@ -189,14 +189,16 @@ def replace(
         integer.
 
     Raises ValueError:
-      - "no changes" if old_string == new_string
-      - "not found" if no match in any pass
+      - "old_string and new_string are identical ..." if old_string == new_string
+      - "old_string not found ..." if no match in any pass
       - "multiple matches; add line_number ..." if >1 match and no line targeting
       - "no match at line N; matches found at lines ..." if line targeting misses
       - "multiple matches on line N; add more context ..." if line targeting is ambiguous
     """
     if old_string == new_string:
-        raise ValueError("no changes")
+        raise ValueError(
+            "old_string and new_string are identical, so the edit would be a no-op"
+        )
 
     if not old_string:
         raise ValueError("old_string must not be empty")
@@ -270,4 +272,7 @@ def replace(
             f"matches found at lines {_format_candidate_lines(all_candidate_lines)}"
         )
 
-    raise ValueError("not found")
+    raise ValueError(
+        "old_string not found; re-read the file with read_file to verify the exact text "
+        "(whitespace, casing, and line endings must match)"
+    )

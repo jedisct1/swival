@@ -164,7 +164,9 @@ class TestReadMultipleFilesErrors:
         assert "boolean" in result
 
     def test_tail_with_offset_returns_error(self, tmp_path):
-        (tmp_path / "a.txt").write_text("\n".join(f"line{i}" for i in range(1, 11)) + "\n")
+        (tmp_path / "a.txt").write_text(
+            "\n".join(f"line{i}" for i in range(1, 11)) + "\n"
+        )
         result = _read_files(
             [{"file_path": "a.txt", "tail_lines": 3, "offset": 5}],
             str(tmp_path),
@@ -175,7 +177,9 @@ class TestReadMultipleFilesErrors:
         assert "offset=5" in result
 
     def test_tail_1_with_offset_ignores_tail(self, tmp_path):
-        (tmp_path / "a.txt").write_text("\n".join(f"line{i}" for i in range(1, 11)) + "\n")
+        (tmp_path / "a.txt").write_text(
+            "\n".join(f"line{i}" for i in range(1, 11)) + "\n"
+        )
         result = _read_files(
             [{"file_path": "a.txt", "tail_lines": 1, "offset": 5}],
             str(tmp_path),

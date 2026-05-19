@@ -1351,7 +1351,7 @@ def _read_file(
                 output_parts.append(name)
                 total_bytes += encoded_len
         except PermissionError as exc:
-            return f"error: {exc}"
+            return f"error: read_file: permission denied listing directory {file_path}: {exc}"
         result = "\n".join(output_parts)
         if truncated:
             result += "\n[truncated at 50KB]"
@@ -1364,7 +1364,7 @@ def _read_file(
     except FileNotFoundError:
         return f"error: file not found (removed after check): {file_path}"
     except PermissionError as exc:
-        return f"error: {exc}"
+        return f"error: read_file: permission denied opening {file_path}: {exc}"
 
     if b"\x00" in chunk:
         ext = resolved.suffix.lower()
@@ -1380,7 +1380,7 @@ def _read_file(
     except UnicodeDecodeError as exc:
         return f"error: failed to decode {file_path} as UTF-8: {exc}"
     except PermissionError as exc:
-        return f"error: {exc}"
+        return f"error: read_file: permission denied reading {file_path}: {exc}"
 
     lines = text.splitlines()
 
@@ -1521,7 +1521,7 @@ def _view_image(
     try:
         size = resolved.stat().st_size
     except OSError as exc:
-        return f"error: {exc}"
+        return f"error: view_image: failed to stat {image_path}: {exc}"
     if size == 0:
         return "error: image file is empty"
     if size > MAX_IMAGE_BYTES:
@@ -1530,7 +1530,7 @@ def _view_image(
     try:
         data = resolved.read_bytes()
     except OSError as exc:
-        return f"error: {exc}"
+        return f"error: view_image: failed to read {image_path}: {exc}"
 
     b64 = base64.b64encode(data).decode("ascii")
     mime = IMAGE_MIME[ext]
@@ -1564,7 +1564,7 @@ def _read_files(
     if not files:
         return (
             "error: read_files requires a non-empty 'files' array. Each entry is either a "
-            "path string or an object like {\"file_path\": \"...\", \"offset\": 1, \"limit\": 200}. "
+            'path string or an object like {"file_path": "...", "offset": 1, "limit": 200}. '
             "To read a single file, use read_file instead."
         )
     if len(files) > _MAX_READ_FILES:
@@ -1926,8 +1926,13 @@ def _edit_file(
 
     try:
         content = resolved.read_text(encoding="utf-8")
-    except (UnicodeDecodeError, PermissionError, OSError) as exc:
-        return f"error: {exc}"
+    except UnicodeDecodeError as exc:
+        return (
+            f"error: edit_file: {file_path} is not valid UTF-8 text; "
+            f"edit_file only handles text files: {exc}"
+        )
+    except (PermissionError, OSError) as exc:
+        return f"error: edit_file: cannot read {file_path}: {exc}"
 
     try:
         new_content = replace(
@@ -1938,7 +1943,7 @@ def _edit_file(
             line_number=line_number,
         )
     except ValueError as exc:
-        return f"error: {exc}"
+        return f"error: edit_file: {exc} (in {file_path})"
 
     resolved.write_text(new_content, encoding="utf-8")
 
@@ -2737,7 +2742,7 @@ def _run_argv_command(
     if not command:
         return (
             "error: run_command requires a non-empty 'command' array, e.g. "
-            "[\"ls\", \"-la\"] or [\"git\", \"status\"]. The first element is the program "
+            '["ls", "-la"] or ["git", "status"]. The first element is the program '
             "name, remaining elements are its arguments."
         )
 
@@ -3181,7 +3186,7 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
             elif not isinstance(files, list):
                 return (
                     "error: outline 'files' must be an array of objects like "
-                    "[{\"file_path\": \"...\", \"depth\": 2}, ...]. To outline a single file, "
+                    '[{"file_path": "...", "depth": 2}, ...]. To outline a single file, '
                     "use 'file_path' instead of 'files'."
                 )
             return _outline_files(

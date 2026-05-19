@@ -3571,7 +3571,9 @@ def _completion_via_stream(completion_kwargs, on_stream_start=None):
                 args = getattr(fn, "arguments", None) or ""
                 if args:
                     _on_delta(args)
-    return litellm.stream_chunk_builder(chunks, messages=completion_kwargs.get("messages"))
+    return litellm.stream_chunk_builder(
+        chunks, messages=completion_kwargs.get("messages")
+    )
 
 
 def _completion_with_retry(

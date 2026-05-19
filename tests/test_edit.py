@@ -111,12 +111,12 @@ class TestNoOp:
 
     def test_identical_strings(self):
         content = "hello world"
-        with pytest.raises(ValueError, match="no changes"):
+        with pytest.raises(ValueError, match="identical"):
             replace(content, "hello", "hello")
 
     def test_identical_multiline(self):
         content = "a\nb\nc\n"
-        with pytest.raises(ValueError, match="no changes"):
+        with pytest.raises(ValueError, match="identical"):
             replace(content, "a\nb", "a\nb")
 
 
