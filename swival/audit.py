@@ -89,6 +89,9 @@ _SOURCE_EXTS = frozenset(
         ".scala",
         ".sh",
         ".zig",
+        ".pl",
+        ".pm",
+        ".psgi",
     }
 )
 
@@ -539,7 +542,8 @@ _IMPORT_RE = re.compile(
     r"|^\s*(?:const|let|var|import)\s+.*?from\s+['\"]([^'\"]+)['\"]"  # JS/TS
     r"|require\s*\(\s*['\"]([^'\"]+)['\"]\s*\)"  # Node require
     r"|^\s*#include\s*[\"<]([^\"'>]+)[\"'>]"  # C/C++
-    r"|^\s*use\s+([\w:\\]+)"  # Rust / PHP
+    r"|^\s*require\s+['\"]([^'\"]+)['\"]"  # Perl: require "Foo/Bar.pl"
+    r"|^\s*(?:use|require|no)\s+([\w:\\]+)"  # Rust / PHP / Perl
     r"|@import\s*\(\s*['\"]([^'\"]+)['\"]\s*\)"  # Zig
     r")",
     re.MULTILINE,
@@ -553,6 +557,8 @@ _EXPORT_RE = re.compile(
     r"|^func\s+(\w+)"  # Go
     r"|^pub\s+fn\s+(\w+)"  # Rust/Zig
     r"|^\s*(?:public\s+)?function\s+(\w+)"  # PHP
+    r"|^\s*sub\s+(\w+)"  # Perl sub
+    r"|^\s*package\s+([\w:]+)"  # Perl package
     r")",
     re.MULTILINE,
 )
@@ -713,6 +719,7 @@ def _build_context_indices(
             export_map.setdefault(sym, []).append(f)
 
     export_keys = set(export_map)
+    file_set = set(files)
 
     caller_index: dict[str, list[str]] = {}
     for f in files:
@@ -725,6 +732,15 @@ def _build_context_indices(
             sources = export_map[sym]
             if f not in sources:
                 callers.update(sources)
+        for imp in import_index.get(f, ()):
+            if imp in file_set and imp != f:
+                callers.add(imp)
+            sources = export_map.get(imp)
+            if not sources:
+                continue
+            for source in sources:
+                if source != f:
+                    callers.add(source)
         if callers:
             caller_index[f] = sorted(callers)
 
@@ -801,6 +817,8 @@ _EXT_TO_LANG: dict[str, str] = {
     ".mm": "objective-c++",
     ".lua": "lua",
     ".pl": "perl",
+    ".pm": "perl",
+    ".psgi": "perl",
     ".r": "r",
     ".dart": "dart",
     ".ex": "elixir",

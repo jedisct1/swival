@@ -286,6 +286,46 @@ class TestImportExport:
         assert "UserModel" in exports
         assert "_private" not in exports
 
+    def test_perl_imports(self):
+        code = (
+            "use strict;\n"
+            "use warnings;\n"
+            "use Foo::Bar qw(baz);\n"
+            "no autovivification;\n"
+            "require Carp;\n"
+            'require "helper.pl";\n'
+        )
+        imports = _extract_imports(code)
+        assert "strict" in imports
+        assert "warnings" in imports
+        assert "Foo::Bar" in imports
+        assert "autovivification" in imports
+        assert "Carp" in imports
+        assert "helper.pl" in imports
+
+    def test_perl_exports(self):
+        code = (
+            "package Acme::Tool;\n"
+            "sub run_job {\n"
+            "    return 1;\n"
+            "}\n"
+            "sub _hidden {\n"
+            "    return;\n"
+            "}\n"
+            "sub with_proto ($$) { 1 }\n"
+        )
+        exports = _extract_exports(code)
+        assert "Acme::Tool" in exports
+        assert "run_job" in exports
+        assert "with_proto" in exports
+        assert "_hidden" not in exports
+
+    def test_perl_auditable(self):
+        assert _is_auditable("lib/Foo/Bar.pm")
+        assert _is_auditable("bin/script.pl")
+        assert _is_auditable("app.psgi")
+        assert not _is_auditable("t/basic.t")
+
 
 # ---------------------------------------------------------------------------
 # Batched git read (_git_show_many)
@@ -436,6 +476,28 @@ class TestBuildContextIndices:
         }
         _imp_idx, call_idx = _build_context_indices(["lib.py", "app.py"], cache)
         assert call_idx == {}
+
+    def test_perl_package_import_resolves_to_caller(self):
+        cache = {
+            "lib/Acme/Tool.pm": "package Acme::Tool;\n1;\n",
+            "bin/app.pl": "use Acme::Tool;\n",
+        }
+        imp_idx, call_idx = _build_context_indices(
+            ["lib/Acme/Tool.pm", "bin/app.pl"], cache
+        )
+        assert imp_idx["bin/app.pl"] == ["Acme::Tool"]
+        assert call_idx["bin/app.pl"] == ["lib/Acme/Tool.pm"]
+
+    def test_perl_path_require_resolves_to_caller(self):
+        cache = {
+            "lib/Foo/Bar.pm": "package Foo::Bar;\n1;\n",
+            "bin/app.pl": 'require "lib/Foo/Bar.pm";\n',
+        }
+        imp_idx, call_idx = _build_context_indices(
+            ["lib/Foo/Bar.pm", "bin/app.pl"], cache
+        )
+        assert imp_idx["bin/app.pl"] == ["lib/Foo/Bar.pm"]
+        assert call_idx["bin/app.pl"] == ["lib/Foo/Bar.pm"]
 
 
 # ---------------------------------------------------------------------------
