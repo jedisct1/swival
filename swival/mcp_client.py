@@ -38,7 +38,12 @@ class McpManager:
     "Attempted to exit cancel scope in a different task" errors.
     """
 
-    def __init__(self, server_configs: dict[str, dict], verbose: bool = False):
+    def __init__(
+        self,
+        server_configs: dict[str, dict],
+        verbose: bool = False,
+        flatten_schemas: bool = True,
+    ):
         """
         server_configs: {
             "server-name": {
@@ -53,6 +58,8 @@ class McpManager:
         """
         self._server_configs = server_configs
         self._verbose = verbose
+        self._flatten_schemas = flatten_schemas
+        self._flatten_meta: dict[str, object] = {}
 
         # Background event loop
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -181,6 +188,12 @@ class McpManager:
         session = self._sessions.get(server_name)
         if session is None:
             return (f"error: MCP server {server_name!r} has no active session", True)
+
+        meta = self._flatten_meta.get(namespaced_name)
+        if meta is not None and isinstance(arguments, dict):
+            from .tool_call_repair import nest_arguments
+
+            arguments = nest_arguments(arguments, meta)
 
         try:
             result = self._run_sync(
@@ -331,6 +344,11 @@ class McpManager:
             tool_pairs = [
                 _mcp_tool_to_openai(name, tool) for tool in tools_result.tools
             ]
+            if self._flatten_schemas:
+                tool_pairs = [
+                    self._maybe_flatten_pair(schema, original)
+                    for schema, original in tool_pairs
+                ]
             self._tool_schemas[name] = [schema for schema, _original_name in tool_pairs]
             self._tool_original_names[name] = {
                 schema["function"]["name"]: original_name
@@ -379,6 +397,28 @@ class McpManager:
         self._server_tasks.clear()
         self._shutdown_events.clear()
         self._sessions.clear()
+
+    def _maybe_flatten_pair(self, schema: dict, original_name: str) -> tuple[dict, str]:
+        """Flatten the tool's parameters if its schema is large or deep.
+
+        When the underlying JSON schema is safe to flatten and has more
+        than 10 leaves or depth > 2, replace the provider-facing
+        parameters with a dot-path version and stash the side table so
+        ``call_tool`` can re-nest the arguments before dispatch.
+        """
+        from .tool_call_repair import analyze_schema, flatten_schema
+
+        params = schema.get("function", {}).get("parameters", {})
+        if not params:
+            return schema, original_name
+        decision = analyze_schema(params)
+        if not decision.should_flatten:
+            return schema, original_name
+        flat, meta = flatten_schema(params)
+        flat_schema = copy.deepcopy(schema)
+        flat_schema["function"]["parameters"] = flat
+        self._flatten_meta[flat_schema["function"]["name"]] = meta
+        return flat_schema, original_name
 
     def _build_tool_map(self) -> None:
         """Build the routing table with collision detection.

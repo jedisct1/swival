@@ -102,6 +102,13 @@ from .tools import (
     get_tool_schema,
 )
 from .repair import format_repair_feedback, repair_tool_args, validate_required_args
+from .tool_call_repair import (
+    StormBreaker,
+    content_is_pure_tool_call,
+    is_mutating as _tcr_is_mutating,
+    repair_truncated_json,
+    scavenge_tool_calls,
+)
 
 DEFAULT_SYSTEM_PROMPT_FILE = Path(__file__).parent / "system_prompt.txt"
 MAX_ARG_LOG = 1000
@@ -865,13 +872,18 @@ def _classify_tool_call_truncation(msg, finish_reason) -> str | None:
     """Return a TRUNCATED_REASON_* constant if msg's tool calls are truncated.
 
     Text-only finish_reason='length' returns None; the loop's existing
-    continuation nudge handles that case.
+    continuation nudge handles that case.  When the response carries
+    tool calls and the args parse cleanly we let the turn proceed even
+    on finish_reason='length' — the structural-repair pass upstream may
+    have already patched a partial JSON tail, and rejecting a parseable
+    call would discard recoverable work.
     """
     if not _msg_tool_calls(msg):
         return None
-    if finish_reason == "length":
+    malformed = _has_malformed_tool_args(msg)
+    if finish_reason == "length" and malformed:
         return TRUNCATED_REASON_LENGTH
-    if _has_malformed_tool_args(msg):
+    if malformed:
         return TRUNCATED_REASON_MALFORMED
     return None
 
@@ -886,8 +898,241 @@ def _evict_cache_entry(cache, cache_kwargs):
         pass
 
 
+def _try_repair_truncated_tool_args(msg, *, turn, report, verbose) -> int:
+    """Repair malformed/truncated arguments in tool_calls on *msg* in place.
+
+    Walks ``msg.tool_calls`` (if any), parses each ``arguments`` string,
+    and runs :func:`repair_truncated_json` on those that don't parse.
+    When the repair is structural (no fallback) the call's
+    ``arguments`` is rewritten to the repaired form so the rest of the
+    loop sees a parseable JSON object.
+
+    Returns the number of repairs that succeeded.
+    """
+    tool_calls = _msg_tool_calls(msg) or []
+    if not tool_calls:
+        return 0
+    repaired_count = 0
+    for tc in tool_calls:
+        raw = _normalize_tool_call_args(_tool_call_args(tc))
+        try:
+            json.loads(raw)
+            continue
+        except (json.JSONDecodeError, TypeError):
+            pass
+        result = repair_truncated_json(raw)
+        if result.fallback:
+            continue
+        if not result.changed:
+            continue
+        fn = tc.function if hasattr(tc, "function") else tc.get("function")
+        if fn is None:
+            continue
+        if hasattr(fn, "arguments"):
+            fn.arguments = result.repaired
+        else:
+            fn["arguments"] = result.repaired
+        repaired_count += 1
+        name = ""
+        if hasattr(fn, "name"):
+            name = fn.name or ""
+        elif isinstance(fn, dict):
+            name = fn.get("name", "") or ""
+        if report is not None:
+            report.record_truncation_repair(
+                turn,
+                name=name,
+                notes=result.notes,
+                original_length=result.original_length,
+                original_preview=result.original_preview,
+                repaired_length=result.repaired_length,
+            )
+        if verbose:
+            fmt.truncation_repair(name, result.notes)
+    return repaired_count
+
+
+def _allowed_tool_names_from_tools(tools) -> frozenset[str]:
+    names: set[str] = set()
+    for t in tools or []:
+        fn = t.get("function") if isinstance(t, dict) else None
+        if fn and isinstance(fn.get("name"), str):
+            names.add(fn["name"])
+    return frozenset(names)
+
+
+def _scavenge_signal_present(msg, finish_reason, allowed_names) -> bool:
+    """Strict gating for content-channel scavenge.
+
+    Returns True only when the message shape *strongly* indicates the
+    model meant to issue a tool call.  Conversational prose that
+    mentions a tool name in passing must not match.
+    """
+    content = _msg_content(msg) or ""
+    tool_calls = _msg_tool_calls(msg) or []
+
+    if not tool_calls and finish_reason in (
+        TRUNCATED_REASON_LENGTH,
+        "length",
+        "stop",
+    ):
+        if "<swival:call" in content:
+            return True
+        if content_is_pure_tool_call(content, allowed_names):
+            return True
+
+    if "<swival:call" in content:
+        return True
+
+    if tool_calls and _has_malformed_tool_args(msg):
+        return True
+
+    return False
+
+
+def _maybe_scavenge_tool_calls(
+    msg, finish_reason, tools, *, enabled, turn, report, verbose
+) -> int:
+    """Recover tool calls leaked into the message content channel.
+
+    Each recovered call is materialized via
+    :func:`_build_scavenged_tool_call` so it shares the same type as the
+    provider's declared tool_calls (or a litellm pydantic fallback) and
+    survives downstream ``model_dump`` serialization, then appended to
+    ``msg.tool_calls``.  Provenance is recorded separately through
+    :meth:`ReportCollector.record_scavenged_call`.  Returns the number
+    of calls appended.
+    """
+    if not enabled:
+        return 0
+    allowed = _allowed_tool_names_from_tools(tools)
+    if not allowed:
+        return 0
+    if not _scavenge_signal_present(msg, finish_reason, allowed):
+        return 0
+
+    content = _msg_content(msg) or ""
+    reasoning = getattr(msg, "reasoning_content", None)
+    if reasoning is None and isinstance(msg, dict):
+        reasoning = msg.get("reasoning_content")
+
+    declared = _msg_tool_calls(msg) or []
+    declared_sigs: set[tuple[str, str]] = set()
+    for tc in declared:
+        try:
+            name = (
+                tc.function.name if hasattr(tc, "function") else tc["function"]["name"]
+            )
+            raw = _normalize_tool_call_args(_tool_call_args(tc))
+            parsed = json.loads(raw)
+            sig = (
+                name,
+                json.dumps(parsed, sort_keys=True, separators=(",", ":"), default=str),
+            )
+            declared_sigs.add(sig)
+        except (json.JSONDecodeError, TypeError, KeyError, AttributeError):
+            continue
+
+    result = scavenge_tool_calls(content, reasoning, allowed, max_calls=4)
+    if not result.calls:
+        return 0
+
+    import uuid as _uuid
+
+    added = 0
+    new_calls: list = []
+    for call in result.calls:
+        args_str = json.dumps(call.arguments)
+        try:
+            parsed = json.loads(args_str)
+            sig = (
+                call.name,
+                json.dumps(parsed, sort_keys=True, separators=(",", ":"), default=str),
+            )
+            if sig in declared_sigs:
+                continue
+        except (json.JSONDecodeError, TypeError):
+            pass
+        tc_id = f"scavenged_{_uuid.uuid4().hex[:8]}"
+        synthetic = _build_scavenged_tool_call(declared, tc_id, call.name, args_str)
+        new_calls.append(synthetic)
+        added += 1
+        if report is not None:
+            report.record_scavenged_call(turn, name=call.name, source=call.source)
+        if verbose:
+            fmt.scavenged_call(call.name, call.source)
+
+    if not new_calls:
+        return 0
+
+    existing = declared
+    combined = list(existing) + new_calls
+    if hasattr(msg, "tool_calls"):
+        msg.tool_calls = combined
+    elif isinstance(msg, dict):
+        msg["tool_calls"] = combined
+    return added
+
+
+def _build_scavenged_tool_call(existing, tc_id, name, args_str):
+    """Construct a synthetic tool_call shaped like the provider's existing ones.
+
+    When the provider returned a pydantic Message (litellm, openai-python),
+    its ``tool_calls`` entries are typed and downstream
+    :func:`_msg_to_dict` invokes ``model_dump``.  A plain ``SimpleNamespace``
+    appended into a typed list crashes pydantic during serialization, so we
+    mirror the existing item type when possible, fall back to the litellm
+    pydantic types, and only use ``SimpleNamespace`` for already-dict-shaped
+    messages.
+    """
+    from types import SimpleNamespace
+
+    if existing:
+        sample = existing[0]
+        sample_fn = (
+            getattr(sample, "function", None) if not isinstance(sample, dict) else None
+        )
+        if sample_fn is not None and not isinstance(sample, dict):
+            try:
+                fn_cls = type(sample_fn)
+                tc_cls = type(sample)
+                return tc_cls(
+                    id=tc_id,
+                    type="function",
+                    function=fn_cls(name=name, arguments=args_str),
+                )
+            except Exception:
+                pass
+    try:
+        from litellm.types.utils import (
+            ChatCompletionMessageToolCall,
+            Function,
+        )
+
+        return ChatCompletionMessageToolCall(
+            id=tc_id,
+            type="function",
+            function=Function(name=name, arguments=args_str),
+        )
+    except Exception:
+        pass
+    return SimpleNamespace(
+        id=tc_id,
+        type="function",
+        function=SimpleNamespace(name=name, arguments=args_str),
+    )
+
+
 def _raise_if_truncated_tool_call(
-    msg, finish_reason, *, provider_retries, turn, report, verbose, where=""
+    msg,
+    finish_reason,
+    *,
+    provider_retries,
+    turn,
+    report,
+    verbose,
+    where="",
+    repair_truncated_args: bool = False,
 ):
     """Reject truncated tool-call responses by raising ContextOverflowError.
 
@@ -895,7 +1140,14 @@ def _raise_if_truncated_tool_call(
     provider_retries on the exception so the existing overflow handlers
     can attribute the cost, and emits a verbose warning.  Does nothing
     for text-only finish_reason='length' or clean responses.
+
+    If ``repair_truncated_args`` is True, attempts to repair unbalanced
+    JSON in tool-call arguments first.  When the repair succeeds for
+    every malformed call, the function returns without raising and the
+    loop continues with the repaired arguments.
     """
+    if repair_truncated_args:
+        _try_repair_truncated_tool_args(msg, turn=turn, report=report, verbose=verbose)
     reason = _classify_tool_call_truncation(msg, finish_reason)
     if reason is None:
         return
@@ -2641,6 +2893,55 @@ def _maybe_make_continuation_message(
     return ("continuation", goal_state.continuation_prompt())
 
 
+def _accumulate_consecutive_errors(
+    name: str,
+    result: str,
+    *,
+    turn: int,
+    consecutive_errors,
+    report,
+    verbose: bool,
+) -> list[str]:
+    """Update the per-tool error counter and emit a nudge/STOP intervention.
+
+    Extracted from :func:`_post_tool_bookkeeping` so callers (storm
+    suppression, future repair flows) can feed the error guardrail
+    without recording a phantom dispatch in the report or marking
+    snapshot state dirty.
+    """
+    interventions: list[str] = []
+    if not result.startswith("error:"):
+        consecutive_errors.pop(name, None)
+        return interventions
+    canonical = _canonical_error(result)
+    prev_err, prev_count = consecutive_errors.get(name, ("", 0))
+    count = prev_count + 1 if canonical == prev_err else 1
+    consecutive_errors[name] = (canonical, count)
+    if count < 2:
+        return interventions
+    if count >= 3:
+        level = "stop"
+        interventions.append(
+            f"STOP: You have failed to use `{name}` correctly {count} times in a row "
+            "with the same error. Do NOT call "
+            f"`{name}` again with the same arguments. "
+            "Either fix the arguments or use a completely different approach to accomplish your task."
+        )
+    else:
+        level = "nudge"
+        interventions.append(
+            f"IMPORTANT: You have called `{name}` {count} times with the same error. "
+            f"The error is: {canonical}\n"
+            "Please carefully re-read the error message and fix your tool call. "
+            "If you cannot use this tool correctly, use a different approach."
+        )
+    if report:
+        report.record_guardrail(turn, name, level)
+    if verbose:
+        fmt.guardrail(name, count, canonical)
+    return interventions
+
+
 def _post_tool_bookkeeping(
     tool_msg,
     tool_meta,
@@ -2705,37 +3006,16 @@ def _post_tool_bookkeeping(
     if snapshot_state is not None:
         snapshot_state.mark_dirty(name)
 
-    result = tool_msg["content"]
-    if result.startswith("error:"):
-        canonical = _canonical_error(result)
-        prev_err, prev_count = consecutive_errors.get(name, ("", 0))
-        count = prev_count + 1 if canonical == prev_err else 1
-        consecutive_errors[name] = (canonical, count)
-
-        if count >= 2:
-            if count >= 3:
-                level = "stop"
-                interventions.append(
-                    f"STOP: You have failed to use `{name}` correctly {count} times in a row "
-                    "with the same error. Do NOT call "
-                    f"`{name}` again with the same arguments. "
-                    "Either fix the arguments or use a completely different approach to accomplish your task."
-                )
-            else:
-                level = "nudge"
-                interventions.append(
-                    f"IMPORTANT: You have called `{name}` {count} times with the same error. "
-                    f"The error is: {canonical}\n"
-                    "Please carefully re-read the error message and fix your tool call. "
-                    "If you cannot use this tool correctly, use a different approach."
-                )
-            if report:
-                report.record_guardrail(turn + turn_offset, name, level)
-            if verbose:
-                fmt.guardrail(name, count, canonical)
-    else:
-        consecutive_errors.pop(name, None)
-
+    interventions.extend(
+        _accumulate_consecutive_errors(
+            name,
+            tool_msg["content"],
+            turn=turn + turn_offset,
+            consecutive_errors=consecutive_errors,
+            report=report,
+            verbose=verbose,
+        )
+    )
     return interventions
 
 
@@ -6517,7 +6797,11 @@ def _run_main(args, report, _write_report, parser):
 
         mcp_servers = _resolve_mcp_servers(args, base_dir)
         if mcp_servers:
-            mcp_manager = McpManager(mcp_servers, verbose=args.verbose)
+            mcp_manager = McpManager(
+                mcp_servers,
+                verbose=args.verbose,
+                flatten_schemas=getattr(args, "flatten_mcp_schemas", True),
+            )
             # start() connects to servers; individual connection failures
             # are logged and skipped (non-fatal), but ConfigError from
             # validation (bad names, collisions) propagates as fatal.
@@ -6700,6 +6984,9 @@ def _run_main(args, report, _write_report, parser):
         command_policy=command_policy,
         metaskills_policy=_metaskills_policy_val,
         enabled_metaskills=set(_metaskill_names or []),
+        repair_truncated_args=getattr(args, "repair_truncated_args", True),
+        scavenge_content_calls=getattr(args, "scavenge_content_calls", True),
+        storm_breaker_enabled=getattr(args, "storm_breaker", True),
     )
 
     # Validate and thread llm_filter
@@ -7123,6 +7410,10 @@ def run_agent_loop(
     metaskills_policy: str = "local",
     enabled_metaskills: set | None = None,
     repl_input_text: str | None = None,
+    repair_truncated_args: bool = True,
+    scavenge_content_calls: bool = True,
+    storm_breaker_enabled: bool = True,
+    session: object | None = None,
 ) -> tuple[str | None, bool]:
     """Run the tool-calling loop until a final answer or max turns.
 
@@ -7169,6 +7460,9 @@ def run_agent_loop(
             turn_state["turns_used"] = turns
 
     consecutive_errors: dict[str, tuple[str, int]] = {}
+    storm_breaker: StormBreaker | None = (
+        StormBreaker() if storm_breaker_enabled else None
+    )
     turns = 0
     think_used = False
     think_nudge_fired = False
@@ -7513,6 +7807,15 @@ def run_agent_loop(
                 cmd_activity = _llm_result[2] if len(_llm_result) > 2 else []
                 _provider_retries = _llm_result[3] if len(_llm_result) > 3 else 0
                 _cache_stats = _llm_result[4] if len(_llm_result) > 4 else (0, 0)
+                _maybe_scavenge_tool_calls(
+                    msg,
+                    finish_reason,
+                    tools,
+                    enabled=scavenge_content_calls,
+                    turn=turns + turn_offset,
+                    report=report,
+                    verbose=verbose,
+                )
                 _raise_if_truncated_tool_call(
                     msg,
                     finish_reason,
@@ -7520,6 +7823,7 @@ def run_agent_loop(
                     turn=turns + turn_offset,
                     report=report,
                     verbose=verbose,
+                    repair_truncated_args=repair_truncated_args,
                 )
         except ContextOverflowError as _coe:
             elapsed = time.monotonic() - t0
@@ -7641,6 +7945,15 @@ def run_agent_loop(
                         _cache_stats = (
                             _llm_result[4] if len(_llm_result) > 4 else (0, 0)
                         )
+                        _maybe_scavenge_tool_calls(
+                            msg,
+                            finish_reason,
+                            tools,
+                            enabled=scavenge_content_calls,
+                            turn=turns + turn_offset,
+                            report=report,
+                            verbose=verbose,
+                        )
                         _raise_if_truncated_tool_call(
                             msg,
                             finish_reason,
@@ -7649,6 +7962,7 @@ def run_agent_loop(
                             report=report,
                             verbose=verbose,
                             where=f"post-{level_name}",
+                            repair_truncated_args=repair_truncated_args,
                         )
                 except ContextOverflowError as _coe:
                     elapsed = time.monotonic() - t0
@@ -7786,6 +8100,15 @@ def run_agent_loop(
                             _cache_stats = (
                                 _llm_result[4] if len(_llm_result) > 4 else (0, 0)
                             )
+                            _maybe_scavenge_tool_calls(
+                                msg,
+                                finish_reason,
+                                tools,
+                                enabled=scavenge_content_calls,
+                                turn=turns + turn_offset,
+                                report=report,
+                                verbose=verbose,
+                            )
                             _raise_if_truncated_tool_call(
                                 msg,
                                 finish_reason,
@@ -7794,6 +8117,7 @@ def run_agent_loop(
                                 report=report,
                                 verbose=verbose,
                                 where="post-drop-tools",
+                                repair_truncated_args=repair_truncated_args,
                             )
                     except ContextOverflowError:
                         continue
@@ -7881,6 +8205,15 @@ def run_agent_loop(
                                 _cache_stats = (
                                     _llm_result[4] if len(_llm_result) > 4 else (0, 0)
                                 )
+                                _maybe_scavenge_tool_calls(
+                                    msg,
+                                    finish_reason,
+                                    tools,
+                                    enabled=scavenge_content_calls,
+                                    turn=turns + turn_offset,
+                                    report=report,
+                                    verbose=verbose,
+                                )
                                 _raise_if_truncated_tool_call(
                                     msg,
                                     finish_reason,
@@ -7889,6 +8222,7 @@ def run_agent_loop(
                                     report=report,
                                     verbose=verbose,
                                     where="post-emergency-truncate",
+                                    repair_truncated_args=repair_truncated_args,
                                 )
                         except ContextOverflowError:
                             continue
@@ -8183,6 +8517,7 @@ def run_agent_loop(
         _last_turn_used_tools = True
         _goal_launch_pending = False
         _textual_tool_call_repair_pending = False
+        _goal_completed_by_tool = False
         for tool_call in msg.tool_calls:
             # Check cancellation before each tool call
             if cancel_flag is not None and cancel_flag.is_set():
@@ -8202,6 +8537,61 @@ def run_agent_loop(
                     "arguments_raw": getattr(tool_call.function, "arguments", None),
                 },
             )
+
+            if storm_breaker is not None:
+                _raw_args = getattr(tool_call.function, "arguments", "") or ""
+                _verdict = storm_breaker.inspect(
+                    _tc_name,
+                    _raw_args,
+                    mutating=_tcr_is_mutating(_tc_name),
+                )
+                if _verdict.suppress:
+                    if report is not None:
+                        import hashlib as _hashlib
+
+                        _args_hash = _hashlib.sha1(
+                            _raw_args.encode("utf-8", errors="replace")
+                        ).hexdigest()[:12]
+                        report.record_storm_suppression(
+                            turns + turn_offset,
+                            name=_tc_name,
+                            canonical_args_hash=_args_hash,
+                            count=_verdict.count,
+                        )
+                    if verbose:
+                        fmt.storm_suppression(_tc_name, _verdict.count, _verdict.reason)
+                    _suppress_msg = (
+                        f"error: repeat-loop guard tripped — "
+                        f"{_tc_name} was called with identical arguments "
+                        f"{_verdict.count} times. Try a different approach."
+                    )
+                    tool_msg = {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": _suppress_msg,
+                    }
+                    messages.append(tool_msg)
+                    _emit(
+                        EVENT_TOOL_ERROR,
+                        {
+                            "id": tool_call.id,
+                            "name": _tc_name,
+                            "turn": turns,
+                            "error": _suppress_msg[:500],
+                            "arguments": None,
+                            "suppressed": True,
+                        },
+                    )
+                    bk_interventions = _accumulate_consecutive_errors(
+                        _tc_name,
+                        _suppress_msg,
+                        turn=turns + turn_offset,
+                        consecutive_errors=consecutive_errors,
+                        report=report,
+                        verbose=verbose,
+                    )
+                    interventions.extend(bk_interventions)
+                    continue
 
             tool_msg, tool_meta = handle_tool_call(
                 tool_call,
@@ -8249,6 +8639,14 @@ def run_agent_loop(
             interventions.extend(bk_interventions)
 
             tool_name = tool_meta["name"]
+            if (
+                tool_name == "complete_goal"
+                and tool_meta["succeeded"]
+                and goal_state is not None
+                and goal_state.get() is not None
+                and goal_state.get().status == GoalStatus.COMPLETE
+            ):
+                _goal_completed_by_tool = True
             if tool_name == "think":
                 think_used = True
             if tool_name == "todo":
@@ -8355,6 +8753,15 @@ def run_agent_loop(
                 f"Context after turn {turns}",
                 estimate_tokens(messages, effective_tools),
             )
+
+        if _goal_completed_by_tool:
+            if verbose:
+                fmt.completion(turns, "ok")
+                _show_state_summaries(
+                    thinking_state, todo_state, snapshot_state, goal_state
+                )
+            _write_turns()
+            return "Goal completed.", False
 
         # Proactive checkpoint (if enabled)
         if compaction_state is not None:
@@ -10744,6 +11151,10 @@ def repl_loop(
     trace_dir: str | None = None,
     metaskills_policy: str = "local",
     enabled_metaskills: set | None = None,
+    repair_truncated_args: bool = True,
+    scavenge_content_calls: bool = True,
+    storm_breaker_enabled: bool = True,
+    session: object | None = None,
 ):
     """Interactive read-eval-print loop."""
     from prompt_toolkit import PromptSession
@@ -10973,6 +11384,10 @@ def repl_loop(
         turn_offset=turn_offset,
         metaskills_policy=metaskills_policy,
         enabled_metaskills=enabled_metaskills,
+        repair_truncated_args=repair_truncated_args,
+        scavenge_content_calls=scavenge_content_calls,
+        storm_breaker_enabled=storm_breaker_enabled,
+        session=session,
     )
 
     ctx = InputContext(

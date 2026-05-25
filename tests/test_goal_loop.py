@@ -583,6 +583,34 @@ def test_goal_launch_complete_via_complete_goal_exits_cleanly(tmp_path, monkeypa
     assert not any("[goal budget limit]" in c for c in contents)
 
 
+def test_goal_launch_complete_goal_tool_call_exits_without_followup(
+    tmp_path, monkeypatch
+):
+    """A real complete_goal tool result ends the loop immediately."""
+    llm = _ScriptedLLM([_msg(tool_calls=[_tool_call("complete_goal")])])
+    llm.tail_answer = "(should not be reached)"
+    monkeypatch.setattr(agent, "call_llm", llm)
+
+    gs = GoalState()
+    gs.create("ship it")
+
+    messages = [
+        {"role": "user", "content": gs.start_prompt(), "_swival_synthetic": True}
+    ]
+    answer, exhausted = agent.run_agent_loop(
+        messages,
+        [],
+        **_build_loop_kwargs(tmp_path, gs, max_turns=8),
+        goal_launch_turn=True,
+    )
+    assert answer == "Goal completed."
+    assert exhausted is False
+    assert llm.calls == 1
+    assert gs.current.status == GoalStatus.COMPLETE
+    assert gs.completed_count == 1
+    assert [m["role"] for m in messages].count("tool") == 1
+
+
 # ---------------------------------------------------------------------------
 # GoalState.start_prompt() shape
 # ---------------------------------------------------------------------------

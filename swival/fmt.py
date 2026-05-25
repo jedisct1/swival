@@ -594,6 +594,31 @@ def tool_repair(name: str, repairs: list[dict]) -> None:
         _console.print(line)
 
 
+def truncation_repair(tool_name: str, notes: list[str]) -> None:
+    line = Text()
+    line.append(f"  ~ {tool_name}", style="bold yellow")
+    detail = "; ".join(notes) if notes else "repaired truncated args"
+    line.append(f"  truncation repair: {detail}", style="yellow")
+    _console.print(line)
+
+
+def scavenged_call(tool_name: str, source: str) -> None:
+    line = Text()
+    line.append(f"  + {tool_name}", style="bold cyan")
+    line.append(f"  scavenged from {source}", style="cyan")
+    _console.print(line)
+
+
+def storm_suppression(tool_name: str, count: int, reason: str) -> None:
+    line = Text()
+    line.append("  ⚠ Storm guard: ", style="bold yellow")
+    line.append(
+        f"suppressed {tool_name} (call #{count}). {reason}",
+        style="yellow",
+    )
+    _console.print(line)
+
+
 def guardrail(tool_name: str, count: int, error: str) -> None:
     line = Text()
     line.append("  \u26a0 Guardrail: ", style="bold yellow")

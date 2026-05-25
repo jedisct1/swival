@@ -122,7 +122,7 @@ def test_guardrail_escalates_on_repeated_identical_errors(tmp_path, monkeypatch)
         ),
     )
 
-    args = _base_args(tmp_path)
+    args = _base_args(tmp_path, storm_breaker=False)
     monkeypatch.setattr(sys, "argv", ["agent", "test guardrails"])
     monkeypatch.setattr("argparse.ArgumentParser.parse_args", lambda self: args)
 

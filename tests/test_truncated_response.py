@@ -136,10 +136,23 @@ def test_classify_text_only_length_returns_none():
     assert _classify_tool_call_truncation(msg, "length") is None
 
 
-def test_classify_length_with_tool_calls():
+def test_classify_length_with_parseable_tool_calls():
+    """Parseable tool-call args + finish_reason='length' are allowed through.
+
+    The structural-repair pass upstream may have just patched a partial
+    JSON tail; rejecting a parseable call would discard recoverable work.
+    """
     from swival.agent import _classify_tool_call_truncation
 
     msg = _make_message(tool_calls=[_make_tool_call(arguments='{"a":1}')])
+    assert _classify_tool_call_truncation(msg, "length") is None
+
+
+def test_classify_length_with_malformed_tool_calls():
+    """Malformed args under finish_reason='length' still trip the discard path."""
+    from swival.agent import _classify_tool_call_truncation
+
+    msg = _make_message(tool_calls=[_make_tool_call(arguments="{")])
     assert _classify_tool_call_truncation(msg, "length") == "length"
 
 
@@ -240,7 +253,7 @@ def _run_with_truncation(
     monkeypatch.setattr(agent, "call_llm", fake_call_llm)
     monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
 
-    args = _base_args(tmp_path)
+    args = _base_args(tmp_path, repair_truncated_args=False)
     monkeypatch.setattr(sys, "argv", ["agent", "q"])
     monkeypatch.setattr("argparse.ArgumentParser.parse_args", lambda self: args)
 

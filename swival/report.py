@@ -50,6 +50,9 @@ class ReportCollector:
             "command_policy_approvals": 0,
             "untrusted_inputs": 0,
         }
+        self.truncation_repairs = 0
+        self.scavenged_calls = 0
+        self.stormed_calls = 0
 
     def record_goal_event(self, action: str, goal_payload: dict | None) -> None:
         """Log goal lifecycle events (created, replaced, paused, resumed,
@@ -152,6 +155,67 @@ class ReportCollector:
         self.guardrail_interventions += 1
         self.events.append(
             {"turn": turn, "type": "guardrail", "tool": tool, "level": level}
+        )
+
+    def record_truncation_repair(
+        self,
+        turn: int,
+        name: str,
+        notes: list[str] | None = None,
+        *,
+        original_length: int = 0,
+        original_preview: str | None = None,
+        repaired_length: int = 0,
+    ) -> None:
+        """Log a successful structural repair of a truncated tool-call payload."""
+        self.truncation_repairs += 1
+        event: dict = {
+            "turn": turn,
+            "type": "truncation_repair",
+            "name": name,
+            "original_length": original_length,
+            "repaired_length": repaired_length,
+        }
+        if notes:
+            event["notes"] = list(notes)
+        if original_preview is not None:
+            event["original_preview"] = original_preview
+        self.events.append(event)
+
+    def record_scavenged_call(
+        self,
+        turn: int,
+        name: str,
+        source: str,
+    ) -> None:
+        """Log a tool call recovered from the message content channel."""
+        self.scavenged_calls += 1
+        self.events.append(
+            {
+                "turn": turn,
+                "type": "scavenged_call",
+                "name": name,
+                "source": source,
+            }
+        )
+
+    def record_storm_suppression(
+        self,
+        turn: int,
+        name: str,
+        canonical_args_hash: str,
+        count: int,
+    ) -> None:
+        """Log a repeat-call suppression by the storm breaker."""
+        self.stormed_calls += 1
+        self.events.append(
+            {
+                "turn": turn,
+                "type": "storm_suppression",
+                "name": name,
+                "args_hash": canonical_args_hash,
+                "count": count,
+            }
         )
 
     def record_truncated_response(self, turn: int, reason: str | None = None):
@@ -307,6 +371,9 @@ class ReportCollector:
                 "turn_drops": self.turn_drops,
                 "guardrail_interventions": self.guardrail_interventions,
                 "truncated_responses": self.truncated_responses,
+                "truncation_repairs": self.truncation_repairs,
+                "scavenged_calls": self.scavenged_calls,
+                "stormed_calls": self.stormed_calls,
                 "llm_calls": self.llm_calls,
                 "total_llm_time_s": round(self.total_llm_time, 3),
                 **(

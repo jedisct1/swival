@@ -110,6 +110,10 @@ class Session:
         aws_profile: str | None = None,
         approved_buckets: set[str] | None = None,
         metaskills: str = "local",
+        repair_truncated_args: bool = True,
+        scavenge_content_calls: bool = True,
+        storm_breaker: bool = True,
+        flatten_mcp_schemas: bool = True,
     ):
         self.base_dir = base_dir
         self.scratch_dir = scratch_dir
@@ -178,6 +182,11 @@ class Session:
         self.aws_profile = aws_profile
         self.approved_buckets = approved_buckets
         self.metaskills = metaskills
+        self.repair_truncated_args = repair_truncated_args
+        self.scavenge_content_calls = scavenge_content_calls
+        self.storm_breaker = storm_breaker
+        self.flatten_mcp_schemas = flatten_mcp_schemas
+        self._mcp_flattened_schemas: dict[str, object] = {}
 
         # Streaming / cancellation hooks (set externally, e.g. by A2A server).
         # event_callback receives (kind, data) where kind is one of the
@@ -352,7 +361,11 @@ class Session:
         if self.mcp_servers:
             from .mcp_client import McpManager
 
-            self._mcp_manager = McpManager(self.mcp_servers, verbose=self.verbose)
+            self._mcp_manager = McpManager(
+                self.mcp_servers,
+                verbose=self.verbose,
+                flatten_schemas=self.flatten_mcp_schemas,
+            )
             self._mcp_manager.start()
             mcp_tools = self._mcp_manager.list_tools()
             if mcp_tools:
@@ -543,6 +556,10 @@ class Session:
             command_policy=self._command_policy,
             metaskills_policy=self._metaskills_policy,
             enabled_metaskills=set(self._metaskill_names or []),
+            repair_truncated_args=self.repair_truncated_args,
+            scavenge_content_calls=self.scavenge_content_calls,
+            storm_breaker_enabled=self.storm_breaker,
+            session=self,
         )
         if state.get("compaction_state") is not None:
             kwargs["compaction_state"] = state["compaction_state"]

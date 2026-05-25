@@ -113,6 +113,15 @@ CONFIG_KEYS: dict[str, type | tuple[type, ...]] = {
     "metaskills": str,
 }
 
+_EXPERIMENTAL_KEYS: frozenset[str] = frozenset(
+    {
+        "repair_truncated_args",
+        "scavenge_content_calls",
+        "storm_breaker",
+        "flatten_mcp_schemas",
+    }
+)
+
 _LIST_OF_STR_KEYS = {
     "allowed_dirs",
     "allowed_dirs_ro",
@@ -208,6 +217,10 @@ _ARGPARSE_DEFAULTS: dict[str, Any] = {
     "oneshot_commands": False,
     "trace_dir": None,
     "metaskills": "local",
+    "repair_truncated_args": True,
+    "scavenge_content_calls": True,
+    "storm_breaker": True,
+    "flatten_mcp_schemas": True,
 }
 
 
@@ -475,6 +488,7 @@ def _load_single(path: Path, label: str) -> dict:
     profiles = config.pop("profiles", None)
     active_profile = config.pop("active_profile", None)
     audit_section = config.pop("audit", None)
+    experimental_section = config.pop("experimental", None)
 
     # Strip unknown keys after warning (keep only known ones for downstream)
     _validate_config(config, label)
@@ -569,6 +583,23 @@ def _load_single(path: Path, label: str) -> dict:
                     f"{label}: 'audit.patch_max_turns' must be an integer >= 1"
                 )
         known["audit"] = audit_section
+
+    if experimental_section is not None:
+        if not isinstance(experimental_section, dict):
+            raise ConfigError(f"{label}: 'experimental' must be a table")
+        for key, value in experimental_section.items():
+            if key not in _EXPERIMENTAL_KEYS:
+                allowed = ", ".join(sorted(_EXPERIMENTAL_KEYS))
+                raise ConfigError(
+                    f"{label}: unknown key 'experimental.{key}'. "
+                    f"Allowed keys: {allowed}"
+                )
+            if not isinstance(value, bool):
+                raise ConfigError(
+                    f"{label}: 'experimental.{key}' expected bool, "
+                    f"got {type(value).__name__}"
+                )
+            known[key] = value
 
     return known
 
@@ -1103,6 +1134,10 @@ def args_to_session_kwargs(args, base_dir: str) -> dict:
         "lifecycle_fail_closed",
         "command_middleware",
         "trace_dir",
+        "repair_truncated_args",
+        "scavenge_content_calls",
+        "storm_breaker",
+        "flatten_mcp_schemas",
     ]
 
     kwargs: dict = {"base_dir": base_dir}

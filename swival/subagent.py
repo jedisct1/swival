@@ -34,6 +34,7 @@ SA_TEMPLATE_EXCLUDE = frozenset(
         "cancel_flag",
         "event_callback",
         "report",
+        "session",
     }
 )
 
