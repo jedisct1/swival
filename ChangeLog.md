@@ -2,6 +2,12 @@
 
 All notable user-facing changes to Swival.
 
+## 1.0.22
+
+- `/audit` now drives a live terminal UI on TTY runs.
+- `/audit` is more forgiving of weak models.
+- `/audit --resume` now recovers cleanly from a stale worktree directory that was left behind by a previous interrupted run, instead of refusing to start.
+
 ## 1.0.21
 
 - `/audit` severity is now anchored to a realistic threat model rather than worst-case framing.
