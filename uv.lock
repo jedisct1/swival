@@ -661,7 +661,7 @@ wheels = [
 
 [[package]]
 name = "google-genai"
-version = "2.4.0"
+version = "2.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -675,9 +675,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b6/91/15fff1b7c22dc0b5b44fa348f151379721353d06a3da22dbbe15bf2c4dd9/google_genai-2.4.0.tar.gz", hash = "sha256:3f8d4bd618be2801e805dc698726731a70f34b438ea25a6c92800eef5b1f513e", size = 552025, upload-time = "2026-05-18T00:25:14.556Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/dd/ec/6e49f50f5c70588d97c6ed25e0b8c18828bf4d58895f397b53a7522168a1/google_genai-2.6.0.tar.gz", hash = "sha256:7d4f777234002f2e94be499dbdfb43b506a6aca9dbbec13e61d3dc6ce640ffa7", size = 554809, upload-time = "2026-05-22T01:34:33.581Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ed/c8/1b49f6bb69dc7e291ba5d14926937bec4dffcc09ee875822636bd5ef3cf4/google_genai-2.4.0-py3-none-any.whl", hash = "sha256:48df1c44190b05b834fee9cffd360af6d6fd7f68164588e7ebd670fa34f71ee1", size = 818207, upload-time = "2026-05-18T00:25:12.426Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/9e/e8ba4e58a9d5daf42343f3ea1cb0efb721eba36a1d6624e9873d039a5c1e/google_genai-2.6.0-py3-none-any.whl", hash = "sha256:272b6f6320f5d355735241ad441f972af095ec80dc10cb075cb430d96721648a", size = 821003, upload-time = "2026-05-22T01:34:31.55Z" },
 ]
 
 [[package]]
@@ -811,15 +811,15 @@ wheels = [
 
 [[package]]
 name = "html-to-markdown"
-version = "3.5.0"
+version = "3.5.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/de/28/3384b4e8460ab3daa337f123fd1c93034023a539950051aa8b1d29734571/html_to_markdown-3.5.0.tar.gz", hash = "sha256:28b4944649581c8e5e1bb2bd97a1b5adf42d6ef364fbdc8e0df5c057699f3141", size = 4364222, upload-time = "2026-05-25T14:14:22.649Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/02/93/6368e3be8b7bc3ff48c71ea8d307408b66e9fe2ce2804473f943003c02ea/html_to_markdown-3.5.1.tar.gz", hash = "sha256:98f737218a5e98d99e04cdc05c1ab7689c61e19555e409cb04008673e0735f16", size = 4392867, upload-time = "2026-05-25T18:12:09.58Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4b/fc/31bbd5df2a00668ccbb54448302bd124e23f509f493785a3670fb6b1c34b/html_to_markdown-3.5.0-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:d101fc4c57191a411d241069c9dc8603e2045923ccc8f0fe2f675082d67282a7", size = 6084477, upload-time = "2026-05-25T14:14:18.882Z" },
-    { url = "https://files.pythonhosted.org/packages/3c/ef/ac19c0c5e0d87e482cf77299ea37b7d71753f59c86b9b82091eae164858e/html_to_markdown-3.5.0-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:b00eb81201827cad3243bcd2c3a847468635c564848cf49e215bc1a63138cb27", size = 5727524, upload-time = "2026-05-25T14:14:20.6Z" },
-    { url = "https://files.pythonhosted.org/packages/b9/31/5bb3fb83cee51e568b55078fb9f30820222b19545cad37092541c8bcb39c/html_to_markdown-3.5.0-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:fdf1df98a2c873c80c8b92a02b6c78dfe01ad3dc85d23711bf1626e71c5e17a6", size = 5880795, upload-time = "2026-05-25T14:14:24.472Z" },
-    { url = "https://files.pythonhosted.org/packages/49/1b/02befe619fdbd341fadc08896b0e43f156a29dce766f9309c42d3f12e481/html_to_markdown-3.5.0-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:2c446382923d7bc80b40ac82296a9826ec88656488d545b18f235bc99da5baf3", size = 6255459, upload-time = "2026-05-25T14:14:17.101Z" },
-    { url = "https://files.pythonhosted.org/packages/fc/3c/3a1cf0b85113f79923f096250e57952dc740a8ec58457706263b3dea86f1/html_to_markdown-3.5.0-cp310-abi3-win_amd64.whl", hash = "sha256:3df70b1bbde67b6f7ce921b215f0a7023f9beb7459963157eaa04dc84d509e8f", size = 6279460, upload-time = "2026-05-25T14:14:14.79Z" },
+    { url = "https://files.pythonhosted.org/packages/44/5e/48584de76bf29b61c03c7b4c471be551370a7d1a8d5a8d4b25ef5abc8c56/html_to_markdown-3.5.1-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:75d4ab92cdbc020f6a6a1bd417eda3cd841c61d923a51afee530238ba4eacce2", size = 6086085, upload-time = "2026-05-25T18:12:03.687Z" },
+    { url = "https://files.pythonhosted.org/packages/84/08/16ae777e572278c2ce4dc4791ccb5cd92c2a8d67a3ae40286f21a52f1d26/html_to_markdown-3.5.1-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:26ef5a00b01a875ca6eb9849c4fe66864bf42d29f14fa5671aa4524a5155aa25", size = 5728543, upload-time = "2026-05-25T18:11:59.257Z" },
+    { url = "https://files.pythonhosted.org/packages/73/7f/0c29b1f609f79fb9ce133d330c25a1ba3dd5f1a9503295be92def20d2316/html_to_markdown-3.5.1-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:4432d417759cdf4a246a270b11b41457c4d34b063a9821b94851a920970c3346", size = 5881499, upload-time = "2026-05-25T18:12:06.349Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/d2/71a10bfd643c1d95d22f7cfaeee6c9e18ce7f2e5a6c0881fa673487ac7c7/html_to_markdown-3.5.1-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:4a13b7fcd6e7aa94fa65543c8d235987390565c7b1c0a48939d2217a67c4e33d", size = 6255359, upload-time = "2026-05-25T18:11:56.759Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/2d/3e374df09f015b4766e590351dd081578b315f2f88e8ed81000c0ba929ef/html_to_markdown-3.5.1-cp310-abi3-win_amd64.whl", hash = "sha256:76f40e39bb1e9227c241c6596c36ac17b31713984b5a423e41e720df3e6ca386", size = 6280413, upload-time = "2026-05-25T18:12:00.99Z" },
 ]
 
 [[package]]
@@ -2011,7 +2011,7 @@ wheels = [
 
 [[package]]
 name = "swival"
-version = "1.0.22"
+version = "1.0.23"
 source = { editable = "." }
 dependencies = [
     { name = "boto3" },

@@ -2,6 +2,11 @@
 
 All notable user-facing changes to Swival.
 
+## 1.0.23
+
+- Swival now supports Google Enterprise Application Platform (GEAP) as a provider. Pass `--provider geap --gcp-project <id> --location <region> --model <gemini-model>` and Swival routes through Vertex AI under the hood, using your Google Cloud application-default credentials or a service account from `GOOGLE_APPLICATION_CREDENTIALS`.
+- The `/audit` live terminal UI now stays visible and updating through the verifier and patch-generation phases instead of going dark while a subagent runs, and the heartbeat line now shows the current turn number so long-running phases no longer look stalled.
+
 ## 1.0.22
 
 - `/audit` now drives a live terminal UI on TTY runs.
