@@ -13,7 +13,6 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import contextmanager
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -92,22 +91,6 @@ def _ui_warning(ui: "AuditUI | None", msg: str) -> None:
         target.warning(msg)
     else:
         fmt.warning(msg)
-
-
-@contextmanager
-def _ui_pause(ui: "AuditUI | None"):
-    """Stop the audit UI's live region for the duration of a child agent loop.
-
-    Audit-driven sub-agents write progress/diagnostics directly to the shared
-    stderr Rich console; without pausing the Live region they interleave with
-    its repaint and tear the display.
-    """
-    target = ui if ui is not None else _get_current_ui()
-    if target is None:
-        yield
-        return
-    with target.pause():
-        yield
 
 
 def _debug_log(event: str, **fields) -> None:
@@ -3119,8 +3102,7 @@ def _phase4c_reproduce(
             kw["event_callback"] = _on_event
 
         try:
-            with _ui_pause(ui):
-                answer, _exhausted = run_agent_loop(messages, ctx.tools, **kw)
+            answer, _exhausted = run_agent_loop(messages, ctx.tools, **kw)
         except (ConnectionError, TimeoutError, OSError) as e:
             raise _TransientVerifierError(str(e)) from e
         finally:
@@ -3192,8 +3174,7 @@ def _phase5_patch(
                     tracker.record_read(str(work_dir / rel))
 
             try:
-                with _ui_pause(ui):
-                    _answer, exhausted = run_agent_loop(messages, ctx.tools, **kw)
+                _answer, exhausted = run_agent_loop(messages, ctx.tools, **kw)
             except Exception as e:
                 _ui_info(ui, f"    patch: agent loop failed: {e}")
                 return PatchGenerationResult(
