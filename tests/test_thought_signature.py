@@ -487,6 +487,156 @@ class TestMsgToDictPreservesToolCallExtras:
         }
 
 
+class TestMsgToDictNormalizesToolCalls:
+    """_msg_to_dict reduces tool_calls to canonical shape at append time so
+    subsequent _canonicalize_tool_calls runs are no-ops within the active
+    user-turn. Without this, the previously in-flight assistant message would
+    be canonicalized for the first time on the next turn, mutating bytes
+    already sent upstream and breaking provider prompt caches."""
+
+    def _fake_msg(self, tool_calls):
+        class FakeMsg:
+            def __init__(self):
+                self.role = "assistant"
+                self.content = None
+                self.tool_calls = tool_calls
+
+            def model_dump(self, exclude_none=False):
+                return {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": tool_calls,
+                }
+
+        return FakeMsg()
+
+    def test_strips_index_and_provider_specific_fields(self):
+        msg = self._fake_msg(
+            [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "t", "arguments": "{}"},
+                    "index": 0,
+                    "provider_specific_fields": {"something": "internal"},
+                }
+            ]
+        )
+        d = _msg_to_dict(msg)
+        tc = d["tool_calls"][0]
+        assert "index" not in tc
+        assert "provider_specific_fields" not in tc
+        assert tc == {
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "t", "arguments": "{}"},
+        }
+
+    def test_preserves_extra_content_for_gemini_replay(self):
+        msg = self._fake_msg(
+            [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "t", "arguments": "{}"},
+                    "index": 0,
+                    "extra_content": {"google": {"thought_signature": "sig"}},
+                }
+            ]
+        )
+        d = _msg_to_dict(msg)
+        assert d["tool_calls"][0]["extra_content"] == {
+            "google": {"thought_signature": "sig"}
+        }
+        assert "index" not in d["tool_calls"][0]
+
+    def test_canonicalize_is_noop_after_msg_to_dict_in_current_turn(self):
+        """The whole point: once _msg_to_dict has normalized a freshly
+        emitted assistant message, the next turn's _canonicalize_tool_calls
+        pass must not mutate it (as long as it remains within the current
+        user-turn). That is what keeps the serialized prefix byte-stable
+        across turn boundaries."""
+        import json
+
+        msg = self._fake_msg(
+            [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "t", "arguments": "{}"},
+                    "index": 0,
+                    "provider_specific_fields": {"some": "extra"},
+                    "extra_content": {"google": {"thought_signature": "sig"}},
+                }
+            ]
+        )
+        d = _msg_to_dict(msg)
+
+        messages = [
+            {"role": "user", "content": "u"},
+            d,
+            {"role": "tool", "tool_call_id": "call_1", "content": "ok"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_later",
+                        "type": "function",
+                        "function": {"name": "t2", "arguments": "{}"},
+                    }
+                ],
+            },
+        ]
+        before = json.dumps(messages, sort_keys=True)
+        _canonicalize_tool_calls(messages)
+        after = json.dumps(messages, sort_keys=True)
+        assert before == after
+
+    def test_namespace_function_attribute(self):
+        """When tool_calls come through as objects with a function namespace
+        rather than a dict, normalization still produces a clean dict."""
+        tc = {
+            "id": "call_ns",
+            "type": "function",
+            "function": types.SimpleNamespace(name="tool_ns", arguments="{}"),
+        }
+        msg = self._fake_msg([tc])
+        d = _msg_to_dict(msg)
+        assert d["tool_calls"][0] == {
+            "id": "call_ns",
+            "type": "function",
+            "function": {"name": "tool_ns", "arguments": "{}"},
+        }
+
+    def test_namespace_tool_call_entry(self):
+        """When the whole tool_calls entry is a namespace (no model_dump
+        provider path), normalization still strips streaming extras and
+        preserves extra_content."""
+        tc_ns = types.SimpleNamespace(
+            id="call_ns",
+            type="function",
+            function=types.SimpleNamespace(name="tool", arguments="{}"),
+            index=0,
+            provider_specific_fields={"some": "extra"},
+            extra_content={"google": {"thought_signature": "sig"}},
+        )
+
+        class NoModelDumpMsg:
+            def __init__(self):
+                self.role = "assistant"
+                self.content = None
+                self.tool_calls = [tc_ns]
+
+        d = _msg_to_dict(NoModelDumpMsg())
+        assert d["tool_calls"][0] == {
+            "id": "call_ns",
+            "type": "function",
+            "function": {"name": "tool", "arguments": "{}"},
+            "extra_content": {"google": {"thought_signature": "sig"}},
+        }
+
+
 class TestFilterPreservesToolCallExtras:
     def test_dict_tool_call_extra_content(self):
         """Filter serializer preserves extra_content on dict tool calls."""

@@ -1350,6 +1350,13 @@ def _msg_to_dict(msg) -> dict:
     providers reject as extra inputs. Keeps reasoning_content on tool-calling
     assistant messages so reasoning-content-aware providers (Xiaomi MiMo,
     Moonshot/Kimi) get the field they require on the next turn.
+
+    Each tool_calls entry is also reduced to its canonical shape — preserving
+    only id, type, function.{name, arguments}, and extra_content. This matches
+    what _canonicalize_tool_calls would later strip and keeps the message
+    byte-stable across turns within the same user-turn, so provider prompt
+    caches are not invalidated on every LLM call. extra_content is preserved
+    because providers like Gemini require it for thought_signature replay.
     """
     d = (
         msg.model_dump(exclude_none=True)
@@ -1361,7 +1368,43 @@ def _msg_to_dict(msg) -> dict:
         if key == "reasoning_content" and keep_reasoning:
             continue
         d.pop(key, None)
+
+    tcs = d.get("tool_calls")
+    if isinstance(tcs, list):
+        d["tool_calls"] = [_normalize_tool_call_entry(tc) for tc in tcs]
     return d
+
+
+def _normalize_tool_call_entry(tc):
+    """Reduce one tool_calls entry to canonical dict shape.
+
+    Handles both dict and namespace-style inputs so the result is always a
+    plain dict containing only id, type, function.{name, arguments}, and
+    extra_content when present. Non-mapping, non-attribute values are passed
+    through untouched as a defensive fallback.
+    """
+    if tc is None or (not isinstance(tc, dict) and not hasattr(tc, "function")):
+        return tc
+    fn = _msg_get(tc, "function") or {}
+    name = (
+        _msg_get(fn, "name", "")
+        if (isinstance(fn, dict) or hasattr(fn, "name"))
+        else ""
+    )
+    arguments = (
+        _msg_get(fn, "arguments", "")
+        if (isinstance(fn, dict) or hasattr(fn, "arguments"))
+        else ""
+    ) or ""
+    entry = {
+        "id": _msg_get(tc, "id", "") or "",
+        "type": _msg_get(tc, "type", "function") or "function",
+        "function": {"name": name or "", "arguments": arguments},
+    }
+    extra = _msg_get(tc, "extra_content")
+    if extra is not None:
+        entry["extra_content"] = extra
+    return entry
 
 
 def _safe_subpath(base_dir: str, target: Path, label: str) -> Path:
