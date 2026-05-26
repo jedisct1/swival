@@ -1,0 +1,31 @@
+name: Zizmor
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+jobs:
+  zizmor:
+    name: Static analysis of workflows
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write  # upload SARIF results to GitHub code scanning
+      contents: read  # read repository contents to audit workflows
+      actions: read  # read workflow definitions for analysis
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d # v0.5.6
