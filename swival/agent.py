@@ -23,6 +23,10 @@ import urllib.error
 import warnings
 from pathlib import Path
 
+# LiteLLM's ChatGPT Responses transformer falls back to model_construct() when
+# strict validation of a response.completed event fails, which skips the usage
+# validator and leaves a dict in the ResponseAPIUsage field. The next model_dump
+# then complains. Tracked upstream as BerriAI/litellm#26784.
 warnings.filterwarnings(
     "ignore",
     message=r"Pydantic serializer warnings",
