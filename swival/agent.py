@@ -10048,6 +10048,8 @@ def _invoke_agent_turn(
             )
         return None, False, True
     except AgentError as e:
+        if not ctx.interactive:
+            raise
         fmt.error(str(e))
         if (
             content is not None
@@ -10200,6 +10202,17 @@ def execute_input(
                 return StepResult(
                     kind="info", text="usage: !! <command>", is_error=True
                 )
+            # The REPL trusts the human at the keyboard, so `!!` always runs
+            # there. For programmatic dispatch (Session/ACP) it must respect the
+            # command policy rather than be an unconditional shell escape hatch.
+            if not ctx.interactive:
+                policy = ctx.loop_kwargs.get("command_policy")
+                if policy is not None and not policy.shell_allowed:
+                    return StepResult(
+                        kind="info",
+                        text="error: !! is disabled by the command policy.",
+                        is_error=True,
+                    )
             returncode, output = _run_quick_shell(cmd_str, ctx.base_dir)
             fmt.quick_shell(cmd_str, returncode, output)
             return StepResult(kind="state_change")

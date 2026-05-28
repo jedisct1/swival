@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import copy
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -528,6 +529,9 @@ class Session:
             "messages": self._make_initial_messages(system_content),
             "compaction_state": CompactionState() if self.proactive_summaries else None,
             "resolved_system_content": system_content,
+            # Shared turn budget so a /extend issued via parse_commands persists
+            # across subsequent ask() calls, mirroring the REPL.
+            "turn_state": {"max_turns": self.max_turns, "turns_used": 0},
         }
 
     def _build_loop_kwargs(self, state: dict) -> dict:
@@ -686,11 +690,116 @@ class Session:
             report=report_dict,
         )
 
-    def ask(self, question: str) -> Result:
+    def _make_input_context(self, state: dict) -> "object":
+        """Build an InputContext over the conversation state for command dispatch.
+
+        Used by ``ask(parse_commands=True)`` so slash/bang commands run through
+        the same executor the REPL and one-shot paths use. The shared
+        ``turn_state`` (created in ``_make_per_run_state``) carries the turn
+        budget, so the per-call ``max_turns`` copy is dropped from the loop
+        kwargs, matching how the REPL wires ``execute_input``.
+        """
+        from .input_dispatch import InputContext
+
+        loop_kwargs = self._build_loop_kwargs(state)
+        # The agent-turn command path supplies max_turns from the shared
+        # turn_state, so drop the per-call copy to avoid a duplicate kwarg.
+        loop_kwargs.pop("max_turns", None)
+        turn_state = state["turn_state"]
+        loop_kwargs["turn_state"] = turn_state
+        return InputContext(
+            messages=state["messages"],
+            tools=self._tools,
+            base_dir=self.base_dir,
+            turn_state=turn_state,
+            interactive=False,
+            thinking_state=state["thinking_state"],
+            todo_state=state["todo_state"],
+            snapshot_state=state["snapshot_state"],
+            goal_state=state["goal_state"],
+            file_tracker=state["file_tracker"],
+            no_history=not self.history,
+            continue_here=self.continue_here,
+            verbose=self.verbose,
+            loop_kwargs=loop_kwargs,
+            mcp_manager=self._mcp_manager,
+            a2a_manager=self._a2a_manager,
+            subagent_manager=loop_kwargs.get("subagent_manager"),
+            extra_write_roots=self._allowed_dir_paths,
+            skill_read_roots=state["skill_read_roots"],
+            skills_catalog=self._skills_catalog,
+            trace_dir=self.trace_dir,
+        )
+
+    @staticmethod
+    @contextmanager
+    def _transcript_rollback(messages: list) -> "Iterator[None]":
+        """Restore *messages* to its entry state if the body raises.
+
+        Keeps a session usable after a failed turn by reverting in-place
+        mutations (appends, compaction, system-prompt truncation). The shallow
+        per-message copy mirrors the message objects, not their nested content.
+        """
+        snapshot = [copy.copy(m) for m in messages]
+        try:
+            yield
+        except BaseException:
+            messages[:] = snapshot
+            raise
+
+    def _run_command(self, parsed: "object", state: dict) -> Result:
+        """Dispatch a parsed slash/bang command and adapt the StepResult."""
+        from .agent import execute_input
+
+        ctx = self._make_input_context(state)
+        messages = state["messages"]
+        # Match ask()'s failure contract: propagate (e.g. AgentError to ACP) but
+        # leave the transcript usable.
+        with self._transcript_rollback(messages):
+            try:
+                step = execute_input(parsed, ctx, mode="repl")
+            finally:
+                if ctx.subagent_manager is not None:
+                    ctx.subagent_manager.shutdown()
+
+        # Agent-turn commands stream their answer through event_callback while
+        # the loop runs. Info and state-change commands produce text only here,
+        # so surface it to streaming clients (e.g. ACP) as a final chunk.
+        if (
+            step.text is not None
+            and step.kind in ("info", "state_change")
+            and self.event_callback is not None
+        ):
+            from .a2a_types import EVENT_TEXT_CHUNK
+
+            self.event_callback(EVENT_TEXT_CHUNK, {"text": step.text})
+
+        if self.trace_dir and messages:
+            if self._trace_session_id is None:
+                import uuid
+
+                self._trace_session_id = str(uuid.uuid4())
+            self._write_trace(messages, parsed.raw, session_id=self._trace_session_id)
+
+        return Result(
+            answer=step.text,
+            exhausted=step.exhausted,
+            messages=copy.deepcopy(messages),
+            report=None,
+        )
+
+    def ask(self, question: str, *, parse_commands: bool = False) -> Result:
         """Conversational: share context across questions (like the REPL).
 
         On success, the assistant's reply is appended to the shared message
         history so subsequent calls build on prior context.
+
+        When ``parse_commands`` is true, an input that begins with a slash
+        command (``/help``), a custom bang command (``!name``), or the quick
+        shell prefix (``!! cmd``) is routed through the shared command executor
+        instead of being sent to the model verbatim. This is what lets editors
+        speaking ACP use the same commands as the REPL. Plain prompts are
+        unaffected and follow the normal agent-loop path below.
 
         On failure (any exception from the agent loop), the message list is
         rolled back to its exact state before this call — including reverting
@@ -716,21 +825,32 @@ class Session:
             self._conv_state = self._make_per_run_state(system_content=system_content)
 
         state = self._conv_state
+
+        if parse_commands:
+            from .input_dispatch import parse_input_line
+
+            parsed = parse_input_line(question)
+            if parsed.is_command or parsed.is_custom_command:
+                return self._run_command(parsed, state)
+
         messages = state["messages"]
-        snapshot = [copy.copy(m) for m in messages]
-        messages.append({"role": "user", "content": question})
+        with self._transcript_rollback(messages):
+            messages.append({"role": "user", "content": question})
 
-        loop_kwargs = self._build_loop_kwargs(state)
-        _subagent_mgr = loop_kwargs.get("subagent_manager")
+            loop_kwargs = self._build_loop_kwargs(state)
+            _subagent_mgr = loop_kwargs.get("subagent_manager")
+            # Honor a turn budget extended via a /extend command (kept in the
+            # shared turn_state). Set after _build_loop_kwargs so subagents,
+            # whose template is captured inside it, keep their own budget.
+            turn_state = state["turn_state"]
+            loop_kwargs["max_turns"] = turn_state["max_turns"]
+            loop_kwargs["turn_state"] = turn_state
 
-        try:
-            answer, exhausted = run_agent_loop(messages, self._tools, **loop_kwargs)
-        except BaseException:
-            messages[:] = snapshot
-            raise
-        finally:
-            if _subagent_mgr is not None:
-                _subagent_mgr.shutdown()
+            try:
+                answer, exhausted = run_agent_loop(messages, self._tools, **loop_kwargs)
+            finally:
+                if _subagent_mgr is not None:
+                    _subagent_mgr.shutdown()
 
         if self.history and answer:
             append_history(self.base_dir, question, answer, diagnostics=self.verbose)

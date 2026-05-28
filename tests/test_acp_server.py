@@ -76,7 +76,8 @@ class _FakeSession:
         self._delay_sec = delay_sec
         self._honor_cancel = honor_cancel
 
-    def ask(self, prompt: str) -> Result:
+    def ask(self, prompt: str, *, parse_commands: bool = False) -> Result:
+        self.last_parse_commands = parse_commands
         if self._raise is not None:
             raise self._raise
         cb = self.event_callback
@@ -467,6 +468,24 @@ class TestSessionPrompt:
             finish_msg["params"]["update"]["content"][0]["content"]["text"]
             == "file body"
         )
+
+    def test_prompt_enables_command_parsing(self, server, fake_session_cls, tmp_path):
+        sid = self._setup_session(server, tmp_path)
+        fake = fake_session_cls["last"]
+        fake.script([], answer="help text")
+
+        _attach_capture(server)
+
+        async def drive():
+            await server._handle_session_prompt(
+                7,
+                {"sessionId": sid, "prompt": [{"type": "text", "text": "/help"}]},
+            )
+            await server._sessions[sid].in_flight
+
+        _run(drive())
+
+        assert fake.last_parse_commands is True
 
     def test_orphan_finish_synthesises_announce(
         self, server, fake_session_cls, tmp_path

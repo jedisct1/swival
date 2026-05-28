@@ -33,6 +33,11 @@ class InputContext:
     verbose: bool
     # Provider / loop kwargs passed through to run_agent_loop.
     loop_kwargs: dict
+    # True for the interactive REPL (a human at the keyboard); False for
+    # programmatic dispatch (Session/ACP). When False, agent-turn command
+    # failures propagate as exceptions instead of being printed and swallowed,
+    # and the `!!` quick shell respects the command policy.
+    interactive: bool = True
     # Goal state — defaulted so existing test fixtures don't need updating.
     goal_state: "GoalState | None" = None
     # Profile state.

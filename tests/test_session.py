@@ -152,6 +152,85 @@ class TestSessionAsk:
         # Second ask should have more messages (shared context)
         assert len(r2.messages) > len(r1.messages)
 
+    def test_ask_info_command_returns_command_text(self, tmp_path, monkeypatch):
+        def boom_llm(*args, **kwargs):
+            raise AssertionError("info commands must not call the model")
+
+        monkeypatch.setattr(agent, "call_llm", boom_llm)
+        monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+
+        s = Session(base_dir=str(tmp_path), history=False)
+        r = s.ask("/help", parse_commands=True)
+
+        assert r.answer is not None
+        assert "/help" in r.answer
+        assert r.exhausted is False
+
+    def test_ask_info_command_emits_event(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+
+        events: list[tuple[str, dict]] = []
+        s = Session(base_dir=str(tmp_path), history=False)
+        s.event_callback = lambda kind, data: events.append((kind, data))
+
+        s.ask("/help", parse_commands=True)
+
+        assert any(
+            kind == "text_chunk" and "/help" in data["text"] for kind, data in events
+        )
+
+    def test_ask_extend_persists_across_calls(self, tmp_path, monkeypatch):
+        def boom_llm(*args, **kwargs):
+            raise AssertionError("state/info commands must not call the model")
+
+        monkeypatch.setattr(agent, "call_llm", boom_llm)
+        monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+
+        s = Session(base_dir=str(tmp_path), history=False, max_turns=10)
+        s.ask("/extend 50", parse_commands=True)
+        r = s.ask("/status", parse_commands=True)
+
+        # /status reports turns as "used / max"; the extended budget must persist.
+        assert "/ 50" in r.answer
+
+    def test_ask_agent_command_raises_on_error(self, tmp_path, monkeypatch):
+        def failing_llm(*args, **kwargs):
+            raise AgentError("backend exploded")
+
+        monkeypatch.setattr(agent, "call_llm", failing_llm)
+        monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+
+        s = Session(base_dir=str(tmp_path), history=False)
+
+        with pytest.raises(AgentError):
+            s.ask("/learn", parse_commands=True)
+
+        # Transcript is rolled back: no leftover prompt from the failed command.
+        msgs = s._conv_state["messages"]
+        assert all(m.get("role") != "user" for m in msgs)
+
+    def test_ask_quick_shell_gated_by_command_policy(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+
+        s = Session(base_dir=str(tmp_path), history=False, commands="none")
+        r = s.ask("!! echo hi", parse_commands=True)
+
+        assert r.answer is not None
+        assert "disabled by the command policy" in r.answer
+
+    def test_ask_command_ignored_without_flag(self, tmp_path, monkeypatch):
+        def counting_llm(*args, **kwargs):
+            return _make_message(content="treated as prompt"), "stop"
+
+        monkeypatch.setattr(agent, "call_llm", counting_llm)
+        monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+
+        s = Session(base_dir=str(tmp_path), history=False)
+        r = s.ask("/help")
+
+        # Without parse_commands, "/help" is an ordinary prompt sent to the model.
+        assert r.answer == "treated as prompt"
+
     def test_reset_clears_conversation(self, tmp_path, monkeypatch):
         call_count = 0
 

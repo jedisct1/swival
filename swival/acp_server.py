@@ -7,7 +7,9 @@ expose each open conversation as an ACP session backed by a swival Session.
 v1 surface (intentionally narrow):
   - initialize / authenticate (no-op)
   - session/new
-  - session/prompt (request-response, returns when the turn ends)
+  - session/prompt (request-response, returns when the turn ends; a prompt
+    that begins with a slash or bang command runs that command, the same as
+    the REPL would)
   - session/cancel (notification)
   - session/update (agent->client notifications: text and tool calls)
 
@@ -406,7 +408,7 @@ class AcpServer:
 
         def run_blocking() -> None:
             try:
-                result = sess.session.ask(prompt_text)
+                result = sess.session.ask(prompt_text, parse_commands=True)
                 result_holder["result"] = result
             except BaseException as exc:
                 result_holder["error"] = exc
