@@ -22,7 +22,7 @@ _UNSET = object()  # Sentinel for "not set by CLI"
 
 # --- Schema ---
 
-SANDBOX_MODES = ("builtin", "agentfs")
+SANDBOX_MODES = ("builtin", "agentfs", "nono")
 REASONING_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh", "default")
 
 PROFILE_KEYS: set[str] = {
@@ -74,6 +74,13 @@ CONFIG_KEYS: dict[str, type | tuple[type, ...]] = {
     "sandbox_session": str,
     "sandbox_strict_read": bool,
     "sandbox_auto_session": bool,
+    "nono_profile": str,
+    "nono_rollback": bool,
+    "nono_block_net": bool,
+    "nono_allow_domain": list,
+    "nono_network_profile": str,
+    "nono_credential": list,
+    "nono_audit_integrity": bool,
     "no_read_guard": bool,
     "no_instructions": bool,
     "no_skills": bool,
@@ -131,6 +138,8 @@ _LIST_OF_STR_KEYS = {
     "allowed_dirs_ro",
     "skills_dir",
     "approved_buckets",
+    "nono_allow_domain",
+    "nono_credential",
 }
 
 # Config key -> argparse dest (only where they differ)
@@ -177,6 +186,13 @@ _ARGPARSE_DEFAULTS: dict[str, Any] = {
     "sandbox_session": None,
     "sandbox_strict_read": False,
     "no_sandbox_auto_session": False,
+    "nono_profile": None,
+    "nono_rollback": False,
+    "nono_block_net": False,
+    "nono_allow_domain": [],
+    "nono_network_profile": None,
+    "nono_credential": [],
+    "nono_audit_integrity": False,
     "no_read_guard": False,
     "no_instructions": False,
     "no_skills": False,
@@ -1045,12 +1061,21 @@ def apply_config_to_args(args: argparse.Namespace, config: dict) -> None:
     replaces them with hardcoded defaults from _ARGPARSE_DEFAULTS.
     """
     # Dests that use None as sentinel (argparse append actions can't use _UNSET)
-    _NONE_SENTINEL_DESTS = {"add_dir", "add_dir_ro", "skills_dir"}
+    _NONE_SENTINEL_DESTS = {
+        "add_dir",
+        "add_dir_ro",
+        "skills_dir",
+        "nono_allow_domain",
+        "nono_credential",
+    }
 
     def _is_unset(dest: str) -> bool:
         val = getattr(args, dest, _UNSET)
         if dest in _NONE_SENTINEL_DESTS:
-            return val is None
+            # None is the live argparse sentinel for append actions; _UNSET
+            # only appears when the attribute is missing entirely (hand-built
+            # namespaces), which also counts as unset.
+            return val is None or val is _UNSET
         return val is _UNSET
 
     # Special handling for color: single config key controls mutual-exclusive pair
@@ -1122,6 +1147,13 @@ def args_to_session_kwargs(args, base_dir: str) -> dict:
         "sandbox",
         "sandbox_session",
         "sandbox_strict_read",
+        "nono_profile",
+        "nono_rollback",
+        "nono_block_net",
+        "nono_allow_domain",
+        "nono_network_profile",
+        "nono_credential",
+        "nono_audit_integrity",
         "memory_full",
         "config_dir",
         "proactive_summaries",
@@ -1376,10 +1408,18 @@ def generate_config(
         "# no_system_prompt = false",
         "",
         "# --- Sandbox / security ---",
-        '# sandbox = "builtin"             # "builtin" | "agentfs"',
+        '# sandbox = "builtin"             # "builtin" | "agentfs" | "nono"',
         '# sandbox_session = "my-session"  # agentfs session ID (optional)',
         "# sandbox_strict_read = false",
         "# sandbox_auto_session = true",
+        '# nono options apply when sandbox is "nono" (requires the nono binary):',
+        '# nono_profile = "claude-code"    # named nono profile',
+        "# nono_rollback = false           # enable atomic rollback snapshots",
+        "# nono_block_net = false          # block all outbound network",
+        '# nono_allow_domain = ["api.openai.com"]  # proxy allowlist (repeatable)',
+        '# nono_network_profile = "developer"      # preset domain group',
+        '# nono_credential = ["anthropic"]         # inject credentials via proxy (repeatable)',
+        "# nono_audit_integrity = false    # filesystem-state hashing in the audit log",
         '# files = "some"                  # "some" (default, workspace) | "all" (unrestricted) | "none" (.swival/ only)',
         '# commands = "all"                # "all" (default) | "none" | "ask" | ["ls", "git", "python3"]',
         "# yolo = false                    # shorthand for files = all + commands = all",

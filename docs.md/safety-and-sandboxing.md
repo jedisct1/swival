@@ -2,7 +2,7 @@
 
 Swival's built-in sandbox is implemented at the application layer. It validates paths and enforces command policy in Python, but it is not an operating-system isolation boundary. You should treat it as a strong guardrail for normal use, not as a hard security perimeter against untrusted or adversarial models.
 
-If you need stronger isolation, Swival has a built-in AgentFS integration that enforces filesystem boundaries at the OS level.
+If you need stronger isolation, Swival integrates with two OS-level sandbox runtimes: AgentFS (copy-on-write filesystem overlay) and nono (Landlock/Seatbelt capability enforcement with optional network filtering and rollback).
 
 ## AgentFS Sandbox Mode
 
@@ -50,6 +50,61 @@ You can also combine `sandbox-exec` with AgentFS when you want additional kernel
 sandbox-exec -p '(version 1)(allow default)(deny network*)' \
     swival --sandbox agentfs "task" --yolo
 ```
+
+## nono Sandbox Mode
+
+Pass `--sandbox nono` to run Swival inside a [nono](https://nono.sh) sandbox. Like the AgentFS path, Swival re-executes itself early in startup — this time as `nono run -- swival ...`. nono enforces filesystem and network boundaries at the kernel level, using Landlock on Linux and Seatbelt on macOS. The supervising parent process stays outside the sandbox and provides the audit trail, network proxy, and rollback machinery; the child Swival runs with the enforced capability set.
+
+```sh
+swival --sandbox nono "Refactor the auth module" --yolo
+```
+
+The base directory is granted read+write (so the agent can edit your project), and each `--add-dir` path becomes an additional grant. nono's default system-path allowances cover the Python interpreter and standard libraries. If Swival is installed under an unusual prefix that nono does not allow by default, add that directory with `--add-dir` so the interpreter stays reachable.
+
+Unlike AgentFS, nono enforces by path rather than overlaying the working directory, so writes land on your real files. Enable rollback snapshots when you want a safety net:
+
+```sh
+swival --sandbox nono --nono-rollback "Try a risky migration" --yolo
+```
+
+After the run, Swival prints a hint for reviewing or undoing the changes (unless `--quiet` is set):
+
+```text
+  Review changes: nono rollback
+```
+
+nono can also filter the agent's network access. Block it entirely, or restrict it to an allowlist:
+
+```sh
+swival --sandbox nono --nono-block-net "Offline analysis" --yolo
+swival --sandbox nono --nono-allow-domain api.openai.com --nono-allow-domain github.com "task" --yolo
+```
+
+The full set of nono knobs:
+
+| Flag                            | Effect                                                         |
+| ------------------------------- | -------------------------------------------------------------- |
+| `--nono-profile <name>`         | Apply a named nono profile                                     |
+| `--nono-rollback`               | Take atomic rollback snapshots for the session                 |
+| `--nono-block-net`              | Deny all outbound network                                      |
+| `--nono-allow-domain <host>`    | Add a domain to the proxy allowlist (repeatable)               |
+| `--nono-network-profile <name>` | Apply a preset domain group                                    |
+| `--nono-credential <service>`   | Inject credentials for a service via nono's proxy (repeatable) |
+| `--nono-audit-integrity`        | Add filesystem-state hashing to the audit log                  |
+
+All of these are accepted only with `--sandbox nono`; using one without it is an error. They can also be set in the config file (`nono_profile`, `nono_rollback`, `nono_block_net`, `nono_allow_domain`, `nono_network_profile`, `nono_credential`, `nono_audit_integrity`).
+
+Some providers need access to credentials stored on disk. Using `--provider chatgpt` under nono grants the sandbox read/write access to LiteLLM's local OAuth state directory (`~/.config/litellm`) so the provider can authenticate. For stronger credential isolation, prefer nono credential proxy support via `--nono-credential` once it is available for your provider flow.
+
+This requires the `nono` binary on PATH. If it is not found, Swival exits with an actionable error.
+
+`--sandbox nono` is a CLI feature: the automatic re-exec only happens for the `swival` command. Library callers using the `Session` API are not re-executed — instead, launch your own process under nono and pass `sandbox="nono"`:
+
+```sh
+nono run --allow . -- python my_agent.py
+```
+
+Inside that wrapped process, `Session(sandbox="nono")` detects the sandbox and proceeds; outside it, the session fails fast with a clear error rather than running unsandboxed.
 
 ## Base Directory Enforcement
 

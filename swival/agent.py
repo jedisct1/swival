@@ -5040,9 +5040,9 @@ def build_parser():
     )
     access_group.add_argument(
         "--sandbox",
-        choices=["builtin", "agentfs"],
+        choices=["builtin", "agentfs", "nono"],
         default=_UNSET,
-        help='Sandbox backend: "builtin" (app-layer path guards) or "agentfs" (OS-enforced via AgentFS). Default: builtin.',
+        help='Sandbox backend: "builtin" (app-layer path guards), "agentfs" (OS-enforced via AgentFS), or "nono" (OS-enforced via nono). Default: builtin.',
     )
     access_group.add_argument(
         "--sandbox-session",
@@ -5061,6 +5061,50 @@ def build_parser():
         action="store_true",
         default=_UNSET,
         help="Disable automatic session ID generation for AgentFS sandbox.",
+    )
+    access_group.add_argument(
+        "--nono-profile",
+        type=str,
+        default=_UNSET,
+        help="Named nono profile to apply (only with --sandbox nono).",
+    )
+    access_group.add_argument(
+        "--nono-rollback",
+        action="store_true",
+        default=_UNSET,
+        help="Enable nono atomic rollback snapshots (only with --sandbox nono).",
+    )
+    access_group.add_argument(
+        "--nono-block-net",
+        action="store_true",
+        default=_UNSET,
+        help="Block all outbound network in the nono sandbox (only with --sandbox nono).",
+    )
+    access_group.add_argument(
+        "--nono-allow-domain",
+        action="append",
+        default=None,
+        metavar="DOMAIN",
+        help="Add a domain to the nono proxy allowlist (repeatable; only with --sandbox nono).",
+    )
+    access_group.add_argument(
+        "--nono-network-profile",
+        type=str,
+        default=_UNSET,
+        help="Named nono network profile / preset domain group (only with --sandbox nono).",
+    )
+    access_group.add_argument(
+        "--nono-credential",
+        action="append",
+        default=None,
+        metavar="SERVICE",
+        help="Inject credentials for a service via the nono proxy (repeatable; only with --sandbox nono).",
+    )
+    access_group.add_argument(
+        "--nono-audit-integrity",
+        action="store_true",
+        default=_UNSET,
+        help="Enable filesystem-state hashing in the nono audit log (only with --sandbox nono).",
     )
     prompt_group.add_argument(
         "--no-skills",
@@ -5703,6 +5747,21 @@ def main():
     if args.sandbox_strict_read and args.sandbox != "agentfs":
         parser.error("--sandbox-strict-read requires --sandbox agentfs")
 
+    # Validation: --nono-* flags require --sandbox nono
+    _nono_flag_set = any(
+        [
+            args.nono_profile,
+            args.nono_rollback,
+            args.nono_block_net,
+            args.nono_allow_domain,
+            args.nono_network_profile,
+            args.nono_credential,
+            args.nono_audit_integrity,
+        ]
+    )
+    if _nono_flag_set and args.sandbox != "nono":
+        parser.error("--nono-* flags require --sandbox nono")
+
     # Validation: max_review_rounds >= 0
     if args.max_review_rounds < 0:
         parser.error("--max-review-rounds must be >= 0")
@@ -5749,6 +5808,44 @@ def main():
             fmt.info(
                 f"Resume: swival --sandbox agentfs --sandbox-session {session} ..."
             )
+
+    # nono sandbox: re-exec inside nono if requested.
+    # This replaces the current process on success (does not return).
+    from .sandbox_nono import (
+        maybe_reexec as nono_maybe_reexec,
+        is_inside_nono,
+        get_nono_version,
+        effective_profile as nono_effective_profile,
+    )
+
+    nono_maybe_reexec(
+        sandbox=args.sandbox,
+        base_dir=str(Path(args.base_dir).resolve()),
+        add_dirs=getattr(args, "add_dir", []) or [],
+        provider=args.provider,
+        profile=args.nono_profile,
+        rollback=args.nono_rollback,
+        block_net=args.nono_block_net,
+        allow_domain=args.nono_allow_domain or [],
+        network_profile=args.nono_network_profile,
+        credential=args.nono_credential or [],
+        audit_integrity=args.nono_audit_integrity,
+    )
+
+    if args.sandbox == "nono" and is_inside_nono() and args.verbose:
+        # Never print credential/proxy env values — they carry live secrets.
+        parts = ["Sandbox: nono"]
+        version = get_nono_version()
+        if version:
+            parts.append(f"(v{version})")
+        parts.append(f"profile={nono_effective_profile(args.nono_profile)}")
+        if args.nono_rollback:
+            parts.append("rollback=on")
+        fmt.info(" ".join(parts))
+        if args.nono_rollback:
+            from .sandbox_nono import rollback_hint
+
+            fmt.info(f"Review changes: {rollback_hint()}")
 
     # --- A2A serve mode ---
     # Placed after validations and AgentFS re-exec so all CLI checks apply.
@@ -5909,6 +6006,13 @@ def main():
             sandbox_strict_read=args.sandbox_strict_read,
             agentfs_version=get_agentfs_version(),
             diff_hint=_diff,
+            nono_version=get_nono_version(),
+            nono_profile=(
+                nono_effective_profile(args.nono_profile)
+                if args.sandbox == "nono"
+                else None
+            ),
+            nono_rollback=args.nono_rollback,
             mode=mode,
         )
         try:
@@ -6706,17 +6810,30 @@ def _format_a2a_tool_info(tool_info: dict[str, list[tuple[str, str]]]) -> str:
     )
 
 
-def _show_agentfs_diff_hint(args) -> None:
-    """Show agentfs diff command hint on exit (verbose mode only)."""
-    if args.sandbox != "agentfs" or not args.verbose:
-        return
-    from .sandbox_agentfs import is_sandboxed, get_agentfs_session, diff_hint
+def _show_sandbox_review_hint(args) -> None:
+    """Show the sandbox review-changes hint on exit (verbose mode only).
 
-    if not is_sandboxed():
+    Covers both agentfs (``agentfs diff``) and nono (``nono rollback``).
+    """
+    if not args.verbose:
         return
-    hint = diff_hint(get_agentfs_session())
-    if hint:
-        fmt.sandbox_hint(f"Review changes: {hint}")
+
+    if args.sandbox == "agentfs":
+        from .sandbox_agentfs import is_sandboxed, get_agentfs_session, diff_hint
+
+        if not is_sandboxed():
+            return
+        hint = diff_hint(get_agentfs_session())
+        if hint:
+            fmt.sandbox_hint(f"Review changes: {hint}")
+        return
+
+    if args.sandbox == "nono" and args.nono_rollback:
+        from .sandbox_nono import is_inside_nono, rollback_hint
+
+        if not is_inside_nono():
+            return
+        fmt.sandbox_hint(f"Review changes: {rollback_hint()}")
 
 
 def _resolve_mcp_servers(args, base_dir) -> dict | None:
@@ -7295,7 +7412,7 @@ def _run_main(args, report, _write_report, parser):
                         snapshot_state=snapshot_state,
                         goal_state=goal_state,
                     )
-                _show_agentfs_diff_hint(args)
+                _show_sandbox_review_hint(args)
                 if exhausted:
                     if args.verbose:
                         fmt.warning("max turns reached, agent stopped.")
@@ -7428,7 +7545,7 @@ def _run_main(args, report, _write_report, parser):
                     snapshot_state=snapshot_state,
                     goal_state=goal_state,
                 )
-            _show_agentfs_diff_hint(args)
+            _show_sandbox_review_hint(args)
             if exhausted:
                 if args.verbose:
                     fmt.warning("max turns reached, agent stopped.")
@@ -7526,7 +7643,7 @@ def _run_main(args, report, _write_report, parser):
         if _sa_holder[0] is not None:
             _sa_holder[0].shutdown()
         _write_trace(messages)
-    _show_agentfs_diff_hint(args)
+    _show_sandbox_review_hint(args)
 
 
 def run_agent_loop(

@@ -79,6 +79,13 @@ class Session:
         sandbox_session: str | None = None,
         sandbox_strict_read: bool = False,
         sandbox_auto_session: bool = True,
+        nono_profile: str | None = None,
+        nono_rollback: bool = False,
+        nono_block_net: bool = False,
+        nono_allow_domain: list[str] | None = None,
+        nono_network_profile: str | None = None,
+        nono_credential: list[str] | None = None,
+        nono_audit_integrity: bool = False,
         read_guard: bool = True,
         history: bool = True,
         memory: bool = True,
@@ -156,6 +163,16 @@ class Session:
         self.sandbox_session = sandbox_session
         self.sandbox_strict_read = sandbox_strict_read
         self.sandbox_auto_session = sandbox_auto_session
+        # nono knobs are stored for report metadata and validation only.
+        # Session does not bootstrap nono — the CLI re-exec path does that,
+        # or the user wraps their process with `nono run` externally.
+        self.nono_profile = nono_profile
+        self.nono_rollback = nono_rollback
+        self.nono_block_net = nono_block_net
+        self.nono_allow_domain = nono_allow_domain or []
+        self.nono_network_profile = nono_network_profile
+        self.nono_credential = nono_credential or []
+        self.nono_audit_integrity = nono_audit_integrity
         self.read_guard = read_guard
         self.history = history
         self.memory = memory
@@ -250,6 +267,11 @@ class Session:
 
         if self.sandbox == "agentfs":
             from .sandbox_agentfs import check_sandbox_available
+
+            check_sandbox_available()
+
+        if self.sandbox == "nono":
+            from .sandbox_nono import check_sandbox_available
 
             check_sandbox_available()
 
@@ -650,6 +672,11 @@ class Session:
 
         report_dict = None
         if collector:
+            nono_version = None
+            if self.sandbox == "nono":
+                from .sandbox_nono import get_nono_version
+
+                nono_version = get_nono_version()
             _gs = state.get("goal_state")
             goal_stats = None
             if _gs is not None:
@@ -681,6 +708,9 @@ class Session:
                 sandbox_mode=self.sandbox,
                 sandbox_session=self.sandbox_session,
                 sandbox_strict_read=self.sandbox_strict_read,
+                nono_version=nono_version,
+                nono_profile=self.nono_profile,
+                nono_rollback=self.nono_rollback,
             )
 
         return Result(

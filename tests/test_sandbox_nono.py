@@ -1,0 +1,469 @@
+"""Tests for swival.sandbox_nono — re-exec bootstrap, argv construction, detection."""
+
+import os
+import stat
+import sys
+
+import pytest
+
+from swival.report import ConfigError
+from swival.sandbox_nono import (
+    DEFAULT_PROFILE,
+    _ENV_MARKER,
+    _NONO_ENV,
+    _VERSION_ENV,
+    _find_nono,
+    build_nono_argv,
+    check_sandbox_available,
+    effective_profile,
+    get_nono_version,
+    is_inside_nono,
+    is_sandboxed,
+    maybe_reexec,
+    probe_nono,
+    provider_state_dirs,
+    rollback_hint,
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _mock_nono_script(tmp_path, *, version_output="nono 0.59.0"):
+    """Write a dummy nono script that prints its args or version."""
+    script = tmp_path / "nono"
+    script.write_text(
+        f'#!/bin/sh\nif [ "$1" = "--version" ]; then echo "{version_output}"; exit 0; fi\necho $@\n',
+        encoding="utf-8",
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    return str(script)
+
+
+def _set_sandboxed(monkeypatch):
+    """Set both markers to simulate Swival-initiated re-exec inside nono."""
+    monkeypatch.setenv(_ENV_MARKER, "1")
+    monkeypatch.setenv(_NONO_ENV, "/tmp/.nono-deadbeef.json")
+
+
+def _set_external_nono(monkeypatch):
+    """Set only NONO_CAP_FILE to simulate external `nono run` wrapping."""
+    monkeypatch.delenv(_ENV_MARKER, raising=False)
+    monkeypatch.setenv(_NONO_ENV, "/tmp/.nono-deadbeef.json")
+
+
+def _clear_sandboxed(monkeypatch):
+    monkeypatch.delenv(_ENV_MARKER, raising=False)
+    monkeypatch.delenv(_NONO_ENV, raising=False)
+
+
+# ===========================================================================
+# is_sandboxed() — requires both markers (Swival re-exec path)
+# ===========================================================================
+
+
+class TestIsSandboxed:
+    def test_not_sandboxed_by_default(self, monkeypatch):
+        _clear_sandboxed(monkeypatch)
+        assert is_sandboxed() is False
+
+    def test_sandboxed_when_both_markers_set(self, monkeypatch):
+        _set_sandboxed(monkeypatch)
+        assert is_sandboxed() is True
+
+    def test_not_sandboxed_with_only_swival_marker(self, monkeypatch):
+        """Setting SWIVAL_NONO_ACTIVE alone must not bypass the check."""
+        monkeypatch.setenv(_ENV_MARKER, "1")
+        monkeypatch.delenv(_NONO_ENV, raising=False)
+        assert is_sandboxed() is False
+
+    def test_not_sandboxed_with_only_nono_marker(self, monkeypatch):
+        _set_external_nono(monkeypatch)
+        assert is_sandboxed() is False
+
+    def test_not_sandboxed_for_empty_cap_file(self, monkeypatch):
+        monkeypatch.setenv(_ENV_MARKER, "1")
+        monkeypatch.setenv(_NONO_ENV, "")
+        assert is_sandboxed() is False
+
+
+# ===========================================================================
+# is_inside_nono() — accepts external wrapping (nono's own marker only)
+# ===========================================================================
+
+
+class TestIsInsideNono:
+    def test_false_by_default(self, monkeypatch):
+        _clear_sandboxed(monkeypatch)
+        assert is_inside_nono() is False
+
+    def test_true_with_both_markers(self, monkeypatch):
+        _set_sandboxed(monkeypatch)
+        assert is_inside_nono() is True
+
+    def test_true_with_only_nono_marker(self, monkeypatch):
+        _set_external_nono(monkeypatch)
+        assert is_inside_nono() is True
+
+    def test_false_with_only_swival_marker(self, monkeypatch):
+        monkeypatch.setenv(_ENV_MARKER, "1")
+        monkeypatch.delenv(_NONO_ENV, raising=False)
+        assert is_inside_nono() is False
+
+
+# ===========================================================================
+# _find_nono()
+# ===========================================================================
+
+
+class TestFindNono:
+    def test_found_on_path(self, tmp_path, monkeypatch):
+        script = _mock_nono_script(tmp_path)
+        monkeypatch.setenv("PATH", str(tmp_path))
+        assert _find_nono() == script
+
+    def test_not_found_raises(self, monkeypatch):
+        monkeypatch.setenv("PATH", "/nonexistent")
+        with pytest.raises(ConfigError):
+            _find_nono()
+
+    def test_error_message_mentions_install(self, monkeypatch):
+        monkeypatch.setenv("PATH", "/nonexistent")
+        with pytest.raises(ConfigError, match="nono.sh"):
+            _find_nono()
+
+
+# ===========================================================================
+# probe_nono()
+# ===========================================================================
+
+
+class TestProbeNono:
+    def test_parses_version(self, tmp_path, monkeypatch):
+        script = _mock_nono_script(tmp_path, version_output="nono 0.59.0")
+        assert probe_nono(script)["version"] == "0.59.0"
+
+    def test_parses_version_with_extra_text(self, tmp_path):
+        script = _mock_nono_script(tmp_path, version_output="nono 1.2.3-beta build x")
+        assert probe_nono(script)["version"] == "1.2.3"
+
+    def test_unparsable_returns_unknown(self, tmp_path):
+        script = _mock_nono_script(tmp_path, version_output="no digits here")
+        assert probe_nono(script)["version"] == "unknown"
+
+    def test_missing_binary_returns_unknown(self):
+        assert probe_nono("/nonexistent/nono")["version"] == "unknown"
+
+
+# ===========================================================================
+# build_nono_argv()
+# ===========================================================================
+
+
+class TestBuildArgv:
+    def test_basic_argv(self, tmp_path):
+        argv = build_nono_argv(
+            nono_bin="/usr/bin/nono",
+            base_dir=str(tmp_path),
+            add_dirs=[],
+            swival_argv=["swival", "task"],
+        )
+        assert argv[0] == "/usr/bin/nono"
+        assert argv[1] == "run"
+        assert "--allow" in argv
+        allow_idx = argv.index("--allow")
+        assert argv[allow_idx + 1] == str(tmp_path.resolve())
+        dash_idx = argv.index("--")
+        assert argv[dash_idx + 1 :] == ["swival", "task"]
+
+    def test_add_dirs_become_allow(self, tmp_path):
+        extra = tmp_path / "extra"
+        extra.mkdir()
+        argv = build_nono_argv(
+            nono_bin="/usr/bin/nono",
+            base_dir=str(tmp_path),
+            add_dirs=[str(extra)],
+            swival_argv=["swival"],
+        )
+        allow_paths = [argv[i + 1] for i, v in enumerate(argv) if v == "--allow"]
+        assert str(tmp_path.resolve()) in allow_paths
+        assert str(extra.resolve()) in allow_paths
+
+    def test_profile_flag(self, tmp_path):
+        argv = build_nono_argv(
+            nono_bin="nono",
+            base_dir=str(tmp_path),
+            add_dirs=[],
+            profile="claude-code",
+            swival_argv=["swival"],
+        )
+        idx = argv.index("--profile")
+        assert argv[idx + 1] == "claude-code"
+
+    def test_default_profile_is_swival(self, tmp_path):
+        argv = build_nono_argv(
+            nono_bin="nono",
+            base_dir=str(tmp_path),
+            add_dirs=[],
+            swival_argv=["swival"],
+        )
+        idx = argv.index("--profile")
+        assert argv[idx + 1] == DEFAULT_PROFILE == "swival"
+
+    def test_read_dirs_become_read(self, tmp_path):
+        d = tmp_path / "runtime"
+        d.mkdir()
+        argv = build_nono_argv(
+            nono_bin="nono",
+            base_dir=str(tmp_path),
+            add_dirs=[],
+            read_dirs=[str(d)],
+            swival_argv=["swival"],
+        )
+        reads = [argv[i + 1] for i, v in enumerate(argv) if v == "--read"]
+        assert str(d.resolve()) in reads
+
+    def test_extra_allow_dirs_become_allow(self, tmp_path):
+        d = tmp_path / "creds"
+        d.mkdir()
+        argv = build_nono_argv(
+            nono_bin="nono",
+            base_dir=str(tmp_path),
+            add_dirs=[],
+            extra_allow_dirs=[str(d)],
+            swival_argv=["swival"],
+        )
+        allow_paths = [argv[i + 1] for i, v in enumerate(argv) if v == "--allow"]
+        assert str(d.resolve()) in allow_paths
+
+    def test_rollback_and_block_net(self, tmp_path):
+        argv = build_nono_argv(
+            nono_bin="nono",
+            base_dir=str(tmp_path),
+            add_dirs=[],
+            rollback=True,
+            block_net=True,
+            audit_integrity=True,
+            swival_argv=["swival"],
+        )
+        assert "--rollback" in argv
+        assert "--block-net" in argv
+        assert "--audit-integrity" in argv
+
+    def test_repeatable_domain_and_credential(self, tmp_path):
+        argv = build_nono_argv(
+            nono_bin="nono",
+            base_dir=str(tmp_path),
+            add_dirs=[],
+            allow_domain=["a.com", "b.com"],
+            credential=["anthropic", "openai"],
+            network_profile="developer",
+            swival_argv=["swival"],
+        )
+        domains = [argv[i + 1] for i, v in enumerate(argv) if v == "--allow-domain"]
+        creds = [argv[i + 1] for i, v in enumerate(argv) if v == "--credential"]
+        assert domains == ["a.com", "b.com"]
+        assert creds == ["anthropic", "openai"]
+        np_idx = argv.index("--network-profile")
+        assert argv[np_idx + 1] == "developer"
+
+    def test_no_optional_flags_by_default(self, tmp_path):
+        argv = build_nono_argv(
+            nono_bin="nono",
+            base_dir=str(tmp_path),
+            add_dirs=[],
+            swival_argv=["swival"],
+        )
+        for flag in (
+            "--rollback",
+            "--block-net",
+            "--allow-domain",
+            "--network-profile",
+            "--credential",
+            "--audit-integrity",
+        ):
+            assert flag not in argv
+
+    def test_swival_argv_preserved_exactly(self, tmp_path):
+        child = ["swival", "--repl", "--provider", "command"]
+        argv = build_nono_argv(
+            nono_bin="nono",
+            base_dir=str(tmp_path),
+            add_dirs=[],
+            swival_argv=child,
+        )
+        dash_idx = argv.index("--")
+        assert argv[dash_idx + 1 :] == child
+
+
+# ===========================================================================
+# maybe_reexec()
+# ===========================================================================
+
+
+class TestMaybeReexec:
+    def test_noop_for_builtin_mode(self, tmp_path, monkeypatch):
+        called = []
+        monkeypatch.setattr(os, "execvpe", lambda *a: called.append(a))
+        maybe_reexec(sandbox="builtin", base_dir=str(tmp_path), add_dirs=[])
+        assert called == []
+
+    def test_noop_when_already_inside_nono(self, tmp_path, monkeypatch):
+        _set_sandboxed(monkeypatch)
+        called = []
+        monkeypatch.setattr(os, "execvpe", lambda *a: called.append(a))
+        maybe_reexec(sandbox="nono", base_dir=str(tmp_path), add_dirs=[])
+        assert called == []
+
+    def test_raises_when_nono_missing(self, tmp_path, monkeypatch):
+        _clear_sandboxed(monkeypatch)
+        monkeypatch.setenv("PATH", "/nonexistent")
+        with pytest.raises(ConfigError):
+            maybe_reexec(sandbox="nono", base_dir=str(tmp_path), add_dirs=[])
+
+    def test_calls_execvpe(self, tmp_path, monkeypatch):
+        _clear_sandboxed(monkeypatch)
+        _mock_nono_script(tmp_path)
+        monkeypatch.setenv("PATH", str(tmp_path))
+        monkeypatch.setattr(sys, "argv", ["swival", "--repl"])
+
+        captured = {}
+
+        def fake_execvpe(file, args, env):
+            captured["file"] = file
+            captured["args"] = args
+            captured["env"] = env
+
+        monkeypatch.setattr(os, "execvpe", fake_execvpe)
+
+        maybe_reexec(
+            sandbox="nono",
+            base_dir=str(tmp_path),
+            add_dirs=[],
+            profile="myprofile",
+            rollback=True,
+        )
+
+        assert captured["file"].endswith("nono")
+        assert captured["args"][1] == "run"
+        assert "--rollback" in captured["args"]
+        prof_idx = captured["args"].index("--profile")
+        assert captured["args"][prof_idx + 1] == "myprofile"
+        assert captured["env"][_ENV_MARKER] == "1"
+        assert captured["env"][_VERSION_ENV] == "0.59.0"
+        dash_idx = captured["args"].index("--")
+        assert captured["args"][dash_idx + 1 :] == ["swival", "--repl"]
+
+    def test_does_not_chdir(self, tmp_path, monkeypatch):
+        """nono enforces by path, so re-exec must not change the CWD."""
+        _clear_sandboxed(monkeypatch)
+        _mock_nono_script(tmp_path)
+        monkeypatch.setenv("PATH", str(tmp_path))
+        monkeypatch.setattr(sys, "argv", ["swival", "task"])
+
+        chdir_calls = []
+        monkeypatch.setattr(os, "chdir", lambda p: chdir_calls.append(p))
+        monkeypatch.setattr(os, "execvpe", lambda f, a, e: None)
+
+        maybe_reexec(sandbox="nono", base_dir=str(tmp_path), add_dirs=[])
+        assert chdir_calls == []
+
+    def test_swival_marker_alone_does_not_skip_reexec(self, tmp_path, monkeypatch):
+        """Only NONO_CAP_FILE proves we are inside nono; the Swival marker alone must not."""
+        monkeypatch.setenv(_ENV_MARKER, "1")
+        monkeypatch.delenv(_NONO_ENV, raising=False)
+        _mock_nono_script(tmp_path)
+        monkeypatch.setenv("PATH", str(tmp_path))
+        monkeypatch.setattr(sys, "argv", ["swival", "task"])
+
+        called = []
+        monkeypatch.setattr(os, "execvpe", lambda f, a, e: called.append(a))
+        maybe_reexec(sandbox="nono", base_dir=str(tmp_path), add_dirs=[])
+        assert len(called) == 1
+
+
+# ===========================================================================
+# External wrapping: nono marker present, Swival marker absent
+# ===========================================================================
+
+
+class TestExternalWrapping:
+    def test_is_inside_nono_true(self, monkeypatch):
+        _set_external_nono(monkeypatch)
+        assert is_inside_nono() is True
+
+    def test_is_sandboxed_false(self, monkeypatch):
+        _set_external_nono(monkeypatch)
+        assert is_sandboxed() is False
+
+    def test_maybe_reexec_skips(self, tmp_path, monkeypatch):
+        _set_external_nono(monkeypatch)
+        called = []
+        monkeypatch.setattr(os, "execvpe", lambda *a: called.append(a))
+        maybe_reexec(sandbox="nono", base_dir=str(tmp_path), add_dirs=[])
+        assert called == []
+
+    def test_check_sandbox_available_does_not_raise(self, monkeypatch):
+        _set_external_nono(monkeypatch)
+        check_sandbox_available()  # should not raise
+
+
+# ===========================================================================
+# check_sandbox_available()
+# ===========================================================================
+
+
+class TestCheckSandboxAvailable:
+    def test_raises_when_not_inside(self, monkeypatch):
+        _clear_sandboxed(monkeypatch)
+        with pytest.raises(ConfigError, match="nono"):
+            check_sandbox_available()
+
+    def test_passes_when_swival_reexec(self, monkeypatch):
+        _set_sandboxed(monkeypatch)
+        check_sandbox_available()
+
+
+# ===========================================================================
+# Misc helpers
+# ===========================================================================
+
+
+class TestMisc:
+    def test_get_nono_version_none_by_default(self, monkeypatch):
+        monkeypatch.delenv(_VERSION_ENV, raising=False)
+        assert get_nono_version() is None
+
+    def test_get_nono_version_from_env(self, monkeypatch):
+        monkeypatch.setenv(_VERSION_ENV, "0.59.0")
+        assert get_nono_version() == "0.59.0"
+
+    def test_rollback_hint(self):
+        assert rollback_hint() == "nono rollback"
+
+    def test_effective_profile_default(self):
+        assert effective_profile(None) == "swival"
+        assert effective_profile("") == "swival"
+
+    def test_effective_profile_explicit(self):
+        assert effective_profile("python-dev") == "python-dev"
+
+
+class TestProviderStateDirs:
+    def test_non_chatgpt_provider_has_none(self):
+        assert provider_state_dirs("lmstudio") == []
+        assert provider_state_dirs(None) == []
+
+    def test_chatgpt_grants_litellm_config_root(self, monkeypatch):
+        monkeypatch.delenv("CHATGPT_TOKEN_DIR", raising=False)
+        dirs = provider_state_dirs("chatgpt")
+        assert len(dirs) == 1
+        assert dirs[0].endswith("/.config/litellm")
+
+    def test_chatgpt_respects_token_dir_env(self, monkeypatch, tmp_path):
+        token_dir = tmp_path / "custom" / "chatgpt"
+        monkeypatch.setenv("CHATGPT_TOKEN_DIR", str(token_dir))
+        dirs = provider_state_dirs("chatgpt")
+        assert dirs == [str(token_dir.parent)]

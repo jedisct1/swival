@@ -98,7 +98,7 @@
         <article class="docs-content">
             <h1 id="safety-and-sandboxing">Safety and Sandboxing</h1>
 <p>Swival's built-in sandbox is implemented at the application layer. It validates paths and enforces command policy in Python, but it is not an operating-system isolation boundary. You should treat it as a strong guardrail for normal use, not as a hard security perimeter against untrusted or adversarial models.</p>
-<p>If you need stronger isolation, Swival has a built-in AgentFS integration that enforces filesystem boundaries at the OS level.</p>
+<p>If you need stronger isolation, Swival integrates with two OS-level sandbox runtimes: AgentFS (copy-on-write filesystem overlay) and nono (Landlock/Seatbelt capability enforcement with optional network filtering and rollback).</p>
 <h2 id="agentfs-sandbox-mode">AgentFS Sandbox Mode</h2>
 <p>Pass <code>--sandbox agentfs</code> to run Swival inside an AgentFS overlay. At startup, Swival re-executes itself inside <code>agentfs run</code>, which provides copy-on-write filesystem isolation. The agent can edit files and run commands freely, but writes are confined to the overlay — your real project tree stays untouched until you copy changes back.</p>
 <pre><code class="language-sh">swival --sandbox agentfs &quot;Refactor the auth module&quot; --yolo
@@ -123,6 +123,67 @@
 <pre><code class="language-sh">sandbox-exec -p '(version 1)(allow default)(deny network*)' \
     swival --sandbox agentfs &quot;task&quot; --yolo
 </code></pre>
+<h2 id="nono-sandbox-mode">nono Sandbox Mode</h2>
+<p>Pass <code>--sandbox nono</code> to run Swival inside a <a href="https://nono.sh">nono</a> sandbox. Like the AgentFS path, Swival re-executes itself early in startup — this time as <code>nono run -- swival ...</code>. nono enforces filesystem and network boundaries at the kernel level, using Landlock on Linux and Seatbelt on macOS. The supervising parent process stays outside the sandbox and provides the audit trail, network proxy, and rollback machinery; the child Swival runs with the enforced capability set.</p>
+<pre><code class="language-sh">swival --sandbox nono &quot;Refactor the auth module&quot; --yolo
+</code></pre>
+<p>The base directory is granted read+write (so the agent can edit your project), and each <code>--add-dir</code> path becomes an additional grant. nono's default system-path allowances cover the Python interpreter and standard libraries. If Swival is installed under an unusual prefix that nono does not allow by default, add that directory with <code>--add-dir</code> so the interpreter stays reachable.</p>
+<p>Unlike AgentFS, nono enforces by path rather than overlaying the working directory, so writes land on your real files. Enable rollback snapshots when you want a safety net:</p>
+<pre><code class="language-sh">swival --sandbox nono --nono-rollback &quot;Try a risky migration&quot; --yolo
+</code></pre>
+<p>After the run, Swival prints a hint for reviewing or undoing the changes (unless <code>--quiet</code> is set):</p>
+<pre><code class="language-text">  Review changes: nono rollback
+</code></pre>
+<p>nono can also filter the agent's network access. Block it entirely, or restrict it to an allowlist:</p>
+<pre><code class="language-sh">swival --sandbox nono --nono-block-net &quot;Offline analysis&quot; --yolo
+swival --sandbox nono --nono-allow-domain api.openai.com --nono-allow-domain github.com &quot;task&quot; --yolo
+</code></pre>
+<p>The full set of nono knobs:</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--nono-profile &lt;name&gt;</code></td>
+<td>Apply a named nono profile</td>
+</tr>
+<tr>
+<td><code>--nono-rollback</code></td>
+<td>Take atomic rollback snapshots for the session</td>
+</tr>
+<tr>
+<td><code>--nono-block-net</code></td>
+<td>Deny all outbound network</td>
+</tr>
+<tr>
+<td><code>--nono-allow-domain &lt;host&gt;</code></td>
+<td>Add a domain to the proxy allowlist (repeatable)</td>
+</tr>
+<tr>
+<td><code>--nono-network-profile &lt;name&gt;</code></td>
+<td>Apply a preset domain group</td>
+</tr>
+<tr>
+<td><code>--nono-credential &lt;service&gt;</code></td>
+<td>Inject credentials for a service via nono's proxy (repeatable)</td>
+</tr>
+<tr>
+<td><code>--nono-audit-integrity</code></td>
+<td>Add filesystem-state hashing to the audit log</td>
+</tr>
+</tbody>
+</table>
+<p>All of these are accepted only with <code>--sandbox nono</code>; using one without it is an error. They can also be set in the config file (<code>nono_profile</code>, <code>nono_rollback</code>, <code>nono_block_net</code>, <code>nono_allow_domain</code>, <code>nono_network_profile</code>, <code>nono_credential</code>, <code>nono_audit_integrity</code>).</p>
+<p>Some providers need access to credentials stored on disk. Using <code>--provider chatgpt</code> under nono grants the sandbox read/write access to LiteLLM's local OAuth state directory (<code>~/.config/litellm</code>) so the provider can authenticate. For stronger credential isolation, prefer nono credential proxy support via <code>--nono-credential</code> once it is available for your provider flow.</p>
+<p>This requires the <code>nono</code> binary on PATH. If it is not found, Swival exits with an actionable error.</p>
+<p><code>--sandbox nono</code> is a CLI feature: the automatic re-exec only happens for the <code>swival</code> command. Library callers using the <code>Session</code> API are not re-executed — instead, launch your own process under nono and pass <code>sandbox="nono"</code>:</p>
+<pre><code class="language-sh">nono run --allow . -- python my_agent.py
+</code></pre>
+<p>Inside that wrapped process, <code>Session(sandbox="nono")</code> detects the sandbox and proceeds; outside it, the session fails fast with a clear error rather than running unsandboxed.</p>
 <h2 id="base-directory-enforcement">Base Directory Enforcement</h2>
 <p>All filesystem operations are anchored to <code>--base-dir</code>, which defaults to the current directory. Path checks resolve both the base directory and target path through symlinks, then verify that the resolved target remains inside an allowed root. If a path escapes through traversal or symlink indirection, the operation fails.</p>
 <p>Even with <code>--files all</code>, Swival blocks the filesystem root itself. You cannot grant the agent access to <code>/</code> by accident.</p>

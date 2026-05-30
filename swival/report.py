@@ -328,6 +328,9 @@ class ReportCollector:
         sandbox_strict_read: bool = False,
         agentfs_version: str | None = None,
         diff_hint: str | None = None,
+        nono_version: str | None = None,
+        nono_profile: str | None = None,
+        nono_rollback: bool = False,
         mode: str = "oneshot",
     ) -> dict:
         tool_calls_succeeded = sum(s["succeeded"] for s in self.tool_stats.values())
@@ -350,6 +353,12 @@ class ReportCollector:
                 sandbox["agentfs_version"] = agentfs_version
             if diff_hint is not None:
                 sandbox["diff_hint"] = diff_hint
+        if sandbox_mode == "nono":
+            sandbox["rollback"] = nono_rollback
+            if nono_version is not None:
+                sandbox["nono_version"] = nono_version
+            if nono_profile is not None:
+                sandbox["nono_profile"] = nono_profile
 
         return {
             "version": 1,
@@ -437,6 +446,9 @@ class ReportCollector:
         sandbox_strict_read: bool = False,
         agentfs_version: str | None = None,
         diff_hint: str | None = None,
+        nono_version: str | None = None,
+        nono_profile: str | None = None,
+        nono_rollback: bool = False,
         mode: str = "oneshot",
     ) -> dict:
         """Build the report and write it to disk in one step."""
@@ -459,6 +471,9 @@ class ReportCollector:
             sandbox_strict_read=sandbox_strict_read,
             agentfs_version=agentfs_version,
             diff_hint=diff_hint,
+            nono_version=nono_version,
+            nono_profile=nono_profile,
+            nono_rollback=nono_rollback,
             mode=mode,
         )
         return self._last_report

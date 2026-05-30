@@ -53,6 +53,13 @@ def _make_args(**overrides):
         "add_dir_ro": None,  # append actions use None sentinel
         "sandbox": _UNSET,
         "sandbox_session": _UNSET,
+        "nono_profile": _UNSET,
+        "nono_rollback": _UNSET,
+        "nono_block_net": _UNSET,
+        "nono_allow_domain": None,  # append action
+        "nono_network_profile": _UNSET,
+        "nono_credential": None,  # append action
+        "nono_audit_integrity": _UNSET,
         "no_read_guard": _UNSET,
         "no_instructions": _UNSET,
         "no_skills": _UNSET,
@@ -423,6 +430,42 @@ class TestTypeValidation:
         with pytest.raises(ConfigError, match="temperature.*got bool"):
             load_config(tmp_path)
 
+    def test_sandbox_nono_accepted(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+        _write_toml(tmp_path / "swival.toml", 'sandbox = "nono"\n')
+        result = load_config(tmp_path)
+        assert result["sandbox"] == "nono"
+
+    def test_invalid_sandbox_value_rejected(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+        _write_toml(tmp_path / "swival.toml", 'sandbox = "bogus"\n')
+        with pytest.raises(ConfigError, match="sandbox.*must be one of"):
+            load_config(tmp_path)
+
+    def test_nono_keys_merge(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+        _write_toml(
+            tmp_path / "swival.toml",
+            'sandbox = "nono"\n'
+            'nono_profile = "claude-code"\n'
+            "nono_rollback = true\n"
+            'nono_allow_domain = ["api.openai.com", "github.com"]\n'
+            'nono_credential = ["anthropic"]\n',
+        )
+        result = load_config(tmp_path)
+        assert result["nono_profile"] == "claude-code"
+        assert result["nono_rollback"] is True
+        assert result["nono_allow_domain"] == ["api.openai.com", "github.com"]
+        assert result["nono_credential"] == ["anthropic"]
+
+    def test_nono_allow_domain_mixed_type_rejected(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+        _write_toml(tmp_path / "swival.toml", 'nono_allow_domain = ["a.com", 42]\n')
+        with pytest.raises(
+            ConfigError, match=r"nono_allow_domain\[1\].*expected string"
+        ):
+            load_config(tmp_path)
+
 
 # ===========================================================================
 # Mutual exclusion
@@ -595,6 +638,42 @@ class TestApplyConfigToArgs:
         args = _make_args(yolo=True)
         apply_config_to_args(args, {})
         assert args.oneshot_commands is False
+
+    def test_nono_keys_resolve_to_defaults(self):
+        args = _make_args()
+        apply_config_to_args(args, {})
+        assert args.nono_profile is None
+        assert args.nono_rollback is False
+        assert args.nono_block_net is False
+        assert args.nono_allow_domain == []
+        assert args.nono_network_profile is None
+        assert args.nono_credential == []
+        assert args.nono_audit_integrity is False
+
+    def test_nono_config_fills_unset(self):
+        args = _make_args()
+        apply_config_to_args(
+            args,
+            {
+                "nono_profile": "claude-code",
+                "nono_rollback": True,
+                "nono_allow_domain": ["api.openai.com"],
+                "nono_credential": ["anthropic"],
+            },
+        )
+        assert args.nono_profile == "claude-code"
+        assert args.nono_rollback is True
+        assert args.nono_allow_domain == ["api.openai.com"]
+        assert args.nono_credential == ["anthropic"]
+
+    def test_nono_cli_beats_config(self):
+        args = _make_args(nono_profile="cli-profile", nono_allow_domain=["cli.com"])
+        apply_config_to_args(
+            args,
+            {"nono_profile": "config-profile", "nono_allow_domain": ["config.com"]},
+        )
+        assert args.nono_profile == "cli-profile"
+        assert args.nono_allow_domain == ["cli.com"]
 
     def test_color_config_true(self):
         args = _make_args()
@@ -955,6 +1034,42 @@ class TestCLIIntegration:
         apply_config_to_args(args, config)
 
         assert args.max_turns == 200  # CLI wins
+
+    def test_nono_flags_resolve_through_full_flow(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+
+        from swival.agent import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "--sandbox",
+                "nono",
+                "--nono-profile",
+                "claude-code",
+                "--nono-rollback",
+                "--nono-allow-domain",
+                "a.com",
+                "--nono-allow-domain",
+                "b.com",
+                "--nono-credential",
+                "anthropic",
+                "question",
+            ]
+        )
+
+        config = load_config(tmp_path)
+        apply_config_to_args(args, config)
+
+        assert args.sandbox == "nono"
+        assert args.nono_profile == "claude-code"
+        assert args.nono_rollback is True
+        assert args.nono_allow_domain == ["a.com", "b.com"]
+        assert args.nono_credential == ["anthropic"]
+        # Unused nono knobs resolve to defaults
+        assert args.nono_block_net is False
+        assert args.nono_network_profile is None
+        assert args.nono_audit_integrity is False
 
     def test_help_lists_all_cli_flags(self):
         from swival.agent import build_parser
