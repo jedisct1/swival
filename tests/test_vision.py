@@ -538,7 +538,7 @@ class TestModelSupportsVision:
             patch("litellm.get_model_info", return_value={"supports_vision": True}),
             patch("litellm.supports_vision", return_value=True),
         ):
-            assert _model_supports_vision("gpt-4o") is True
+            assert _model_supports_vision("gpt-5.5") is True
 
     def test_returns_false_for_known_no_vision(self):
         with (
@@ -638,11 +638,12 @@ class TestResolveModelStr:
         assert _resolve_model_str("generic", "my-model") == "openai/my-model"
 
     def test_chatgpt(self):
-        assert _resolve_model_str("chatgpt", "gpt-4o") == "chatgpt/gpt-4o"
+        assert _resolve_model_str("chatgpt", "gpt-5.5") == "chatgpt/gpt-5.5"
 
     def test_chatgpt_double_prefix(self):
         assert (
-            _resolve_model_str("chatgpt", "chatgpt/chatgpt/gpt-4o") == "chatgpt/gpt-4o"
+            _resolve_model_str("chatgpt", "chatgpt/chatgpt/gpt-5.5")
+            == "chatgpt/gpt-5.5"
         )
 
     def test_unknown_provider(self):

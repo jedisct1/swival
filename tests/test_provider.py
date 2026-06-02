@@ -3209,7 +3209,7 @@ class TestMimoReasoningContent:
 
 
 class TestMsgToDictReasoningContent:
-    def test_strips_reasoning_when_no_tool_calls(self):
+    def test_keeps_reasoning_when_no_tool_calls(self):
         class FakeMsg:
             def model_dump(self, exclude_none=False):
                 return {
@@ -3219,7 +3219,7 @@ class TestMsgToDictReasoningContent:
                 }
 
         d = _msg_to_dict(FakeMsg())
-        assert "reasoning_content" not in d
+        assert d["reasoning_content"] == "internal scratch"
         assert d["content"] == "answer"
 
     def test_keeps_reasoning_when_tool_calls_present(self):
@@ -3244,11 +3244,11 @@ class TestMsgToDictReasoningContent:
 
 
 class TestPromoteReasoningContent:
-    def test_promotes_when_no_tool_calls(self):
+    def test_promotes_without_discarding_reasoning(self):
         msg = types.SimpleNamespace(content="", reasoning_content="thinking out loud")
         _promote_reasoning_content(msg)
         assert msg.content == "thinking out loud"
-        assert msg.reasoning_content is None
+        assert msg.reasoning_content == "thinking out loud"
 
     def test_skips_when_tool_calls_present(self):
         tc = types.SimpleNamespace(
@@ -3266,12 +3266,9 @@ class TestPromoteReasoningContent:
         assert msg.reasoning_content == "I will call f"
 
 
-class TestNonReasoningProviderStripsReasoningContent:
-    """Ensure providers that do not require reasoning_content never receive it.
-
-    Storing reasoning_content in history is required for MiMo/Kimi, but if the
-    conversation later targets a strict provider (e.g. OpenAI, ChatGPT) we must
-    not leak the field outbound.
+class TestReasoningContentOutbound:
+    """Ensure reasoning_content is preserved by default and stripped only for
+    strict provider routes.
     """
 
     def _mock_response(self):
@@ -3282,7 +3279,7 @@ class TestNonReasoningProviderStripsReasoningContent:
         resp.choices = [choice]
         return resp
 
-    def test_non_kimi_strips_existing_reasoning_content(self):
+    def test_generic_preserves_existing_reasoning_content(self):
         messages = [
             {"role": "user", "content": "hi"},
             {
@@ -3316,12 +3313,12 @@ class TestNonReasoningProviderStripsReasoningContent:
             )
             sent = mock_comp.call_args[1]["messages"]
             asst = [m for m in sent if m.get("role") == "assistant"][0]
-            assert "reasoning_content" not in asst
+            assert asst["reasoning_content"] == "leftover thought"
 
-    def test_non_kimi_strips_reasoning_on_non_tool_call_assistant(self):
+    def test_generic_preserves_reasoning_on_non_tool_call_assistant(self):
         """Replayed/imported transcripts may carry reasoning_content on an
-        assistant message that has no tool_calls. Strict providers must never
-        see it."""
+        assistant message that has no tool_calls. Preserve it by default so
+        reasoning-capable OpenAI-compatible providers can decide what to use."""
         messages = [
             {"role": "user", "content": "hi"},
             {
@@ -3348,7 +3345,74 @@ class TestNonReasoningProviderStripsReasoningContent:
             )
             sent = mock_comp.call_args[1]["messages"]
             asst = [m for m in sent if m.get("role") == "assistant"][0]
+            assert asst["reasoning_content"] == "internal thought from a prior session"
+
+    def test_chatgpt_strips_existing_reasoning_content(self):
+        messages = [
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "tc1",
+                        "type": "function",
+                        "function": {"name": "f", "arguments": "{}"},
+                    }
+                ],
+                "reasoning_content": "leftover thought",
+            },
+            {"role": "tool", "tool_call_id": "tc1", "content": "data"},
+        ]
+        with patch("litellm.completion") as mock_comp:
+            mock_comp.return_value = self._mock_response()
+            call_llm(
+                None,
+                "gpt-5.5",
+                messages,
+                100,
+                None,
+                None,
+                None,
+                None,
+                False,
+                provider="chatgpt",
+                api_key="sk-test",
+            )
+            sent = mock_comp.call_args[1]["messages"]
+            asst = [m for m in sent if m.get("role") == "assistant"][0]
             assert "reasoning_content" not in asst
+            assert messages[1]["reasoning_content"] == "leftover thought"
+
+    def test_openai_api_base_strips_existing_reasoning_content(self):
+        messages = [
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": "prior",
+                "reasoning_content": "leftover thought",
+            },
+            {"role": "user", "content": "next"},
+        ]
+        with patch("litellm.completion") as mock_comp:
+            mock_comp.return_value = self._mock_response()
+            call_llm(
+                "https://api.openai.com/v1",
+                "gpt-5.5",
+                messages,
+                100,
+                None,
+                None,
+                None,
+                None,
+                False,
+                provider="generic",
+                api_key="sk-test",
+            )
+            sent = mock_comp.call_args[1]["messages"]
+            asst = [m for m in sent if m.get("role") == "assistant"][0]
+            assert "reasoning_content" not in asst
+            assert messages[1]["reasoning_content"] == "leftover thought"
 
 
 class TestOrphanedToolCallsStripsReasoning:

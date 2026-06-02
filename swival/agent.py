@@ -1342,7 +1342,7 @@ _LITELLM_INTERNAL_KEYS = {
 
 
 def _needs_reasoning_content(model_id: str, base_url: str | None) -> bool:
-    """Whether the target provider requires reasoning_content to round-trip.
+    """Whether the target provider needs placeholder reasoning_content.
 
     Moonshot (Kimi) rejects tool-calling conversations when assistant
     messages with tool_calls lack reasoning_content; Xiaomi MiMo returns
@@ -1365,6 +1365,20 @@ def _needs_reasoning_content(model_id: str, base_url: str | None) -> bool:
     return False
 
 
+def _strips_reasoning_content(
+    provider: str, model_id: str, base_url: str | None
+) -> bool:
+    """Whether this route should omit replayed reasoning_content."""
+    if _needs_reasoning_content(model_id, base_url):
+        return False
+    if provider == "chatgpt":
+        return True
+    if provider == "generic" and base_url:
+        base_lower = base_url.lower()
+        return "api.openai.com" in base_lower or "openai.azure.com" in base_lower
+    return False
+
+
 def _promote_reasoning_content(msg) -> None:
     """If content is empty but reasoning_content has text, promote it.
 
@@ -1381,16 +1395,15 @@ def _promote_reasoning_content(msg) -> None:
     reasoning = getattr(msg, "reasoning_content", None)
     if reasoning:
         msg.content = _sanitize_assistant_content(reasoning)
-        msg.reasoning_content = None
 
 
 def _msg_to_dict(msg) -> dict:
     """Convert a litellm Message to a plain dict safe for re-submission.
 
     Strips litellm-internal fields (e.g. provider_specific_fields) that some
-    providers reject as extra inputs. Keeps reasoning_content on tool-calling
-    assistant messages so reasoning-content-aware providers (Xiaomi MiMo,
-    Moonshot/Kimi) get the field they require on the next turn.
+    providers reject as extra inputs. Keeps reasoning_content when LiteLLM
+    surfaced it so reasoning-capable providers can round-trip the field on
+    the next turn; strict outbound routes strip it just before the API call.
 
     Each tool_calls entry is also reduced to its canonical shape — preserving
     only id, type, function.{name, arguments}, and extra_content. This matches
@@ -1404,9 +1417,8 @@ def _msg_to_dict(msg) -> dict:
         if hasattr(msg, "model_dump")
         else dict(vars(msg))
     )
-    keep_reasoning = bool(d.get("tool_calls"))
     for key in _LITELLM_INTERNAL_KEYS:
-        if key == "reasoning_content" and keep_reasoning:
+        if key == "reasoning_content" and d.get("reasoning_content") is not None:
             continue
         d.pop(key, None)
 
@@ -4183,14 +4195,20 @@ def call_llm(
     messages = [_strip_internal(m) for m in messages]
 
     _needs_reasoning = _needs_reasoning_content(model_id, base_url)
-    for m in messages:
+    _strip_reasoning = _strips_reasoning_content(provider, model_id, base_url)
+    for i, m in enumerate(messages):
         if not (isinstance(m, dict) and m.get("role") == "assistant"):
             continue
-        if _needs_reasoning:
-            if m.get("tool_calls") and not m.get("reasoning_content"):
-                m["reasoning_content"] = " "
-        else:
-            m.pop("reasoning_content", None)
+        if _strip_reasoning and "reasoning_content" in m:
+            patched = dict(m)
+            patched.pop("reasoning_content", None)
+            messages[i] = patched
+        elif (
+            _needs_reasoning and m.get("tool_calls") and not m.get("reasoning_content")
+        ):
+            patched = dict(m)
+            patched["reasoning_content"] = " "
+            messages[i] = patched
 
     # --- Outbound: encrypt secrets ---
     if secret_shield is not None:
