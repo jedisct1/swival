@@ -120,11 +120,21 @@ warnings.filterwarnings(
     message=r"Pydantic serializer warnings",
 )
 
+
+class _FallbackEncoder:
+    """Rudimentary fallback when tiktoken can't load cl100k_base offline."""
+    def encode(self, text: str, **kwargs) -> list[int]:
+        return list(text.encode("utf-8"))
+
 DEFAULT_SYSTEM_PROMPT_FILE = Path(__file__).parent / "system_prompt.txt"
 MAX_ARG_LOG = 1000
 MAX_INSTRUCTIONS_CHARS = 10_000
 
-_encoder = tiktoken.get_encoding("cl100k_base")
+
+try:
+    _encoder = tiktoken.get_encoding("cl100k_base")
+except Exception:
+    _encoder = _FallbackEncoder()
 
 MAX_HISTORY_SIZE = 500 * 1024  # 500KB
 TODO_REMINDER_INTERVAL = 3  # remind after N turns of no todo usage
