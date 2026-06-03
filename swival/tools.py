@@ -553,36 +553,39 @@ OUTLINE_TOOL = {
         "name": "outline",
         "description": (
             "Show classes, functions, and top-level declarations with line "
-            "numbers (no bodies). Survey files before reading specific sections. "
-            "Pass file_path for one file or files for a batch."
+            "numbers (no bodies). Survey code before reading specific sections. "
+            "Pass file_path for one file or directory, or files for a batch."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "file_path": {
                     "type": "string",
-                    "description": "Path to a single file to outline.",
+                    "description": (
+                        "Path to a file or directory to outline. A directory "
+                        "produces a shallow survey of its source files."
+                    ),
                 },
                 "depth": {
                     "type": "integer",
                     "description": (
-                        "Default nesting depth: 1=top-level only, "
-                        "2=classes+methods (default), 3=nested functions/classes. "
-                        "In batch mode, acts as default for files without per-file depth."
+                        "Nesting depth: 1=top-level only, 2=classes+methods, "
+                        "3=nested functions/classes. When omitted, defaults to 2 "
+                        "for files and 1 for directory surveys. In batch mode, acts "
+                        "as the default for entries without a per-entry depth."
                     ),
                     "minimum": 1,
                     "maximum": 3,
-                    "default": 2,
                 },
                 "files": {
                     "type": "array",
-                    "description": "List of files to outline (batch mode, max 20).",
+                    "description": "List of files or directories to outline (batch mode, max 20).",
                     "items": {
                         "type": "object",
                         "properties": {
                             "file_path": {
                                 "type": "string",
-                                "description": "Path to the file to outline.",
+                                "description": "Path to the file or directory to outline.",
                             },
                             "depth": {
                                 "type": "integer",
@@ -3416,7 +3419,7 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
             return _outline_files(
                 files=files,
                 base_dir=base_dir,
-                default_depth=args.get("depth", 2),
+                default_depth=args.get("depth"),
                 extra_read_roots=skill_read_roots,
                 extra_write_roots=extra_write_roots,
                 files_mode=files_mode,
@@ -3429,7 +3432,7 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
         return _outline(
             file_path=file_path,
             base_dir=base_dir,
-            depth=args.get("depth", 2),
+            depth=args.get("depth"),
             extra_read_roots=skill_read_roots,
             extra_write_roots=extra_write_roots,
             files_mode=files_mode,

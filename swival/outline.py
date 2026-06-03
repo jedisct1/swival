@@ -12,16 +12,19 @@ _MAX_OUTLINE_FILES = 20
 def outline(
     file_path: str,
     base_dir: str,
-    depth: int = 2,
+    depth: int | None = None,
     extra_read_roots: list[Path] = (),
     extra_write_roots: list[Path] = (),
     files_mode: str = "some",
     **kwargs,
 ) -> str:
-    try:
-        depth = int(depth)
-    except (ValueError, TypeError):
-        return "error: depth must be an integer"
+    explicit_depth = depth is not None
+    if explicit_depth:
+        try:
+            depth = int(depth)
+        except (ValueError, TypeError):
+            return "error: depth must be an integer"
+        depth = max(1, min(depth, 3))
 
     try:
         resolved = safe_resolve(
@@ -35,7 +38,15 @@ def outline(
         return f"error: {exc}"
 
     if resolved.is_dir():
-        return f"error: path is a directory: {file_path}"
+        return _outline_directory(
+            resolved,
+            requested_path=file_path,
+            base_dir=base_dir,
+            depth=depth if explicit_depth else 1,
+            extra_read_roots=extra_read_roots,
+            extra_write_roots=extra_write_roots,
+            files_mode=files_mode,
+        )
 
     try:
         raw = resolved.read_bytes()
@@ -58,7 +69,7 @@ def outline(
     if not text.strip():
         return "empty file"
 
-    depth = max(1, min(depth, 3))
+    depth = depth if explicit_depth else 2
 
     if resolved.suffix == ".py":
         try:
@@ -219,6 +230,153 @@ def _outline_heuristic(source: str, depth: int) -> str:
     return "\n".join(lines_out) if lines_out else "no declarations found"
 
 
+_DIRECTORY_OUTLINE_SUFFIXES = frozenset(
+    {
+        ".py",
+        ".js",
+        ".ts",
+        ".tsx",
+        ".jsx",
+        ".go",
+        ".rs",
+        ".c",
+        ".h",
+        ".cpp",
+        ".java",
+        ".rb",
+        ".zig",
+        ".swift",
+        ".kt",
+        ".md",
+        ".toml",
+        ".sh",
+        ".yaml",
+        ".yml",
+    }
+)
+
+_DIRECTORY_OUTLINE_NAMES = frozenset(
+    {"Makefile", "Dockerfile", "README", "pyproject.toml", "Cargo.toml", "package.json"}
+)
+
+_DIRECTORY_OUTLINE_EXCLUDE = frozenset(
+    {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "Cargo.lock", "uv.lock"}
+)
+
+_DIRECTORY_OUTLINE_SKIP_DIRS = frozenset(
+    {"__pycache__", "node_modules", ".git", "target", "dist", "build", ".venv"}
+)
+
+_DIRECTORY_OUTLINE_PRIORITY = frozenset(
+    {
+        "__init__.py",
+        "mod.rs",
+        "lib.rs",
+        "readme.md",
+        "pyproject.toml",
+        "cargo.toml",
+        "package.json",
+    }
+)
+
+
+def _is_outline_source(name: str) -> bool:
+    if name.startswith("."):
+        return False
+    if name in _DIRECTORY_OUTLINE_EXCLUDE:
+        return False
+    if name.endswith((".min.js", ".bundle.js")):
+        return False
+    if name in _DIRECTORY_OUTLINE_NAMES:
+        return True
+    return Path(name).suffix.lower() in _DIRECTORY_OUTLINE_SUFFIXES
+
+
+def _outline_priority_key(name: str) -> tuple[int, str]:
+    low = name.lower()
+    is_priority = (
+        low in _DIRECTORY_OUTLINE_PRIORITY
+        or low.startswith("main.")
+        or low.startswith("index.")
+    )
+    return (0 if is_priority else 1, low)
+
+
+def _outline_directory(
+    resolved: Path,
+    requested_path: str,
+    base_dir: str,
+    depth: int,
+    extra_read_roots: list[Path] = (),
+    extra_write_roots: list[Path] = (),
+    files_mode: str = "some",
+) -> str:
+    try:
+        children = list(resolved.iterdir())
+    except OSError as exc:
+        return f"error: {exc}"
+
+    subdirs: list[str] = []
+    source_names: list[str] = []
+    for c in children:
+        if c.is_dir():
+            if (
+                not c.name.startswith(".")
+                and c.name not in _DIRECTORY_OUTLINE_SKIP_DIRS
+            ):
+                subdirs.append(c.name)
+        elif c.is_file() and _is_outline_source(c.name):
+            source_names.append(c.name)
+    subdirs.sort()
+    source_names.sort(key=_outline_priority_key)
+
+    try:
+        dir_label = str(resolved.relative_to(Path(base_dir).resolve()))
+    except ValueError:
+        dir_label = requested_path.rstrip("/") or "."
+    prefix = "" if dir_label == "." else f"{dir_label}/"
+    dir_display = prefix or "."
+    subdir_line = "subdirectories: " + " ".join(f"{d}/" for d in subdirs)
+
+    if not source_names:
+        if subdirs:
+            return "\n".join(
+                [
+                    f"directory: {dir_display}",
+                    f"source_files: 0 selected, {len(subdirs)} subdirectories",
+                    subdir_line,
+                ]
+            )
+        return f"directory: {dir_display}\nempty directory"
+
+    selected = source_names[:_MAX_OUTLINE_FILES]
+    omitted = source_names[_MAX_OUTLINE_FILES:]
+
+    files = [{"file_path": f"{prefix}{name}"} for name in selected]
+    body = outline_files(
+        files=files,
+        base_dir=base_dir,
+        default_depth=depth,
+        extra_read_roots=extra_read_roots,
+        extra_write_roots=extra_write_roots,
+        files_mode=files_mode,
+    )
+
+    summary = f"{len(selected)} selected"
+    if omitted:
+        summary += f", {len(omitted)} omitted (over {_MAX_OUTLINE_FILES}-file cap)"
+    if subdirs:
+        summary += f", {len(subdirs)} subdirectories"
+
+    header = [f"directory: {dir_display}", f"source_files: {summary}"]
+    if subdirs:
+        header.append(subdir_line)
+    if omitted:
+        header.append("omitted_over_cap: " + " ".join(omitted))
+
+    return "\n".join(header) + "\n\n" + body
+
+
 def _build_outline_section(title: str, status: str, body: str) -> str:
     return "\n".join(
         [
@@ -232,7 +390,7 @@ def _build_outline_section(title: str, status: str, body: str) -> str:
 def outline_files(
     files: list[dict],
     base_dir: str,
-    default_depth: int = 2,
+    default_depth: int | None = None,
     extra_read_roots: list[Path] = (),
     extra_write_roots: list[Path] = (),
     files_mode: str = "some",

@@ -367,12 +367,12 @@ def test_nonexistent_file(tmp_path):
     assert "not found" in result
 
 
-def test_directory(tmp_path):
+def test_directory_empty(tmp_path):
     d = tmp_path / "subdir"
     d.mkdir()
-    result = outline(str(d), str(tmp_path), depth=2, files_mode="all")
-    assert result.startswith("error:")
-    assert "directory" in result
+    result = outline(str(d), str(tmp_path), files_mode="all")
+    assert not result.startswith("error:")
+    assert "empty directory" in result
 
 
 def test_python_syntax_error_falls_back_to_heuristic(tmp_path):
@@ -583,3 +583,104 @@ def test_outline_tool_schema():
     assert "depth" in props
     assert props["files"]["maxItems"] == 20
     assert "required" not in OUTLINE_TOOL["function"]["parameters"]
+    assert "directory" in props["file_path"]["description"]
+    assert (
+        "directory" in props["files"]["items"]["properties"]["file_path"]["description"]
+    )
+    assert "default" not in props["depth"]
+    assert "1 for directory" in props["depth"]["description"]
+
+
+def test_directory_survey_outlines_source_files(tmp_path):
+    _make_py(tmp_path, "agent.py", "class Agent:\n    def run(self): pass\n")
+    _make_py(tmp_path, "tools.py", "def dispatch(): pass\n")
+    result = outline(str(tmp_path), str(tmp_path), files_mode="all")
+    assert result.startswith("directory:")
+    assert "=== FILE:" in result
+    assert "class Agent" in result
+    assert "def dispatch()" in result
+    assert str(tmp_path) not in result
+
+
+def test_directory_default_depth_is_one(tmp_path):
+    _make_py(tmp_path, "m.py", "class Outer:\n    def inner(self): pass\n")
+    implicit = outline(str(tmp_path), str(tmp_path), files_mode="all")
+    assert "class Outer" in implicit
+    assert "def inner" not in implicit
+
+    explicit = outline(str(tmp_path), str(tmp_path), depth=2, files_mode="all")
+    assert "def inner" in explicit
+
+
+def test_file_default_depth_unchanged(tmp_path):
+    src = _make_py(tmp_path, "f.py", "class C:\n    def method(self): pass\n")
+    result = outline(src, str(tmp_path), files_mode="all")
+    assert "def method" in result
+
+
+def test_directory_only_subdirs_no_error(tmp_path):
+    (tmp_path / "pkg").mkdir()
+    _make_py(tmp_path / "pkg", "code.py", "def deep(): pass\n")
+    result = outline(str(tmp_path), str(tmp_path), files_mode="all")
+    assert not result.startswith("error:")
+    assert "source_files: 0 selected" in result
+    assert "pkg/" in result
+
+
+def test_directory_excludes_noise(tmp_path):
+    _make_py(tmp_path, "real.py", "def keep(): pass\n")
+    (tmp_path / "package-lock.json").write_text('{"a": 1}\n')
+    (tmp_path / "Cargo.lock").write_text("[[package]]\n")
+    (tmp_path / "app.min.js").write_text("var x=1;\n")
+    (tmp_path / "logo.png").write_bytes(b"\x89PNG\r\n")
+    (tmp_path / "__pycache__").mkdir()
+    result = outline(str(tmp_path), str(tmp_path), files_mode="all")
+    assert "real.py" in result
+    assert "package-lock.json" not in result
+    assert "Cargo.lock" not in result
+    assert "app.min.js" not in result
+    assert "logo.png" not in result
+    assert "__pycache__" not in result
+
+
+def test_directory_caps_at_twenty(tmp_path):
+    for i in range(25):
+        _make_py(tmp_path, f"mod_{i:02d}.py", f"def f{i}(): pass\n")
+    _make_py(tmp_path, "__init__.py", "VERSION = '1'\n")
+    result = outline(str(tmp_path), str(tmp_path), files_mode="all")
+    assert "omitted_over_cap:" in result
+    assert result.count("=== FILE:") == 20
+    assert "__init__.py" in result.split("=== FILE:")[1]
+
+
+def test_directory_titles_are_relative(tmp_path):
+    sub = tmp_path / "pkg"
+    sub.mkdir()
+    _make_py(sub, "agent.py", "def go(): pass\n")
+    result = outline("pkg", str(tmp_path), files_mode="all")
+    assert "=== FILE: pkg/agent.py ===" in result
+    assert str(tmp_path) not in result
+
+
+def test_directory_absolute_input_stays_relative(tmp_path):
+    sub = tmp_path / "pkg"
+    sub.mkdir()
+    _make_py(sub, "agent.py", "def go(): pass\n")
+    result = outline(str(sub), str(tmp_path), files_mode="all")
+    assert "=== FILE: pkg/agent.py ===" in result
+    assert "directory: pkg/" in result
+    assert str(tmp_path) not in result
+
+
+def test_directory_batch_item_resolves_kind_default(tmp_path):
+    sub = tmp_path / "pkg"
+    sub.mkdir()
+    _make_py(sub, "code.py", "class K:\n    def inner(self): pass\n")
+    sibling = _make_py(tmp_path, "lib.py", "class L:\n    def method(self): pass\n")
+    result = outline_files(
+        [{"file_path": "pkg"}, {"file_path": sibling}],
+        str(tmp_path),
+        files_mode="all",
+    )
+    assert "class K" in result and "inner" not in result
+    assert "def method" in result
