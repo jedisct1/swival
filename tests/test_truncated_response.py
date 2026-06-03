@@ -1,9 +1,13 @@
 """Tests for truncated provider responses (issue #22).
 
-When an LLM server returns a partial response — either
-finish_reason='length' or a tool call whose arguments JSON does not
-parse — the response must not enter the message history. It must be
-treated as context overflow so the compaction ladder runs.
+When an LLM server returns a partial response the bad message must never
+enter the history. Genuine output truncation (finish_reason='length' with
+unparseable tool-call arguments) is treated as context overflow so the
+compaction ladder runs — trimming the prompt frees output-token budget.
+
+Malformed tool-call arguments under a normal finish_reason are a different
+case: the context window is fine, the model just emitted invalid JSON. That
+must be recovered with a re-prompt, not by compacting away valid context.
 """
 
 import sys
@@ -280,10 +284,16 @@ def test_length_with_tool_calls_is_discarded(tmp_path, monkeypatch):
     assert compact_spy.call_count >= 1
 
 
-def test_malformed_args_with_stop_is_discarded(tmp_path, monkeypatch):
-    """Even with finish_reason=stop, malformed args trigger discard + compaction."""
+def test_malformed_args_with_stop_is_reprompted(tmp_path, monkeypatch):
+    """Malformed args under a normal finish_reason re-prompt, never compact.
+
+    The context window is irrelevant here, so the bad call is discarded and a
+    corrective nudge is injected instead of running the compaction ladder
+    (which would throw away valid context on a large conversation).
+    """
     captured, compact_spy = _run_with_truncation(tmp_path, monkeypatch, "stop", "{")
 
+    # The malformed call must not have leaked into history.
     for m in captured[1]:
         if m.get("role") != "assistant":
             continue
@@ -291,7 +301,46 @@ def test_malformed_args_with_stop_is_discarded(tmp_path, monkeypatch):
             fn = tc.get("function") if isinstance(tc, dict) else tc.function
             raw = fn["arguments"] if isinstance(fn, dict) else fn.arguments
             assert raw != "{"
-    assert compact_spy.call_count >= 1
+    # No compaction: malformed args are not a context-window problem.
+    assert compact_spy.call_count == 0
+    # A corrective re-prompt must have been injected.
+    users = [m.get("content", "") for m in captured[1] if m.get("role") == "user"]
+    assert any("malformed JSON arguments" in u for u in users)
+
+
+def test_malformed_args_repeated_gives_up(tmp_path, monkeypatch):
+    """Two consecutive malformed responses give up rather than loop forever."""
+    import pytest
+
+    from swival import agent
+    from swival import fmt
+
+    fmt.init(color=False)
+
+    calls = []
+
+    def fake_call_llm(*args, **kwargs):
+        calls.append(1)
+        return (
+            _make_message(content="", tool_calls=[_make_tool_call(arguments="{")]),
+            "stop",
+            [],
+            0,
+            (0, 0),
+        )
+
+    monkeypatch.setattr(agent, "call_llm", fake_call_llm)
+    monkeypatch.setattr(agent, "discover_model", lambda *a: ("test-model", None))
+
+    args = _base_args(tmp_path, repair_truncated_args=False)
+    monkeypatch.setattr(sys, "argv", ["agent", "q"])
+    monkeypatch.setattr("argparse.ArgumentParser.parse_args", lambda self: args)
+
+    with pytest.raises(SystemExit) as exc:
+        agent.main()
+    assert exc.value.code == 1
+    # First malformed → re-prompt, second malformed → give up. No endless loop.
+    assert len(calls) == 2
 
 
 # ---------------------------------------------------------------------------

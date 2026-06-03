@@ -117,11 +117,11 @@ class TestReportCollector:
         assert rc.events[0]["level"] == "nudge"
         assert rc.events[1]["level"] == "stop"
 
-    def test_truncated_response_tracking(self):
+    def test_recovered_response_tracking(self):
         rc = ReportCollector()
-        rc.record_truncated_response(2)
-        assert rc.truncated_responses == 1
-        assert rc.events[0]["type"] == "truncated_response"
+        rc.record_recovered_response(2)
+        assert rc.recovered_responses == 1
+        assert rc.events[0]["type"] == "recovered_response"
         assert rc.events[0]["turn"] == 2
 
     def test_error_outcome(self):

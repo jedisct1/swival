@@ -33,7 +33,7 @@ class ReportCollector:
         self.compactions = 0
         self.turn_drops = 0
         self.guardrail_interventions = 0
-        self.truncated_responses = 0
+        self.recovered_responses = 0
         self.llm_calls = 0
         self.total_llm_time = 0.0
         self.total_cached_tokens = 0
@@ -218,9 +218,9 @@ class ReportCollector:
             }
         )
 
-    def record_truncated_response(self, turn: int, reason: str | None = None):
-        self.truncated_responses += 1
-        event = {"turn": turn, "type": "truncated_response"}
+    def record_recovered_response(self, turn: int, reason: str | None = None):
+        self.recovered_responses += 1
+        event = {"turn": turn, "type": "recovered_response"}
         if reason is not None:
             event["reason"] = reason
         self.events.append(event)
@@ -379,7 +379,7 @@ class ReportCollector:
                 "compactions": self.compactions,
                 "turn_drops": self.turn_drops,
                 "guardrail_interventions": self.guardrail_interventions,
-                "truncated_responses": self.truncated_responses,
+                "recovered_responses": self.recovered_responses,
                 "truncation_repairs": self.truncation_repairs,
                 "scavenged_calls": self.scavenged_calls,
                 "stormed_calls": self.stormed_calls,

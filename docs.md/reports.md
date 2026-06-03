@@ -52,7 +52,7 @@ The JSON below is from a verified local run using `--model dummy-model --max-tur
     "compactions": 0,
     "turn_drops": 0,
     "guardrail_interventions": 0,
-    "truncated_responses": 0,
+    "recovered_responses": 0,
     "llm_calls": 0,
     "total_llm_time_s": 0.0,
     "total_tool_time_s": 0.0,
@@ -99,7 +99,7 @@ A `success` outcome means the model produced a final non-tool response. An `exha
 
 `tool_calls_total`, `tool_calls_succeeded`, and `tool_calls_failed` are aggregate tool counters. `tool_calls_by_name` is a per-tool breakdown using `{succeeded, failed}` counts.
 
-`compactions` counts `compact_messages` and `aggressive_drop` events. `turn_drops` counts `drop_middle_turns` events. `guardrail_interventions` counts injected correction prompts for repeated tool failures. `truncated_responses` counts model outputs that hit output-token limits.
+`compactions` counts `compact_messages` and `aggressive_drop` events. `turn_drops` counts `drop_middle_turns` events. `guardrail_interventions` counts injected correction prompts for repeated tool failures. `recovered_responses` counts model outputs that could not be used as emitted and triggered a recovery step, such as output cut off by the token limit, tool calls with malformed JSON arguments, or tool-call markup leaked into the text channel.
 
 `skills_used` records skill names successfully activated through `use_skill`. `review_rounds` records how many reviewer passes occurred when `--reviewer` is active.
 
@@ -125,7 +125,7 @@ For `guardrail`, fields include `tool` and `level`, where `level` is `nudge` for
 
 For `review`, fields include `round`, `exit_code`, and `feedback` (reviewer standard output). When the reviewer produces standard error output, `stderr` is also included.
 
-For `truncated_response`, the event marks that an LLM response ended because of output token limits.
+For `recovered_response`, the event marks an LLM response that was not directly usable and prompted a recovery step. The optional `reason` field is `length` (output cut off by the token limit), `malformed_args` (tool call with unparseable JSON arguments), or `textual_tool_call_leak` (tool-call markup emitted as plain text). It is omitted for a plain text response truncated by the output limit.
 
 For `lifecycle`, fields include `event` (`startup` or `exit`), `exit_code`, `duration_s`, and optionally `error`. Lifecycle events appear when `--lifecycle-command` is configured. See [Lifecycle Hooks](lifecycle-hooks.md) for details.
 

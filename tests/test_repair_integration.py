@@ -123,9 +123,10 @@ def test_truncation_repair_avoids_compaction(tmp_path, monkeypatch):
     assert compact_spy.call_count == 0
 
 
-def test_truncation_repair_flag_off_falls_through_to_compaction(tmp_path, monkeypatch):
-    """With the experimental flag off the legacy discard+compact path
-    still runs, proving the gate works."""
+def test_truncation_repair_flag_off_discards_and_reprompts(tmp_path, monkeypatch):
+    """With the repair flag off the malformed call can't be salvaged, so it is
+    discarded and the model is re-prompted — never compacted, since malformed
+    arguments are a formatting slip, not a context-window problem."""
     from swival import agent
     from unittest.mock import MagicMock
 
@@ -139,8 +140,10 @@ def test_truncation_repair_flag_off_falls_through_to_compaction(tmp_path, monkey
         (_make_message(content="done"), "stop", [], 0, (0, 0)),
     ]
 
-    _drive_agent(tmp_path, monkeypatch, args, responses)
-    assert compact_spy.call_count >= 1
+    captured = _drive_agent(tmp_path, monkeypatch, args, responses)
+    assert compact_spy.call_count == 0
+    users = [m.get("content", "") for m in captured[1] if m.get("role") == "user"]
+    assert any("malformed JSON arguments" in u for u in users)
 
 
 def test_scavenge_recovers_swival_call(tmp_path, monkeypatch):

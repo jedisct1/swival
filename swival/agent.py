@@ -889,6 +889,37 @@ def _make_textual_tool_call_repair_prompt() -> str:
     )
 
 
+def _malformed_tool_call_names(msg) -> list[str]:
+    """Names of tool calls on msg whose arguments don't parse as JSON."""
+    names = []
+    for tc in _msg_tool_calls(msg) or []:
+        raw = _normalize_tool_call_args(_tool_call_args(tc))
+        try:
+            json.loads(raw)
+            continue
+        except (json.JSONDecodeError, TypeError):
+            pass
+        fn = tc.function if hasattr(tc, "function") else tc.get("function")
+        name = ""
+        if fn is not None:
+            if hasattr(fn, "name"):
+                name = fn.name or ""
+            elif isinstance(fn, dict):
+                name = fn.get("name", "") or ""
+        names.append(name or "?")
+    return names
+
+
+def _make_malformed_tool_call_repair_prompt(names) -> str:
+    which = ", ".join(dict.fromkeys(n for n in names if n and n != "?"))
+    target = f" ({which})" if which else ""
+    return (
+        f"Your previous tool call{target} had malformed JSON arguments and "
+        "could not be executed. Re-issue it with complete, valid JSON "
+        "arguments through the tool-calling interface."
+    )
+
+
 def _normalize_tool_call_args(raw):
     """Treat the provider 'no arguments' convention (None or '') as '{}'."""
     return raw if raw not in (None, "") else "{}"
@@ -1182,25 +1213,32 @@ def _raise_if_truncated_tool_call(
     where="",
     repair_truncated_args: bool = False,
 ):
-    """Reject truncated tool-call responses by raising ContextOverflowError.
+    """Raise ContextOverflowError when output was truncated by the length cap.
 
-    Records the truncation in the report (with reason), preserves
-    provider_retries on the exception so the existing overflow handlers
-    can attribute the cost, and emits a verbose warning.  Does nothing
-    for text-only finish_reason='length' or clean responses.
+    Only genuine output truncation (finish_reason='length' with unparseable
+    tool-call arguments) raises: trimming the prompt frees output-token budget,
+    so routing it through the compaction ladder is the right remedy.  It
+    records the truncation, preserves provider_retries on the exception so the
+    overflow handlers can attribute the cost, and emits a verbose warning.
 
-    If ``repair_truncated_args`` is True, attempts to repair unbalanced
-    JSON in tool-call arguments first.  When the repair succeeds for
-    every malformed call, the function returns without raising and the
-    loop continues with the repaired arguments.
+    Malformed tool-call arguments under a normal finish_reason are a model
+    formatting slip, not a context problem.  This leaves them untouched for the
+    caller's inline repair-prompt path; compacting the conversation would
+    discard valid context for no reason.  Clean responses and text-only
+    finish_reason='length' also do nothing.
+
+    If ``repair_truncated_args`` is True, attempts to repair unbalanced JSON in
+    tool-call arguments first.  When the repair succeeds for every malformed
+    call, the function returns and the loop continues with the repaired
+    arguments.
     """
     if repair_truncated_args:
         _try_repair_truncated_tool_args(msg, turn=turn, report=report, verbose=verbose)
     reason = _classify_tool_call_truncation(msg, finish_reason)
-    if reason is None:
+    if reason != TRUNCATED_REASON_LENGTH:
         return
     if report:
-        report.record_truncated_response(turn, reason=reason)
+        report.record_recovered_response(turn, reason=reason)
     if verbose:
         suffix = f" {where}" if where else ""
         fmt.warning(
@@ -7861,6 +7899,7 @@ def run_agent_loop(
     _last_turn_was_continuation = False
     _last_turn_used_tools = False
     _textual_tool_call_repair_pending = False
+    _malformed_tool_call_repair_pending = False
     # One-shot: a goal-launch turn (synthetic start_prompt appended by /goal)
     # is treated as a continuation for *its own* turn only. Consumed when the
     # first LLM response arrives, regardless of whether tools were called.
@@ -8692,6 +8731,54 @@ def run_agent_loop(
             )
             continue
 
+        # Recover from malformed tool-call arguments. The model produced a
+        # tool call whose JSON arguments don't parse and structural repair
+        # couldn't salvage them. This is a formatting slip, not a context
+        # problem (length truncation is handled separately as overflow), so
+        # discard the unusable call and re-prompt instead of compacting valid
+        # context away. Appending the call would orphan it in history.
+        if (
+            finish_reason != "length"
+            and getattr(msg, "tool_calls", None)
+            and _has_malformed_tool_args(msg)
+        ):
+            if report:
+                report.record_recovered_response(
+                    turns + turn_offset, reason=TRUNCATED_REASON_MALFORMED
+                )
+            if _malformed_tool_call_repair_pending:
+                if continue_here:
+                    from .continue_here import write_continue_file
+
+                    write_continue_file(
+                        base_dir,
+                        messages,
+                        todo_state=todo_state,
+                        snapshot_state=snapshot_state,
+                        thinking_state=thinking_state,
+                        goal_state=goal_state,
+                    )
+                raise AgentError(
+                    "model emitted malformed tool-call arguments again after "
+                    "a repair prompt"
+                )
+            _malformed_tool_call_repair_pending = True
+            if verbose:
+                fmt.warning(
+                    "discarding tool call with malformed arguments, "
+                    "requesting a valid retry"
+                )
+            messages.append(
+                {
+                    "role": "user",
+                    "content": _make_malformed_tool_call_repair_prompt(
+                        _malformed_tool_call_names(msg)
+                    ),
+                    "_swival_synthetic": True,
+                }
+            )
+            continue
+
         messages.append(_msg_to_dict(msg))
 
         # Recover from native tool-call markup leaked as plain text. Some weak
@@ -8712,7 +8799,7 @@ def run_agent_loop(
                 ) + "[discarded malformed textual tool-call markup]"
                 _set_msg_content(messages[-1], trimmed)
                 if report:
-                    report.record_truncated_response(
+                    report.record_recovered_response(
                         turns + turn_offset, reason=leak_reason
                     )
                 if verbose:
@@ -8769,7 +8856,7 @@ def run_agent_loop(
                 # Output was truncated before the model could finish;
                 # nudge it to continue using tools instead of quitting.
                 if report:
-                    report.record_truncated_response(turns + turn_offset)
+                    report.record_recovered_response(turns + turn_offset)
                 if verbose:
                     fmt.info(
                         "Response truncated (finish_reason=length), prompting continuation."
@@ -8871,6 +8958,7 @@ def run_agent_loop(
         _last_turn_used_tools = True
         _goal_launch_pending = False
         _textual_tool_call_repair_pending = False
+        _malformed_tool_call_repair_pending = False
         _goal_completed_by_tool = False
         for tool_call in msg.tool_calls:
             # Check cancellation before each tool call
