@@ -28,12 +28,27 @@ class TestTurnHeader:
     def test_contains_turn_info(self):
         out = _capture(fmt.turn_header, 3, 10, 4200)
         assert "Turn 3/10" in out
-        assert "4200 tokens" in out
+        assert "4,200 tokens" in out
 
     def test_different_values(self):
         out = _capture(fmt.turn_header, 1, 5, 100)
         assert "Turn 1/5" in out
         assert "100 tokens" in out
+
+    def test_title_without_context_length(self):
+        assert fmt._turn_title(3, 10, 4200, None) == "Turn 3/10 (~4,200 tokens)"
+
+    def test_title_with_context_length(self):
+        assert (
+            fmt._turn_title(3, 10, 4200, 128000)
+            == "Turn 3/10 (~4,200 / 128,000 tokens, 3%)"
+        )
+
+    def test_title_zero_context_length_falls_back(self):
+        assert fmt._turn_title(3, 10, 4200, 0) == "Turn 3/10 (~4,200 tokens)"
+
+    def test_title_over_budget_exceeds_100_percent(self):
+        assert fmt._turn_title(1, 5, 200, 100) == "Turn 1/5 (~200 / 100 tokens, 200%)"
 
 
 class TestLlmTiming:

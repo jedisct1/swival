@@ -8156,7 +8156,7 @@ def run_agent_loop(
 
         token_est = estimate_tokens(messages, effective_tools)
         if verbose:
-            fmt.turn_header(turns, max_turns, token_est)
+            fmt.turn_header(turns, max_turns, token_est, context_length)
 
         t0 = time.monotonic()
         try:

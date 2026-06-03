@@ -94,10 +94,19 @@ class _GradientRule:
         yield from text.__rich_console__(console, options)
 
 
-def turn_header(n: int, max_n: int, token_est: int) -> None:
+def _turn_title(n: int, max_n: int, token_est: int, context_length: int | None) -> str:
+    if context_length:
+        pct = token_est * 100 // context_length
+        return f"Turn {n}/{max_n} (~{token_est:,} / {context_length:,} tokens, {pct}%)"
+    return f"Turn {n}/{max_n} (~{token_est:,} tokens)"
+
+
+def turn_header(
+    n: int, max_n: int, token_est: int, context_length: int | None = None
+) -> None:
     reset_state()
     _console.print()
-    title = f"Turn {n}/{max_n} (~{token_est} tokens)"
+    title = _turn_title(n, max_n, token_est, context_length)
     if _console.is_terminal:
         _console.print(_GradientRule(title))
     else:
