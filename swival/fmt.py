@@ -16,6 +16,7 @@ from rich.progress import (
     MofNCompleteColumn,
     Progress,
     SpinnerColumn,
+    TaskProgressColumn,
     TextColumn,
     TimeElapsedColumn,
     TimeRemainingColumn,
@@ -191,39 +192,68 @@ def llm_spinner(label: str = "Thinking"):
 
 
 @contextlib.contextmanager
-def command_spinner(label: str):
-    """Steady spinner on stderr while a shell command runs.
+def command_spinner(label: str, timeout: float | None = None):
+    """Progress display on stderr while a shell command runs.
 
-    Transient: the line is wiped on exit so the command's captured output
-    prints cleanly afterwards. No-op when stderr is not a terminal. Yields a
+    With a positive *timeout*, shows a bar filling toward the timeout deadline
+    plus an elapsed timer; without one, falls back to an indeterminate spinner.
+    Transient: the line is wiped on exit so the command's captured output prints
+    cleanly afterwards. No-op when stderr is not a terminal. Yields a
     ``dismiss()`` callable that early-stops the display.
 
-    Unlike :func:`llm_spinner`, no animation thread is needed: an active
-    ``Progress`` self-refreshes its spinner and elapsed timer. Only one Rich
-    live display may be active at a time, so callers must not start this while
-    another live display (e.g. the LLM spinner) is running.
+    Only one Rich live display may be active at a time, so callers must not
+    start this while another live display (e.g. the LLM spinner) is running.
     """
     if not _console.is_terminal:
         yield _noop
         return
 
-    progress = Progress(
+    determinate = bool(timeout and timeout > 0)
+    columns = [
         SpinnerColumn("dots", style="cyan", speed=1.5),
         TextColumn("  Running {task.description}"),
-        TimeElapsedColumn(),
+    ]
+    if determinate:
+        columns += [
+            BarColumn(bar_width=30),
+            TaskProgressColumn(),
+            TextColumn("[dim]of timeout[/dim]"),
+        ]
+    columns.append(TimeElapsedColumn())
+
+    progress = Progress(
+        *columns,
         console=_console,
         transient=True,
         refresh_per_second=12,
     )
 
+    stop = threading.Event()
     dismissed = threading.Event()
     progress.start()
-    progress.add_task(escape(label or "command"), total=None)
+    task_id = progress.add_task(
+        escape(label or "command"), total=timeout if determinate else None
+    )
+
+    advancer: threading.Thread | None = None
+    if determinate:
+
+        def _advance():
+            t0 = time.monotonic()
+            while not stop.wait(0.1):
+                elapsed = min(time.monotonic() - t0, timeout)
+                progress.update(task_id, completed=elapsed)
+
+        advancer = threading.Thread(target=_advance, daemon=True)
+        advancer.start()
 
     def dismiss() -> None:
         if dismissed.is_set():
             return
         dismissed.set()
+        stop.set()
+        if advancer is not None:
+            advancer.join(timeout=1)
         progress.stop()
 
     try:

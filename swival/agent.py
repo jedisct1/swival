@@ -92,6 +92,7 @@ from .loops import (
 )
 from .mcp_client import McpShutdownError
 from .tools import (
+    MAX_TIMEOUT,
     TOOLS,
     RUN_COMMAND_TOOL,
     RUN_SHELL_COMMAND_TOOL,  # noqa: F401 — used in build_tools()
@@ -3236,10 +3237,16 @@ def handle_tool_call(
     _background = bool(parsed_args.get("background")) if _args_ok else False
     _show_spinner = _is_cmd and verbose and not is_subagent and not _background
     _command = parsed_args.get("command") if _args_ok else None
+    _timeout = parsed_args.get("timeout", 30) if _args_ok else 30
+    try:
+        _timeout = max(1, min(int(_timeout), MAX_TIMEOUT))
+    except (TypeError, ValueError):
+        _timeout = 30
     # Rich allows only one active live display; this is safe because the LLM
     # spinner has stopped before dispatch begins and subagents are excluded.
+    # The bar fills toward the same timeout the command tool enforces.
     spinner_cm = (
-        fmt.command_spinner(_command_label(_command))
+        fmt.command_spinner(_command_label(_command), timeout=_timeout)
         if _show_spinner
         else nullcontext()
     )

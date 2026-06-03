@@ -99,6 +99,20 @@ class TestCommandSpinner:
         assert "Running" in out
         assert "git status" in out
 
+    def test_progress_bar_shown_with_timeout(self):
+        buf = StringIO()
+        old = fmt._console
+        fmt._console = _styled_console(buf)
+        try:
+            with fmt.command_spinner("sleep 5", timeout=5):
+                pass
+        finally:
+            fmt._console = old
+        out = buf.getvalue()
+        assert "sleep 5" in out
+        assert "%" in out
+        assert "of timeout" in out
+
     def test_yields_dismiss_callable_when_not_terminal(self):
         buf = StringIO()
         old = fmt._console
