@@ -131,7 +131,7 @@ Audit complete. 2 finding(s) written to audit-findings/. Open audit-findings/REA
 <h2 id="example-audits">Example Audits</h2>
 <p>A growing collection of security audits run against open-source projects with Swival is published at <a href="https://github.com/swival/security-audits">github.com/swival/security-audits</a>. Each audit there was generated automatically by <code>/audit</code> and contains the full set of findings, reports, and patches.</p>
 <h2 id="how-it-works">How It Works</h2>
-<p>The audit runs in five sequential phases. State is checkpointed after each phase and after every batch within a phase, so interrupted audits can be resumed.</p>
+<p>The audit runs in a sequence of phases. State is checkpointed after each phase and after every batch within a phase, so interrupted audits can be resumed. Phases 1 through 3 narrow the codebase down to provable findings, Phase 4 reproduces them, the Phase 4.5 gate throws out the ones that are overstated or irrelevant, and Phase 5 writes the reports and patches.</p>
 <h3 id="phase-1-repository-profiling">Phase 1: Repository Profiling</h3>
 <p>Reads manifests (<code>package.json</code>, <code>pyproject.toml</code>, <code>Cargo.toml</code>, <code>Makefile</code>, etc.) and entry-point candidates from committed code, then calls the LLM to produce a compact repository profile: detected languages, frameworks, entry points, trust boundaries, persistence layers, auth surfaces, and dangerous operations. This profile is reused as context in every subsequent phase.</p>
 <p>Files are ordered by an attack-surface heuristic that scores keywords like <code>exec</code>, <code>eval</code>, <code>auth</code>, <code>token</code>, <code>sql</code>, <code>template</code>, and <code>socket</code>. Higher-scoring files are processed first.</p>
@@ -167,6 +167,14 @@ Audit complete. 2 finding(s) written to audit-findings/. Open audit-findings/REA
 </ul>
 <p>Verified findings advance to artifact generation. Discarded findings are dropped. Failed verifications (infrastructure errors, timeouts) are retried once for transient errors and can be resumed with <code>--resume</code>.</p>
 <p>Verification runs in parallel, capped at 2 concurrent workers regardless of the <code>--workers</code> setting.</p>
+<h3 id="phase-45-adjudication">Phase 4.5: Adjudication</h3>
+<p>Reproduction proves a bug exists. It does not prove the bug matters. The verifier spends its turns trying to <em>confirm</em> a finding, which biases it toward saying yes, and severity is assigned early in Phase 3 from a single-file view that never gets revisited. The result is a pile of findings that are technically real but overstated, self-inflicted, or irrelevant to how the project is actually deployed.</p>
+<p>The adjudication gate is the answer to that. It runs after verification and before any report or patch is written, so the expensive Phase 5 work only happens for findings that survive.</p>
+<p>Each verified finding faces a panel of three independent reviewers, each told to <em>refute</em> it and to default to false positive when unsure. The three look through different lenses: one asks whether an untrusted actor can really reach the code, one asks whether it matters in the project's expected threat model, and one asks whether the severity is justified or the issue is already mitigated. A finding is kept only when a majority of the panel confirms it is both real and relevant. Ties drop, because the whole point is to stop shipping false positives.</p>
+<p>Reviewers judge against the deployment surface drawn from the Phase 1 profile, so a denial of service that only the local user can inflict on their own CLI is recognized for what it is and dropped rather than filed as high severity.</p>
+<p>Survivors then pass through a consolidation step that recalibrates severity to the realistic worst case (severity can only be lowered here, never raised), tightens the title and impact type, and records a short threat-model statement that the report carries forward. A <code>security_control_failure</code> stays at high or critical, since that is the floor for the carve-out.</p>
+<p>Dropped findings are kept in the run state and listed in the README under "Dropped in adjudication" with the reason, so the gap between verified and written counts is always explained.</p>
+<p>Adjudication is skipped under <code>--measure-triage</code>, where the goal is to measure triage recall rather than to ship a clean set.</p>
 <h3 id="phase-5-artifact-generation">Phase 5: Artifact Generation</h3>
 <p>For each verified finding:</p>
 <ol>
@@ -315,7 +323,7 @@ force_review = [&quot;swival/audit.py&quot;, &quot;swival/edit.py&quot;, &quot;s
 </code></pre>
 <p>A completed audit (phase <code>"done"</code>) is not resumable with <code>--resume</code>, but can be used with <code>--regen</code> to regenerate artifacts.</p>
 <h2 id="limitations">Limitations</h2>
-<p>The audit depends heavily on the quality of the underlying LLM. Models with weak code understanding will produce lower-quality triage and more false negatives. The verification phase catches many false positives, but a weak verifier model may also miss real bugs or incorrectly confirm speculative findings.</p>
+<p>The audit depends heavily on the quality of the underlying LLM. Models with weak code understanding will produce lower-quality triage and more false negatives. The verification and adjudication phases catch many false positives, but a weak model may also drop real bugs or wave through speculative ones. The adjudication panel is deliberately biased toward dropping, so a borderline-but-genuine finding can be discarded. Dropped findings are listed with their reason in the README, and a full re-run is the way to revisit them if you disagree with the panel.</p>
 <p>The audit sees only committed code. Runtime configuration, environment variables, deployment topology, and dynamic code paths that depend on external state are outside its view.</p>
 <p>Large repositories with many auditable files can take significant time and LLM tokens to process.</p>
             <nav class="page-nav" aria-label="Page navigation"><a class="nav-prev" href="tools.html"><span class="nav-label">&larr; Previous</span><span class="nav-title">Tools</span></a><a class="nav-next" href="goal.html"><span class="nav-label">Next &rarr;</span><span class="nav-title">Goals</span></a></nav>

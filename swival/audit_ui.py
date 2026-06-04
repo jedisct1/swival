@@ -294,6 +294,30 @@ class AuditUI:
             key = (severity or "unknown").lower()
             self._verified_by_sev[key] = self._verified_by_sev.get(key, 0) + verified
 
+    def set_outcome_baseline(
+        self,
+        *,
+        verified_severities: list[str],
+        discarded: int = 0,
+        failed: int = 0,
+    ) -> None:
+        """Reset the outcome counters to a known-good baseline.
+
+        Called before phases that adjust the tallies by delta (notably the
+        adjudication gate, which subtracts a verified count when it drops a
+        finding). On ``--resume`` the verification phase did not run in this
+        process, so the running tallies are zero and naive deltas would go
+        negative; rebuilding from persisted state keeps the summary honest in
+        both the same-process and resumed cases.
+        """
+        self._tally_verified = len(verified_severities)
+        self._tally_discarded = discarded
+        self._tally_failed = failed
+        self._verified_by_sev = {}
+        for sev in verified_severities:
+            key = (sev or "unknown").lower()
+            self._verified_by_sev[key] = self._verified_by_sev.get(key, 0) + 1
+
     def summary(
         self,
         *,

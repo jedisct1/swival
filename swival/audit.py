@@ -13,7 +13,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -248,6 +248,7 @@ class FindingRecord:
     fix_outline: str
     source_file: str
     triage_decision: str | None = None  # "escalated" | "skipped" | None
+    threat_model: str = ""
 
 
 @dataclass
@@ -313,6 +314,10 @@ class AuditRunState:
     # mandatory set; findings whose source path is not in this set are
     # tagged as having been a triage SKIP.
     measurement_escalated_paths: set[str] = field(default_factory=set)
+    # Findings dropped by the Phase 4.5 adjudication gate after verification.
+    # Each entry: {"title", "severity", "source_file", "reason"}. Kept so the
+    # README totals can explain why verified and written counts differ.
+    adjudication_discarded: list[dict] = field(default_factory=list)
 
     @property
     def dependency_index(self) -> dict[str, list[str]]:
@@ -356,6 +361,7 @@ class AuditRunState:
             "select_all": self.select_all,
             "measure_triage": self.measure_triage,
             "measurement_escalated_paths": sorted(self.measurement_escalated_paths),
+            "adjudication_discarded": self.adjudication_discarded,
         }
         state_path = d / "state.json"
         tmp = state_path.with_suffix(".tmp")
@@ -411,6 +417,7 @@ class AuditRunState:
             measurement_escalated_paths=set(
                 blob.get("measurement_escalated_paths", [])
             ),
+            adjudication_discarded=blob.get("adjudication_discarded", []),
         )
         return state
 
@@ -2286,6 +2293,110 @@ Rules:
   REPRODUCED
   NOTREPRODUCED"""
 
+_PHASE45_REVIEW_SYSTEM = """\
+You are adjudicating one already-reproduced security finding. A prior phase built a proof-of-concept and accepted it. Your job is the opposite of that phase: try to REFUTE this finding. Default to false_positive unless the evidence forces otherwise. We would rather drop a real bug than ship a false positive.
+
+{lens}
+
+Judge against the project's realistic, expected threat model, not a worst-case hypothetical.
+
+A finding is real only if, under today's committed code and this deployment surface, all of the following hold:
+- a genuinely untrusted actor (remote client, malicious peer, attacker-controlled file or backend, lower-privileged local user) controls the trigger
+- they gain a concrete security outcome: denial of service from attacker-controlled input, information disclosure, integrity or auth bypass an attacker can weaponize, privilege escalation, code or command execution, or repudiation
+- no existing control in the committed code already blocks it (reject defense-in-depth)
+
+Set threat_model_relevant to no when the only actor is the operator, an admin, or the user running a local CLI on their own machine, or when the attack is self-inflicted. Those are correctness issues, not vulnerabilities.
+
+security_control_failure carve-out: a deterministic logic bug inside code that itself implements a named security control (a signature or MAC verifier, an authentication check, an authorization decision, a sandbox or seccomp boundary, a crypto primitive) is real even when the attacker is implicit, but only at high or critical severity, and only when the proof names the specific control by purpose. A function merely called from a security path does not qualify.
+
+Recalibrate severity to the realistic outcome on this deployment surface:
+- critical: unauthenticated remote code execution, or a security primitive returning the wrong answer for any-party input
+- high: untrusted actor gains privilege via normal input (auth bypass on a network service, memory corruption from attacker bytes, remote DoS that exhausts the service)
+- medium: needs non-default config, a specific layout, or crafted input, or the attacker already has same-trust access
+- low: needs local access, admin cooperation, or dev-only paths, or the impact is minor
+For CLI tools and local libraries, a bug only reachable by the user running them is rarely high or critical. Tie-break downward.
+
+You have no tools and cannot run commands. Reason only over the evidence below.
+
+Output exactly one `@@ verdict @@` block with these keys, one per line:
+- verdict: real | false_positive
+- threat_model_relevant: yes | no
+- severity: low | medium | high | critical
+- reason: one line under 25 words
+
+Use exactly the keys shown. Do not quote, escape, or wrap values."""
+
+_PHASE45_LENSES = (
+    "Lens: reachability. Concentrate on whether an untrusted actor can actually reach this code path under realistic deployment. If the only path runs through trusted, admin, or self-invoked code, it is a false_positive.",
+    "Lens: threat-model fit. Concentrate on whether this matters in the project's expected threat model. A self-inflicted issue, or one only the operator can trigger, is not a vulnerability even when the code is genuinely wrong.",
+    "Lens: severity and defense-in-depth. Concentrate on whether the claimed severity is justified and whether an existing control already mitigates this. Recalibrate to the realistic worst case and treat redundant-hardening proposals as false_positive.",
+)
+
+_PHASE45_WORKED_EXAMPLE = """\
+@@ verdict @@
+verdict: false_positive
+threat_model_relevant: no
+severity: low
+reason: only the local user running the CLI can trigger this, so it is self-inflicted rather than an attacker path"""
+
+_PHASE45_VERDICT_SCHEMA = PhaseSchema(
+    record=RecordSchema(
+        name="verdict",
+        required=("verdict", "threat_model_relevant", "severity", "reason"),
+        enums={
+            "verdict": ("real", "false_positive"),
+            "threat_model_relevant": ("yes", "no"),
+            "severity": _SEVERITIES,
+        },
+    ),
+    cardinality="one",
+    allow_none=False,
+)
+
+_PHASE45_CONSOLIDATE_SYSTEM = """\
+You are finalizing one security finding that a refutation panel voted to keep. Produce the corrected, evidence-grounded version that the report and patch will be generated from.
+
+You have no tools and cannot run commands. Use only the evidence and panel verdicts below.
+
+Rules:
+- Severity may only be lowered or left unchanged, never raised above the proposed severity. Anchor it to the realistic outcome on the stated deployment surface and tie-break downward for local-only or same-trust bugs.
+- A security_control_failure finding must stay high or critical.
+- Keep the title and type as narrow as the evidence proves. Prefer the most specific security impact label.
+- Do not invent new attack surface. If the panel narrowed the realistic impact, reflect that.
+- threat_model must state, in one or two lines, who the untrusted actor is and why this matters under the project's expected deployment, or state plainly that the realistic impact is limited.
+
+Output exactly one `@@ ruling @@` block with these keys, one per line:
+- title: short, specific finding title
+- type: the security impact label (the narrowest that fits)
+- severity: low | medium | high | critical
+- precondition: one minimal precondition per line, repeat the line for each (omit if none)
+- threat_model: realistic threat-model statement; continuation lines may start with two spaces
+- fix_outline: smallest correct fix, under 20 words
+
+Use exactly the keys shown. Do not quote, escape, or wrap values."""
+
+_PHASE45_RULING_WORKED_EXAMPLE = """\
+@@ ruling @@
+title: unauthenticated open redirect on failed form auth
+type: open redirect
+severity: medium
+precondition: form-based auth enabled in config
+threat_model: a remote unauthenticated visitor is redirected to an attacker-chosen host after a failed login, usable for phishing
+fix_outline: validate the redirect target against an allowlist before issuing the 302"""
+
+_PHASE45_RULING_SCHEMA = PhaseSchema(
+    record=RecordSchema(
+        name="ruling",
+        required=("title", "type", "severity", "threat_model"),
+        optional=("fix_outline",),
+        enums={"severity": _SEVERITIES},
+        repeated={"precondition": "preconditions"},
+        multiline=("threat_model",),
+    ),
+    cardinality="one",
+    allow_none=False,
+)
+
 _PHASE5_REPORT_TEMPLATE = """\
 You are writing the final markdown report for one reproduced and patched finding.
 
@@ -3416,6 +3527,407 @@ def _verify_one_finding(
 
 
 # ---------------------------------------------------------------------------
+# Phase 4.5: adjudication gate
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class AdjudicationResult:
+    index: int
+    kept: bool
+    decision: str  # "keep" | "keep_with_changes" | "drop" | "error"
+    finding: FindingRecord
+    original_severity: str
+    final_severity: str
+    reason: str
+    error: str | None = None
+
+
+def _deployment_surface(state: AuditRunState) -> str:
+    """Compact deployment-surface description for adjudication prompts."""
+    profile = state.repo_profile or {}
+
+    def _vals(key: str) -> list[str]:
+        v = profile.get(key) or []
+        if isinstance(v, str):
+            v = [v]
+        return [str(x) for x in v if x]
+
+    lines: list[str] = []
+    summary = profile.get("summary")
+    if summary:
+        lines.append(f"summary: {summary}")
+    for key, label in (
+        ("languages", "languages"),
+        ("frameworks", "frameworks"),
+        ("entry_points", "entry points"),
+        ("trust_boundaries", "trust boundaries"),
+        ("auth_surfaces", "auth surfaces"),
+    ):
+        vals = _vals(key)
+        if vals:
+            lines.append(f"{label}: {', '.join(vals)}")
+    if not lines:
+        return "(no repository profile available)"
+    return "\n".join(f"- {ln}" for ln in lines)
+
+
+def _finding_brief(finding: FindingRecord) -> str:
+    """Compact human-readable view of a finding for adjudication prompts."""
+    locs = ", ".join(finding.locations) if finding.locations else finding.source_file
+    preconds = "; ".join(finding.preconditions) if finding.preconditions else "(none)"
+    proof = " ".join(finding.proof) if finding.proof else "(none)"
+    return (
+        f"title: {finding.title}\n"
+        f"type: {finding.finding_type}\n"
+        f"severity: {finding.severity}\n"
+        f"locations: {locs}\n"
+        f"preconditions: {preconds}\n"
+        f"proof: {proof}\n"
+        f"proposed fix: {finding.fix_outline}"
+    )
+
+
+def _below_high(severity: str) -> bool:
+    """True when ``severity`` is below the security_control_failure floor."""
+    return _SEVERITY_RANK.get((severity or "").lower(), 99) > _SEVERITY_RANK["high"]
+
+
+def _less_severe_of(a: str, b: str) -> str:
+    """Return whichever of ``a`` / ``b`` is the less severe."""
+    ra = _SEVERITY_RANK.get((a or "").lower(), len(_SEVERITY_RANK))
+    rb = _SEVERITY_RANK.get((b or "").lower(), len(_SEVERITY_RANK))
+    return a if ra >= rb else b
+
+
+def _demote_only(original: str, proposed: str) -> str:
+    """Return ``proposed`` only when it is no more severe than ``original``.
+
+    Severity may be lowered or kept, never raised: the gate exists to correct
+    overstated findings, not to inflate them.
+    """
+    o = _SEVERITY_RANK.get((original or "").lower(), len(_SEVERITY_RANK))
+    p = _SEVERITY_RANK.get((proposed or "").lower(), len(_SEVERITY_RANK))
+    return proposed if p >= o else original
+
+
+def _consensus_severity(severities: list[str]) -> str | None:
+    """Most common severity, tie-broken toward the lower severity."""
+    counts: dict[str, int] = {}
+    for s in severities:
+        s = (s or "").lower()
+        if s in _SEVERITIES:
+            counts[s] = counts.get(s, 0) + 1
+    if not counts:
+        return None
+    return max(counts, key=lambda s: (counts[s], _SEVERITY_RANK.get(s, 99)))
+
+
+def _panel_drop_reason(verdicts: list[dict]) -> str:
+    rejecting = [
+        v
+        for v in verdicts
+        if v.get("verdict") != "real" or v.get("threat_model_relevant") != "yes"
+    ]
+    reasons = [v.get("reason", "") for v in rejecting if v.get("reason")]
+    if reasons:
+        return "; ".join(reasons[:2])[:300]
+    return "panel majority judged this not a realistic vulnerability"
+
+
+def _phase45_review_one(
+    finding: FindingRecord,
+    lens: str,
+    surface: str,
+    evidence: str,
+    reproducer_summary: str,
+    state: AuditRunState,
+    ctx: InputContext,
+) -> dict | None:
+    """Run one adversarial reviewer (one lens). Returns a verdict dict or None."""
+    user = (
+        f"Deployment surface:\n{surface}\n\n"
+        f"Finding under review:\n{_finding_brief(finding)}\n\n"
+        f"Phase 4 reproduction summary:\n{reproducer_summary or '(none)'}\n\n"
+        f"Committed evidence bundle:\n{evidence}"
+    )
+    messages = [
+        {"role": "system", "content": _PHASE45_REVIEW_SYSTEM.format(lens=lens)},
+        {"role": "user", "content": user},
+    ]
+    raw = _call_audit_llm(
+        ctx, messages, trace_task=f"audit: phase 4.5 review {finding.title}"
+    )
+    try:
+        records = _parse_records_with_repair(
+            ctx,
+            raw,
+            schema=_PHASE45_VERDICT_SCHEMA,
+            worked_example=_PHASE45_WORKED_EXAMPLE,
+            metrics=state.metrics,
+        )
+    except ValueError:
+        return None
+    return records[0] if records else None
+
+
+def _phase45_consolidate(
+    finding: FindingRecord,
+    verdicts: list[dict],
+    surface: str,
+    evidence: str,
+    state: AuditRunState,
+    ctx: InputContext,
+) -> dict | None:
+    """Produce the corrected finding fields from the panel verdicts."""
+    panel_text = "\n".join(
+        f"- verdict={v.get('verdict')} relevant={v.get('threat_model_relevant')} "
+        f"severity={v.get('severity')} reason={v.get('reason')}"
+        for v in verdicts
+    )
+    user = (
+        f"Deployment surface:\n{surface}\n\n"
+        f"Proposed finding:\n{_finding_brief(finding)}\n\n"
+        f"Refutation panel verdicts:\n{panel_text}\n\n"
+        f"Committed evidence bundle:\n{evidence}"
+    )
+    messages = [
+        {"role": "system", "content": _PHASE45_CONSOLIDATE_SYSTEM},
+        {"role": "user", "content": user},
+    ]
+    raw = _call_audit_llm(
+        ctx, messages, trace_task=f"audit: phase 4.5 consolidate {finding.title}"
+    )
+    try:
+        records = _parse_records_with_repair(
+            ctx,
+            raw,
+            schema=_PHASE45_RULING_SCHEMA,
+            worked_example=_PHASE45_RULING_WORKED_EXAMPLE,
+            metrics=state.metrics,
+        )
+    except ValueError:
+        return None
+    return records[0] if records else None
+
+
+def _adjudicate_one(
+    item: tuple[int, VerifiedFinding],
+    state: AuditRunState,
+    ctx: InputContext,
+    ui: AuditUI | None = None,
+) -> AdjudicationResult:
+    """Refute, recalibrate, and rewrite one verified finding."""
+    index, vf = item
+    finding = vf.finding
+    original_severity = finding.severity
+    surface = _deployment_surface(state)
+    reproducer_summary = str(vf.reproducer.get("summary", "")) if vf.reproducer else ""
+
+    try:
+        evidence, _n = _gather_evidence(finding, ctx)
+    except Exception as e:
+        return AdjudicationResult(
+            index=index,
+            kept=True,
+            decision="error",
+            finding=finding,
+            original_severity=original_severity,
+            final_severity=original_severity,
+            reason="adjudication skipped: evidence gather failed",
+            error=str(e),
+        )
+
+    verdicts: list[dict] = []
+    for lens in _PHASE45_LENSES:
+        try:
+            v = _phase45_review_one(
+                finding, lens, surface, evidence, reproducer_summary, state, ctx
+            )
+        except Exception as e:
+            _ui_info(ui, f"    adjudicate [{finding.title}]: reviewer error: {e}")
+            v = None
+        if v is not None:
+            verdicts.append(v)
+
+    if not verdicts:
+        # No usable verdict: keep the reproduced finding rather than silently
+        # dropping it on a transient failure.
+        return AdjudicationResult(
+            index=index,
+            kept=True,
+            decision="keep",
+            finding=finding,
+            original_severity=original_severity,
+            final_severity=original_severity,
+            reason="adjudication inconclusive: no usable panel verdict",
+        )
+
+    confirming = [
+        v
+        for v in verdicts
+        if v.get("verdict") == "real" and v.get("threat_model_relevant") == "yes"
+    ]
+    # Strict majority of usable verdicts must confirm. Ties drop (refute by default).
+    if len(confirming) * 2 <= len(verdicts):
+        return AdjudicationResult(
+            index=index,
+            kept=False,
+            decision="drop",
+            finding=finding,
+            original_severity=original_severity,
+            final_severity=original_severity,
+            reason=_panel_drop_reason(verdicts),
+        )
+
+    panel_sev = _consensus_severity([v.get("severity", "") for v in confirming])
+
+    ruling = None
+    try:
+        ruling = _phase45_consolidate(finding, verdicts, surface, evidence, state, ctx)
+    except Exception as e:
+        _ui_info(ui, f"    adjudicate [{finding.title}]: consolidate error: {e}")
+
+    updated = replace(finding)
+    if ruling is not None:
+        # Consolidation may not exceed what the skeptical panel agreed on: cap
+        # the ruling severity by the panel consensus so a confident rewrite
+        # cannot re-inflate a finding the panel already talked down.
+        ruling_sev = ruling.get("severity") or original_severity
+        proposed_sev = (
+            _less_severe_of(ruling_sev, panel_sev) if panel_sev else ruling_sev
+        )
+        updated.title = ruling.get("title") or finding.title
+        updated.finding_type = ruling.get("type") or finding.finding_type
+        updated.fix_outline = ruling.get("fix_outline") or finding.fix_outline
+        preconds = ruling.get("preconditions")
+        if preconds:
+            updated.preconditions = preconds
+        tm = ruling.get("threat_model")
+        if tm:
+            updated.threat_model = tm
+    else:
+        proposed_sev = panel_sev or original_severity
+
+    final_sev = _demote_only(original_severity, proposed_sev)
+
+    # security_control_failure is a high/critical-only carve-out. Reconcile it
+    # after demote-only so the floor never silently re-raises a demoted finding.
+    scf = _PHASE3B_SECURITY_CONTROL_FAILURE_TYPE
+    if finding.finding_type == scf:
+        # A finding that was a genuine SCF keeps the high floor however it is
+        # relabeled: consolidation may not launder a broken security control
+        # into a low-severity finding by rewriting its type.
+        if _below_high(final_sev):
+            final_sev = "high"
+    elif updated.finding_type == scf and _below_high(final_sev):
+        # An SCF relabel applied to a below-high finding is not a valid SCF:
+        # drop the relabel rather than leave an invalid sub-high SCF.
+        updated.finding_type = finding.finding_type
+    updated.severity = final_sev
+
+    changed = (
+        updated.title != finding.title
+        or updated.finding_type != finding.finding_type
+        or updated.severity != finding.severity
+        or updated.fix_outline != finding.fix_outline
+        or updated.preconditions != finding.preconditions
+        or updated.threat_model != finding.threat_model
+    )
+    return AdjudicationResult(
+        index=index,
+        kept=True,
+        decision="keep_with_changes" if changed else "keep",
+        finding=updated,
+        original_severity=original_severity,
+        final_severity=final_sev,
+        reason="; ".join(v.get("reason", "") for v in confirming if v.get("reason"))[
+            :300
+        ],
+    )
+
+
+def _phase45_adjudicate(
+    state: AuditRunState,
+    ctx: InputContext,
+    ui: AuditUI,
+    workers: int,
+) -> None:
+    """Drive the Phase 4.5 gate over all verified findings, mutating state."""
+    findings = state.verified_findings
+    items = list(enumerate(findings))
+    # Rebuild the outcome tallies from state so the per-drop delta adjustments
+    # below stay correct on --resume, where Phase 4 did not run in this process.
+    verify_discarded = sum(
+        1 for vs in state.verification_state.values() if vs.get("status") == "discarded"
+    )
+    ui.set_outcome_baseline(
+        verified_severities=[vf.finding.severity for vf in findings],
+        discarded=verify_discarded,
+    )
+    ph = _phase_open(ui, "adjudication", total=len(items))
+    if not ui.is_live:
+        fmt.info(f"phase 4.5: adjudicating {len(items)} verified findings...")
+
+    def _fn(item):
+        return _adjudicate_one(item, state, ctx, ui=ui)
+
+    def _label(item):
+        return item[1].finding.title
+
+    results = _run_batch(
+        _fn, items, max_workers=max(1, workers), ui=ui, label_for=_label
+    )
+
+    kept: list[VerifiedFinding] = []
+    dropped = 0
+    recalibrated = 0
+    for i, result in enumerate(results):
+        vf = findings[i]
+        if result is None:
+            kept.append(vf)
+            ph.advance()
+            continue
+        if not result.kept:
+            dropped += 1
+            state.adjudication_discarded.append(
+                {
+                    "title": vf.finding.title,
+                    "severity": result.original_severity,
+                    "source_file": vf.finding.source_file,
+                    "reason": result.reason,
+                }
+            )
+            ui.tally(verified=-1, severity=result.original_severity)
+            ui.tally(discarded=1)
+            _ui_info(
+                ui,
+                f"  dropped (adjudication): {vf.finding.title} — {result.reason}",
+            )
+            ph.advance()
+            continue
+        kept.append(replace(vf, finding=result.finding))
+        if result.final_severity != result.original_severity:
+            recalibrated += 1
+            ui.tally(verified=-1, severity=result.original_severity)
+            ui.tally(verified=1, severity=result.final_severity)
+            _ui_info(
+                ui,
+                f"  severity {result.original_severity} -> "
+                f"{result.final_severity}: {result.finding.title}",
+            )
+        ph.advance()
+
+    state.verified_findings = kept
+    ph.complete(f"{len(kept)} kept · {dropped} dropped · {recalibrated} recalibrated")
+    if not ui.is_live:
+        fmt.info(
+            f"phase 4.5 complete. {len(kept)} kept, {dropped} dropped, "
+            f"{recalibrated} recalibrated."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Parallel batch helper
 # ---------------------------------------------------------------------------
 
@@ -3623,6 +4135,7 @@ def _audit_totals(state: AuditRunState) -> dict[str, int]:
         "findings_proposed": len(state.proposed_findings),
         "findings_verified": len(state.verified_findings),
         "findings_discarded": discarded,
+        "findings_dropped_adjudication": len(state.adjudication_discarded),
         "artifacts_written": written,
         "artifacts_failed": failed,
         "artifacts_pending": pending,
@@ -3743,12 +4256,31 @@ def _render_findings_readme(state: AuditRunState, *, repo_name: str = "audit") -
     lines.append(f"- findings verified: {totals['findings_verified']}")
     lines.append(f"- findings discarded: {totals['findings_discarded']}")
     lines.append(
+        f"- findings dropped in adjudication: {totals['findings_dropped_adjudication']}"
+    )
+    lines.append(
         "- artifacts: "
         f"{totals['artifacts_written']} written, "
         f"{totals['artifacts_failed']} failed, "
         f"{totals['artifacts_pending']} pending"
     )
     lines.append("")
+
+    if state.adjudication_discarded:
+        lines.append("## Dropped in adjudication")
+        lines.append("")
+        lines.append(
+            "These findings reproduced in Phase 4 but the Phase 4.5 gate judged "
+            "them false positives or out of a realistic threat model."
+        )
+        lines.append("")
+        for entry in state.adjudication_discarded:
+            title = _escape_cell(entry.get("title", "untitled"))
+            sev = _escape_cell(entry.get("severity", ""))
+            src = _escape_cell(entry.get("source_file", ""))
+            reason = _escape_cell(entry.get("reason", ""))
+            lines.append(f"- **{title}** ({sev}, {src}) — {reason}")
+        lines.append("")
 
     failed_entries = [
         (idx, vf, entry)
@@ -3794,8 +4326,8 @@ def _write_findings_readme(state: AuditRunState, base_dir: str) -> bool:
     """Write ``audit-findings/README.md`` if there is something to index.
 
     Returns ``True`` when a README was written, ``False`` when the gate
-    rejected the run (zero verified findings, or no artifact has reached
-    ``status == "written"`` yet).
+    rejected the run (no written artifact and nothing the adjudication gate
+    dropped worth recording).
 
     When the gate rejects but a previous README is still on disk, the stale
     file is removed. Otherwise a failed ``--regen`` that flipped every
@@ -3809,7 +4341,10 @@ def _write_findings_readme(state: AuditRunState, base_dir: str) -> bool:
     has_written = any(
         entry.get("status") == "written" for entry in state.artifact_state.values()
     )
-    if not state.verified_findings or not has_written:
+    # An audit that drops every finding in adjudication still owes the reader a
+    # README explaining what was thrown out and why.
+    has_drops = bool(state.adjudication_discarded)
+    if (not state.verified_findings or not has_written) and not has_drops:
         if target.exists():
             target.unlink()
         return False
@@ -4015,6 +4550,7 @@ _PHASE_TITLES: dict[str, tuple[str, str]] = {
     "triage": ("Phase 2 · Triage", "triage"),
     "deep_review": ("Phase 3 · Deep Review", "deep_review"),
     "verification": ("Phase 4 · Verification", "verification"),
+    "adjudication": ("Phase 4.5 · Adjudication", "verification"),
     "artifacts": ("Phase 5 · Artifacts", "artifacts"),
 }
 
@@ -4540,12 +5076,19 @@ def _run_pipeline_body(
                 deduped_vf.append(vf)
         state.verified_findings = deduped_vf
 
-        state.phase = "artifacts"
+        state.phase = "adjudication"
         state.save()
         if not ui.is_live:
             fmt.info(
                 f"phase 4 complete. {len(state.verified_findings)} verified findings."
             )
+
+    # Phase 4.5: adjudication gate
+    if state.phase == "adjudication":
+        if state.verified_findings and not state.measure_triage:
+            _phase45_adjudicate(state, ctx, ui, workers)
+        state.phase = "artifacts"
+        state.save()
 
     # Phase 5: artifacts
     if state.phase == "artifacts":
@@ -4697,7 +5240,10 @@ def _run_pipeline_body(
         _failed, _pending, written = _artifact_summary(state)
         readme_written = False
 
-    artifact_dir_label = str(state.artifact_dir) if state.verified_findings else None
+    # Show the artifact row whenever there is a README to point at, including
+    # the all-dropped path where no finding survived but the README records why.
+    show_artifact_dir = bool(state.verified_findings) or readme_written
+    artifact_dir_label = str(state.artifact_dir) if show_artifact_dir else None
     ui.summary(
         artifact_dir=artifact_dir_label,
         written=written,
@@ -4705,6 +5251,14 @@ def _run_pipeline_body(
     )
 
     if written == 0:
+        if readme_written and state.adjudication_discarded:
+            n = len(state.adjudication_discarded)
+            return (
+                "No findings survived adjudication. "
+                f"{n} reproduced finding(s) were dropped as false positives or "
+                f"out of a realistic threat model; see {state.artifact_dir}/README.md "
+                "for the reasons."
+            )
         return (
             "No provable security bugs or security-control failures found "
             "in Git-tracked files."

@@ -20,8 +20,15 @@ from swival.audit import (
     VerificationResult,
     VerifiedFinding,
     _TransientVerifierError,
+    _adjudicate_one,
     _build_context_indices,
     _canonicalize_finding,
+    _consensus_severity,
+    _demote_only,
+    _less_severe_of,
+    _phase45_adjudicate,
+    _render_findings_readme,
+    _write_findings_readme,
     _extract_exports,
     _extract_imports,
     _finding_key,
@@ -2270,6 +2277,7 @@ class TestStateAmplificationDos:
             "fix_outline",
             "source_file",
             "triage_decision",
+            "threat_model",
         }
 
 
@@ -7078,3 +7086,323 @@ class TestWorktreeRecovery:
             pass
 
         assert not stale.exists()
+
+
+# ---------------------------------------------------------------------------
+# Phase 4.5 adjudication gate
+# ---------------------------------------------------------------------------
+
+
+def _verdict_block(verdict, relevant, severity, reason="because"):
+    return (
+        "@@ verdict @@\n"
+        f"verdict: {verdict}\n"
+        f"threat_model_relevant: {relevant}\n"
+        f"severity: {severity}\n"
+        f"reason: {reason}\n"
+    )
+
+
+def _ruling_block(
+    title, type_, severity, threat_model="remote attacker abuses X", fix="bound it"
+):
+    return (
+        "@@ ruling @@\n"
+        f"title: {title}\n"
+        f"type: {type_}\n"
+        f"severity: {severity}\n"
+        f"threat_model: {threat_model}\n"
+        f"fix_outline: {fix}\n"
+    )
+
+
+def _adj_fake_call(reach, tmf, sev, ruling=""):
+    """Build a fake _call_audit_llm that branches on the lens / consolidate prompt."""
+
+    def fake_call(ctx, messages, *args, **kwargs):
+        system = messages[0]["content"]
+        if "finalizing one security finding" in system:
+            return ruling
+        if "Lens: reachability" in system:
+            return reach
+        if "Lens: threat-model fit" in system:
+            return tmf
+        if "Lens: severity and defense-in-depth" in system:
+            return sev
+        return ""
+
+    return fake_call
+
+
+class TestPhase45Adjudication:
+    def _ctx(self, tmp_path):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            base_dir=str(tmp_path),
+            tools=[],
+            verbose=False,
+            no_history=True,
+            loop_kwargs={},
+            trace_dir=None,
+        )
+
+    def _state(self, tmp_path):
+        scope = AuditScope(
+            branch="main",
+            commit="abc123",
+            tracked_files=["main.c"],
+            mandatory_files=["main.c"],
+            focus=[],
+        )
+        state = AuditRunState(
+            run_id="adj-run",
+            scope=scope,
+            queued_files=["main.c"],
+            state_dir=tmp_path / ".swival" / "audit",
+        )
+        state.repo_profile = {
+            "summary": "a local CLI tool",
+            "languages": ["c"],
+            "trust_boundaries": ["command-line arguments"],
+        }
+        return state
+
+    def _finding(self, **over):
+        f = FindingRecord(
+            title="attacker length wraps allocation",
+            finding_type="memory corruption",
+            severity="high",
+            locations=["main.c:7"],
+            preconditions=["receives a request"],
+            proof=["argv data reaches unsafe copy"],
+            fix_outline="bounded copy",
+            source_file="main.c",
+        )
+        for k, v in over.items():
+            setattr(f, k, v)
+        return f
+
+    def _vf(self, **over):
+        return VerifiedFinding(
+            finding=self._finding(**over),
+            correctness_reason="ok",
+            rebuttal_reason="n/a",
+            reproducer={"reproduced": True, "summary": "poc ran"},
+        )
+
+    def _adj(self, tmp_path, monkeypatch, vf, fake):
+        monkeypatch.setattr("swival.audit._gather_evidence", lambda f, c: ("ev", 1))
+        monkeypatch.setattr("swival.audit._call_audit_llm", fake)
+        return _adjudicate_one((0, vf), self._state(tmp_path), self._ctx(tmp_path))
+
+    def test_admin_only_trigger_dropped(self, tmp_path, monkeypatch):
+        # Every reviewer judges this self-inflicted / out of threat model.
+        block = _verdict_block(
+            "false_positive", "no", "low", "only the operator triggers it"
+        )
+        res = self._adj(
+            tmp_path, monkeypatch, self._vf(), _adj_fake_call(block, block, block)
+        )
+        assert res.kept is False
+        assert res.decision == "drop"
+        assert "operator" in res.reason
+
+    def test_correctness_failure_without_gain_dropped(self, tmp_path, monkeypatch):
+        # Two reviewers see no attacker gain; majority drops.
+        fp = _verdict_block("false_positive", "no", "low", "no attacker gain")
+        real = _verdict_block("real", "yes", "high")
+        res = self._adj(tmp_path, monkeypatch, self._vf(), _adj_fake_call(fp, fp, real))
+        assert res.kept is False
+        assert res.decision == "drop"
+
+    def test_bounded_remote_dos_kept_as_medium(self, tmp_path, monkeypatch):
+        # Reproduced remote DoS, but bounded: panel keeps it, recalibrates to medium.
+        real = _verdict_block("real", "yes", "medium", "bounded but real")
+        ruling = _ruling_block(
+            "bounded request amplification",
+            "denial of service",
+            "medium",
+        )
+        vf = self._vf(severity="high", finding_type="denial of service")
+        res = self._adj(
+            tmp_path, monkeypatch, vf, _adj_fake_call(real, real, real, ruling)
+        )
+        assert res.kept is True
+        assert res.final_severity == "medium"
+        assert res.decision == "keep_with_changes"
+
+    def test_severity_demote_only_never_promotes(self, tmp_path, monkeypatch):
+        # Panel and ruling argue critical, but original was medium: stays medium.
+        crit = _verdict_block("real", "yes", "critical")
+        ruling = _ruling_block("x", "memory corruption", "critical")
+        vf = self._vf(severity="medium")
+        res = self._adj(
+            tmp_path, monkeypatch, vf, _adj_fake_call(crit, crit, crit, ruling)
+        )
+        assert res.kept is True
+        assert res.final_severity == "medium"
+
+    def test_keep_with_changes_rewrites_fields(self, tmp_path, monkeypatch):
+        real = _verdict_block("real", "yes", "medium")
+        ruling = _ruling_block(
+            "narrowed open redirect",
+            "open redirect",
+            "medium",
+            threat_model="remote visitor redirected to attacker host",
+        )
+        res = self._adj(
+            tmp_path, monkeypatch, self._vf(), _adj_fake_call(real, real, real, ruling)
+        )
+        assert res.kept is True
+        assert res.finding.title == "narrowed open redirect"
+        assert res.finding.finding_type == "open redirect"
+        assert res.finding.severity == "medium"
+        assert res.finding.threat_model == "remote visitor redirected to attacker host"
+
+    def test_scf_floor_kept_high(self, tmp_path, monkeypatch):
+        # A security_control_failure may not be demoted below high.
+        real = _verdict_block("real", "yes", "low")
+        ruling = _ruling_block(
+            "verifier accepts forged sig", "security_control_failure", "low"
+        )
+        vf = self._vf(severity="critical", finding_type="security_control_failure")
+        res = self._adj(
+            tmp_path, monkeypatch, vf, _adj_fake_call(real, real, real, ruling)
+        )
+        assert res.kept is True
+        assert res.final_severity == "high"
+
+    def test_no_usable_verdict_keeps_unchanged(self, tmp_path, monkeypatch):
+        # Garbage from every reviewer: keep the reproduced finding, do not drop.
+        res = self._adj(
+            tmp_path, monkeypatch, self._vf(), _adj_fake_call("junk", "junk", "junk")
+        )
+        assert res.kept is True
+        assert res.decision == "keep"
+        assert res.final_severity == "high"
+
+    def test_driver_moves_drops_into_state(self, tmp_path, monkeypatch):
+        from swival.audit_ui import AuditUI
+
+        state = self._state(tmp_path)
+        keep_vf = self._vf(title="real remote bug", severity="high")
+        drop_vf = self._vf(title="self-inflicted thing", severity="high")
+        state.verified_findings = [keep_vf, drop_vf]
+
+        keep_block = _verdict_block("real", "yes", "high")
+        drop_block = _verdict_block("false_positive", "no", "low", "operator only")
+        ruling = _ruling_block("real remote bug", "memory corruption", "high")
+
+        def fake_call(ctx, messages, *args, **kwargs):
+            system = messages[0]["content"]
+            user = messages[1]["content"]
+            if "finalizing one security finding" in system:
+                return ruling
+            return keep_block if "real remote bug" in user else drop_block
+
+        monkeypatch.setattr("swival.audit._gather_evidence", lambda f, c: ("ev", 1))
+        monkeypatch.setattr("swival.audit._call_audit_llm", fake_call)
+
+        ui = AuditUI(run_id="t", branch="main", commit="abc", workers=2, total_files=1)
+        _phase45_adjudicate(state, self._ctx(tmp_path), ui, workers=2)
+
+        assert [vf.finding.title for vf in state.verified_findings] == [
+            "real remote bug"
+        ]
+        assert len(state.adjudication_discarded) == 1
+        assert state.adjudication_discarded[0]["title"] == "self-inflicted thing"
+        assert ui._tally_discarded == 1
+        # The baseline was rebuilt from state, so dropping one of two verified
+        # findings on a fresh UI leaves a non-negative verified count.
+        assert ui._tally_verified == 1
+        assert ui._verified_by_sev.get("high") == 1
+
+    def test_consolidation_capped_by_panel(self, tmp_path, monkeypatch):
+        # Whole panel says medium; consolidation argues high; original was high.
+        # The ruling must not re-inflate past the panel consensus.
+        med = _verdict_block("real", "yes", "medium", "bounded")
+        ruling = _ruling_block("x", "denial of service", "high")
+        vf = self._vf(severity="high", finding_type="denial of service")
+        res = self._adj(
+            tmp_path, monkeypatch, vf, _adj_fake_call(med, med, med, ruling)
+        )
+        assert res.kept is True
+        assert res.final_severity == "medium"
+
+    def test_scf_relabel_below_high_rejected(self, tmp_path, monkeypatch):
+        # Consolidation relabels a medium DoS as security_control_failure at a
+        # below-high severity. That is not a valid SCF: keep the demoted
+        # severity and drop the bogus relabel rather than forcing it to high.
+        real = _verdict_block("real", "yes", "medium")
+        ruling = _ruling_block("x", "security_control_failure", "medium")
+        vf = self._vf(severity="medium", finding_type="denial of service")
+        res = self._adj(
+            tmp_path, monkeypatch, vf, _adj_fake_call(real, real, real, ruling)
+        )
+        assert res.kept is True
+        assert res.final_severity == "medium"
+        assert res.finding.finding_type == "denial of service"
+
+    def test_genuine_scf_keeps_floor_when_relabeled(self, tmp_path, monkeypatch):
+        # An originally-critical SCF must not be laundered to a low-severity
+        # finding by rewriting its type away from SCF: the high floor holds.
+        real = _verdict_block("real", "yes", "medium")
+        ruling = _ruling_block("x", "denial of service", "medium")
+        vf = self._vf(severity="critical", finding_type="security_control_failure")
+        res = self._adj(
+            tmp_path, monkeypatch, vf, _adj_fake_call(real, real, real, ruling)
+        )
+        assert res.kept is True
+        assert res.final_severity == "high"
+
+    def test_readme_written_when_all_findings_dropped(self, tmp_path):
+        state = self._state(tmp_path)
+        state.artifact_dir = Path("audit-findings")
+        state.verified_findings = []
+        state.adjudication_discarded = [
+            {
+                "title": "self-inflicted DoS",
+                "severity": "high",
+                "source_file": "main.c",
+                "reason": "operator only",
+            }
+        ]
+        wrote = _write_findings_readme(state, str(tmp_path))
+        assert wrote is True
+        readme = tmp_path / "audit-findings" / "README.md"
+        assert readme.exists()
+        assert "self-inflicted DoS" in readme.read_text()
+
+    def test_readme_reports_adjudicated_drops(self, tmp_path):
+        state = self._state(tmp_path)
+        state.adjudication_discarded = [
+            {
+                "title": "self-inflicted DoS",
+                "severity": "high",
+                "source_file": "main.c",
+                "reason": "only the operator can trigger it",
+            }
+        ]
+        md = _render_findings_readme(state, repo_name="demo")
+        assert "findings dropped in adjudication: 1" in md
+        assert "## Dropped in adjudication" in md
+        assert "self-inflicted DoS" in md
+        assert "only the operator can trigger it" in md
+
+
+class TestAdjudicationHelpers:
+    def test_demote_only(self):
+        assert _demote_only("high", "low") == "low"
+        assert _demote_only("medium", "critical") == "medium"
+        assert _demote_only("high", "high") == "high"
+
+    def test_consensus_severity_ties_low(self):
+        assert _consensus_severity(["high", "medium"]) == "medium"
+        assert _consensus_severity(["high", "high", "medium"]) == "high"
+        assert _consensus_severity([]) is None
+
+    def test_less_severe_of(self):
+        assert _less_severe_of("high", "medium") == "medium"
+        assert _less_severe_of("low", "critical") == "low"
+        assert _less_severe_of("high", "high") == "high"

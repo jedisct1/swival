@@ -59,7 +59,7 @@ A growing collection of security audits run against open-source projects with Sw
 
 ## How It Works
 
-The audit runs in five sequential phases. State is checkpointed after each phase and after every batch within a phase, so interrupted audits can be resumed.
+The audit runs in a sequence of phases. State is checkpointed after each phase and after every batch within a phase, so interrupted audits can be resumed. Phases 1 through 3 narrow the codebase down to provable findings, Phase 4 reproduces them, the Phase 4.5 gate throws out the ones that are overstated or irrelevant, and Phase 5 writes the reports and patches.
 
 ### Phase 1: Repository Profiling
 
@@ -109,6 +109,22 @@ The verifier can inspect code and optionally compile or run small proof-of-conce
 Verified findings advance to artifact generation. Discarded findings are dropped. Failed verifications (infrastructure errors, timeouts) are retried once for transient errors and can be resumed with `--resume`.
 
 Verification runs in parallel, capped at 2 concurrent workers regardless of the `--workers` setting.
+
+### Phase 4.5: Adjudication
+
+Reproduction proves a bug exists. It does not prove the bug matters. The verifier spends its turns trying to *confirm* a finding, which biases it toward saying yes, and severity is assigned early in Phase 3 from a single-file view that never gets revisited. The result is a pile of findings that are technically real but overstated, self-inflicted, or irrelevant to how the project is actually deployed.
+
+The adjudication gate is the answer to that. It runs after verification and before any report or patch is written, so the expensive Phase 5 work only happens for findings that survive.
+
+Each verified finding faces a panel of three independent reviewers, each told to *refute* it and to default to false positive when unsure. The three look through different lenses: one asks whether an untrusted actor can really reach the code, one asks whether it matters in the project's expected threat model, and one asks whether the severity is justified or the issue is already mitigated. A finding is kept only when a majority of the panel confirms it is both real and relevant. Ties drop, because the whole point is to stop shipping false positives.
+
+Reviewers judge against the deployment surface drawn from the Phase 1 profile, so a denial of service that only the local user can inflict on their own CLI is recognized for what it is and dropped rather than filed as high severity.
+
+Survivors then pass through a consolidation step that recalibrates severity to the realistic worst case (severity can only be lowered here, never raised), tightens the title and impact type, and records a short threat-model statement that the report carries forward. A `security_control_failure` stays at high or critical, since that is the floor for the carve-out.
+
+Dropped findings are kept in the run state and listed in the README under "Dropped in adjudication" with the reason, so the gap between verified and written counts is always explained.
+
+Adjudication is skipped under `--measure-triage`, where the goal is to measure triage recall rather than to ship a clean set.
 
 ### Phase 5: Artifact Generation
 
@@ -269,12 +285,12 @@ A focus argument is matched against each repo-relative path with three rules, ev
 
 A wildcard pattern with no `/` is treated as recursive, so `*.py` keeps doing the natural thing and selects every Python file in the repository. Anchored patterns are precise:
 
-| Pattern          | Matches                                                                 |
-| ---------------- | ----------------------------------------------------------------------- |
-| `*.rs`           | every `.rs` file at any depth (slashless wildcard, recursive shorthand) |
-| `src/*.rs`       | only direct `.rs` children of a top-level `src/` directory              |
-| `src/**/*.rs`    | every `.rs` file at any depth under a top-level `src/` directory        |
-| `src/`           | every file under a top-level `src/` directory                           |
+| Pattern       | Matches                                                                 |
+| ------------- | ----------------------------------------------------------------------- |
+| `*.rs`        | every `.rs` file at any depth (slashless wildcard, recursive shorthand) |
+| `src/*.rs`    | only direct `.rs` children of a top-level `src/` directory              |
+| `src/**/*.rs` | every `.rs` file at any depth under a top-level `src/` directory        |
+| `src/`        | every file under a top-level `src/` directory                           |
 
 Anchored patterns never match suffixes: `src/*.rs` does *not* select `crates/foo/src/bar.rs`, because the leading `src/` is rooted at the repository top.
 
@@ -319,7 +335,7 @@ A completed audit (phase `"done"`) is not resumable with `--resume`, but can be 
 
 ## Limitations
 
-The audit depends heavily on the quality of the underlying LLM. Models with weak code understanding will produce lower-quality triage and more false negatives. The verification phase catches many false positives, but a weak verifier model may also miss real bugs or incorrectly confirm speculative findings.
+The audit depends heavily on the quality of the underlying LLM. Models with weak code understanding will produce lower-quality triage and more false negatives. The verification and adjudication phases catch many false positives, but a weak model may also drop real bugs or wave through speculative ones. The adjudication panel is deliberately biased toward dropping, so a borderline-but-genuine finding can be discarded. Dropped findings are listed with their reason in the README, and a full re-run is the way to revisit them if you disagree with the panel.
 
 The audit sees only committed code. Runtime configuration, environment variables, deployment topology, and dynamic code paths that depend on external state are outside its view.
 
