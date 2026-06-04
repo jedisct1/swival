@@ -2,6 +2,15 @@
 
 All notable user-facing changes to Swival.
 
+## 1.0.27
+
+- Swival now auto-detects model context windows when `--max-context-tokens` is omitted. Hosted providers use LiteLLM's model registry, llama.cpp reads the server's runtime `n_ctx`, and OpenAI-compatible servers can advertise their limit via `/v1/models`.
+- The `outline` tool can now survey directories and batches of files, selecting source files, listing subdirectories, and reporting omissions so agents can map a codebase before reading full files.
+- Command output is cleaner and safer: ANSI/terminal control sequences and repeated blank lines are collapsed before they enter the transcript.
+- `edit_file` now recovers when a supplied `line_number` is stale but the requested match is unique, making edits less brittle after nearby line shifts.
+- `/audit` now explicitly searches for state-amplification denial-of-service patterns and verifies them with an evidence ledger, improving coverage for parser, decoder, queue, and resource-amplification bugs without inflating severity.
+- Malformed tool-call arguments now receive repair feedback instead of being mistaken for context overflow, avoiding unnecessary compaction and noisy failure reports.
+
 ## 1.0.26
 
 - Shell commands now show live stderr progress while they run: short commands get a spinner, and timed commands show a progress bar against their timeout. The command timeout cap has also been raised from 120 seconds to 240 seconds.
