@@ -535,7 +535,7 @@ def test_outline_files_header_counts(tmp_path):
 def test_outline_files_budget_truncation_errors(tmp_path, monkeypatch):
     import swival.outline as outline_mod
 
-    monkeypatch.setattr(outline_mod, "MAX_OUTPUT_BYTES", 100)
+    monkeypatch.setattr(outline_mod.tools, "MAX_OUTPUT_BYTES", 100)
     files = [{"file_path": str(tmp_path / f"miss{i}.py")} for i in range(10)]
     result = outline_files(files, str(tmp_path), files_mode="all")
     assert "batch_truncated: true" in result
@@ -545,7 +545,7 @@ def test_outline_files_budget_truncation_errors(tmp_path, monkeypatch):
 def test_outline_files_budget_first_oversized_kept(tmp_path, monkeypatch):
     import swival.outline as outline_mod
 
-    monkeypatch.setattr(outline_mod, "MAX_OUTPUT_BYTES", 10)
+    monkeypatch.setattr(outline_mod.tools, "MAX_OUTPUT_BYTES", 10)
     src = _make_py(tmp_path, "big.py", "def very_long_function_name(): pass\n")
     result = outline_files(
         [{"file_path": src}, {"file_path": src}],
@@ -561,7 +561,7 @@ def test_outline_files_budget_first_oversized_kept(tmp_path, monkeypatch):
 def test_outline_files_budget_second_rejected_skip_count(tmp_path, monkeypatch):
     import swival.outline as outline_mod
 
-    monkeypatch.setattr(outline_mod, "MAX_OUTPUT_BYTES", 200)
+    monkeypatch.setattr(outline_mod.tools, "MAX_OUTPUT_BYTES", 200)
     small = _make_py(tmp_path, "sm.py", "x = 1\n")
     big = _make_py(
         tmp_path, "bg.py", "\n".join(f"def func_{i}(): pass" for i in range(50)) + "\n"

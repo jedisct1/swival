@@ -9,6 +9,8 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 
+from . import tools
+
 
 @dataclass
 class FetchResult:
@@ -28,7 +30,6 @@ class FetchResult:
 
 
 MAX_RESPONSE_SIZE = 5 * 1024 * 1024  # 5 MB raw download cap
-MAX_OUTPUT_BYTES = 50 * 1024  # 50 KB converted output cap (same as read_file)
 MAX_REDIRECTS = 10
 
 HEADERS = {
@@ -368,22 +369,20 @@ def _fetch(
 
     encoded = output.encode("utf-8")
     saved_path: str | None = None
-    if len(encoded) > MAX_OUTPUT_BYTES and base_dir:
-        from .tools import _save_large_output_with_path
-
-        output, saved_path = _save_large_output_with_path(
+    if len(encoded) > tools.MAX_OUTPUT_BYTES and base_dir:
+        output, saved_path = tools._save_large_output_with_path(
             output,
             base_dir,
             scratch_dir=scratch_dir,
             untrusted_source="fetch_url",
             untrusted_origin=url,
         )
-    elif len(encoded) > MAX_OUTPUT_BYTES:
+    elif len(encoded) > tools.MAX_OUTPUT_BYTES:
         total = len(encoded)
-        truncated = encoded[:MAX_OUTPUT_BYTES].decode("utf-8", errors="ignore")
+        truncated = encoded[: tools.MAX_OUTPUT_BYTES].decode("utf-8", errors="ignore")
         output = (
             truncated
-            + f"\n[content truncated at {MAX_OUTPUT_BYTES} bytes, total was {total} bytes]"
+            + f"\n[content truncated at {tools.MAX_OUTPUT_BYTES} bytes, total was {total} bytes]"
         )
 
     return FetchResult(

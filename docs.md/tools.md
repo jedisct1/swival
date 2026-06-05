@@ -12,7 +12,7 @@ Command execution tools are included by default (commands default to `"all"`): `
 
 If output is truncated, Swival appends a continuation hint with the next offset. You can also request `tail_lines=N` to start from the end of the file, which is useful for logs. `tail_lines` is mutually exclusive with `offset`.
 
-Large responses are capped at 50 KB per call, and individual long lines are truncated at 2,000 characters. Directory reads return sorted entries and mark subdirectories with a trailing `/`.
+Large responses are capped at 50 KB per call by default, and individual long lines are truncated at 2,000 characters. Directory reads return sorted entries and mark subdirectories with a trailing `/`. Both the default line count (2000) and the size cap can be tuned with `--max-output-lines` and `--max-output-kb`, or the matching `max_output_lines` and `max_output_kb` config keys.
 
 ## `read_multiple_files`
 

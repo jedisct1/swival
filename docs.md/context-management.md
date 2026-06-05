@@ -20,7 +20,7 @@ Swival's context management operates as four concentric layers of defense.
 
 Every tool that returns content has a hard cap on how much it can put into the conversation.
 
-- **File reads** are capped at 50KB, with individual lines truncated at 2,000 characters. Large files can be paginated with offset and limit parameters.
+- **File reads** are capped at 50KB, with individual lines truncated at 2,000 characters. Large files can be paginated with offset and limit parameters. The 50KB cap and the default 2000-line read limit are tunable with `max_output_kb` and `max_output_lines` (config keys or the matching CLI flags); the byte cap also applies to listings, grep, outline, and fetched URLs.
 - **Directory listings** return at most 100 entries.
 - **Grep results** return at most 100 matches.
 - **Command output** is returned inline up to 10KB. Anything larger is written to a temporary file and the conversation receives a short pointer with instructions to paginate.

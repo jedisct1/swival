@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import tools
 from .agent import _InteractionPolicy, _apply_interaction_policy
 from .config import _UNSET
 from .goal import GoalState
@@ -61,6 +62,8 @@ class Session:
         max_turns: int = 100,
         max_output_tokens: int = 32768,
         max_context_tokens: int | None = None,
+        max_output_lines: int = 2000,
+        max_output_kb: int = 50,
         temperature: float | None = None,
         top_p: float | None = None,
         seed: int | None = None,
@@ -137,6 +140,10 @@ class Session:
         self.max_turns = max_turns
         self.max_output_tokens = max_output_tokens
         self.max_context_tokens = max_context_tokens
+        self.max_output_lines = max_output_lines
+        self.max_output_kb = max_output_kb
+        # Tool-output caps are process-global (shared by all tool modules)
+        tools.set_output_caps(max_output_lines, max_output_kb)
         self.temperature = temperature
         self.top_p = top_p
         self.seed = seed

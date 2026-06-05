@@ -4,6 +4,7 @@ import os
 
 import pytest
 
+import swival.tools as tools_mod
 from swival.tools import (
     _expand_tilde,
     _read_file,
@@ -1467,3 +1468,77 @@ class TestBudgetGateActionLevel:
             messages=[],
         )
         assert result.startswith("error:") and "budget" in result
+
+
+# =========================================================================
+# set_output_caps -- tunable line/byte caps
+# =========================================================================
+
+
+class TestOutputCaps:
+    """Tests for the user-tunable tool output caps."""
+
+    @pytest.fixture(autouse=True)
+    def _restore_caps(self):
+        yield
+        tools_mod.set_output_caps(2000, 50)
+
+    def test_globals_and_schema_updated(self):
+        tools_mod.set_output_caps(500, 10)
+        assert tools_mod.MAX_READ_LINES == 500
+        assert tools_mod.MAX_OUTPUT_BYTES == 10 * 1024
+
+        limit = tools_mod.get_tool_schema("read_file")["properties"]["limit"]
+        assert limit["default"] == 500
+        assert "500" in limit["description"]
+        batch = tools_mod.get_tool_schema("read_multiple_files")
+        batch_limit = batch["properties"]["files"]["items"]["properties"]["limit"]
+        assert batch_limit["default"] == 500
+
+    def test_invalid_values_rejected(self):
+        with pytest.raises(ValueError):
+            tools_mod.set_output_caps(0, 50)
+        with pytest.raises(ValueError):
+            tools_mod.set_output_caps(2000, 0)
+
+    def test_read_file_default_limit_follows_cap(self, tmp_path):
+        f = tmp_path / "ten.txt"
+        f.write_text("".join(f"line{i}\n" for i in range(10)), encoding="utf-8")
+
+        tools_mod.set_output_caps(4, 50)
+        result = dispatch("read_file", {"file_path": "ten.txt"}, str(tmp_path))
+        assert "4: line3" in result
+        assert "5: line4" not in result
+        assert "[6 more lines, use offset=5 to continue]" in result
+
+    def test_read_file_explicit_limit_still_wins(self, tmp_path):
+        f = tmp_path / "ten.txt"
+        f.write_text("".join(f"line{i}\n" for i in range(10)), encoding="utf-8")
+
+        tools_mod.set_output_caps(4, 50)
+        result = dispatch(
+            "read_file", {"file_path": "ten.txt", "limit": 8}, str(tmp_path)
+        )
+        assert "8: line7" in result
+
+    def test_byte_cap_truncates_read(self, tmp_path):
+        f = tmp_path / "big.txt"
+        f.write_text("".join(f"{'x' * 80}\n" for _ in range(100)), encoding="utf-8")
+
+        tools_mod.set_output_caps(2000, 1)
+        result = _read_file("big.txt", str(tmp_path))
+        body = result.rsplit("\n[", 2)[0]
+        assert len(body.encode("utf-8")) <= 1024
+        assert "more lines, use offset=" in result
+
+    def test_session_applies_caps(self, tmp_path):
+        from swival.session import Session
+
+        Session(
+            base_dir=str(tmp_path),
+            history=False,
+            max_output_lines=123,
+            max_output_kb=7,
+        )
+        assert tools_mod.MAX_READ_LINES == 123
+        assert tools_mod.MAX_OUTPUT_BYTES == 7 * 1024

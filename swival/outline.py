@@ -4,7 +4,8 @@ import ast
 import re
 from pathlib import Path
 
-from .tools import MAX_OUTPUT_BYTES, safe_resolve
+from . import tools
+from .tools import safe_resolve
 
 _MAX_OUTLINE_FILES = 20
 
@@ -410,7 +411,7 @@ def outline_files(
     def _try_append(section: str) -> bool:
         nonlocal total_bytes
         section_bytes = len(section.encode("utf-8")) + 2
-        if total_bytes + section_bytes > MAX_OUTPUT_BYTES and sections:
+        if total_bytes + section_bytes > tools.MAX_OUTPUT_BYTES and sections:
             return False
         sections.append(section)
         total_bytes += section_bytes

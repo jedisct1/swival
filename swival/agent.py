@@ -103,6 +103,7 @@ from .tools import (
     dispatch,
     cleanup_old_cmd_outputs,
     get_tool_schema,
+    set_output_caps,
 )
 from .repair import format_repair_feedback, repair_tool_args, validate_required_args
 from .tool_call_repair import (
@@ -4863,6 +4864,10 @@ def _build_self_review_cmd(
         parts.extend(["--max-context-tokens", str(args.max_context_tokens)])
     if args.max_output_tokens and args.max_output_tokens != 32768:
         parts.extend(["--max-output-tokens", str(args.max_output_tokens)])
+    if getattr(args, "max_output_lines", 2000) != 2000:
+        parts.extend(["--max-output-lines", str(args.max_output_lines)])
+    if getattr(args, "max_output_kb", 50) != 50:
+        parts.extend(["--max-output-kb", str(args.max_output_kb)])
     if getattr(args, "encrypt_secrets", False):
         parts.append("--encrypt-secrets")
     if getattr(args, "retries", 5) != 5:
@@ -5153,6 +5158,19 @@ def build_parser():
         type=int,
         default=_UNSET,
         help="Maximum output tokens (default: 32768).",
+    )
+    behavior_group.add_argument(
+        "--max-output-lines",
+        type=int,
+        default=_UNSET,
+        help="Default number of lines returned by file reads (default: 2000).",
+    )
+    behavior_group.add_argument(
+        "--max-output-kb",
+        type=int,
+        default=_UNSET,
+        help="Size cap in KB for tool output sent to the model: file reads, "
+        "grep, listings, outline, fetch_url (default: 50).",
     )
     review_group.add_argument(
         "--max-review-rounds",
@@ -5842,6 +5860,10 @@ def main():
         except _ConfigError as e:
             parser.error(str(e))
         apply_config_to_args(args, file_config)
+        try:
+            set_output_caps(args.max_output_lines, args.max_output_kb)
+        except ValueError as e:
+            parser.error(str(e))
 
         # Config inheritance hazard: clear keys that don't apply in reviewer mode
         if reviewer_from_cli:
@@ -5918,6 +5940,11 @@ def main():
     # Config may have set them explicitly too
     args._files_explicit = _files_explicit or "files" in file_config
     args._commands_explicit = _commands_explicit or "commands" in file_config
+
+    try:
+        set_output_caps(args.max_output_lines, args.max_output_kb)
+    except ValueError as e:
+        parser.error(str(e))
 
     # Resolve files_mode: --yolo upgrades defaults but doesn't override explicit
     files_mode = args.files

@@ -71,10 +71,10 @@ class TestLargeOutputFileHasHeader:
         assert "source: a2a__agent__skill" in file_content
 
     def test_fetch_large_output_file_has_header(self, tmp_path, monkeypatch):
-        import swival.fetch
+        import swival.tools
 
         large_page = "y" * 200_000  # exceeds fetch MAX_OUTPUT_BYTES
-        monkeypatch.setattr(swival.fetch, "MAX_OUTPUT_BYTES", 1000)
+        monkeypatch.setattr(swival.tools, "MAX_OUTPUT_BYTES", 1000)
 
         from swival.tools import _save_large_output
 

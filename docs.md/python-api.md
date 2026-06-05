@@ -36,6 +36,8 @@ Session(
     max_turns: int = 100,
     max_output_tokens: int = 32768,
     max_context_tokens: int | None = None,
+    max_output_lines: int = 2000,
+    max_output_kb: int = 50,
     temperature: float | None = None,
     top_p: float | None = None,
     seed: int | None = None,
@@ -115,6 +117,8 @@ All parameters are keyword-only. The important ones:
 | `max_turns`             | Maximum agent loop iterations before returning `exhausted=True`.                                                                                                                                                                                                                       |
 | `max_output_tokens`     | Maximum tokens per LLM response.                                                                                                                                                                                                                                                       |
 | `max_context_tokens`    | Hard cap on context window size. `None` uses the provider's default.                                                                                                                                                                                                                   |
+| `max_output_lines`      | Default number of lines returned by file reads.                                                                                                                                                                                                                                        |
+| `max_output_kb`         | Size cap in KB for tool output sent to the model (file reads, grep, listings, outline, fetch_url).                                                                                                                                                                                     |
 | `temperature`           | Sampling temperature. `None` uses the provider's default.                                                                                                                                                                                                                              |
 | `files`                 | Filesystem access policy: `"some"` (workspace only, the default), `"all"` (unrestricted), or `"none"` (`.swival/` only).                                                                                                                                                               |
 | `commands`              | Command execution policy: `"all"` (unrestricted, the default), `"none"` (disabled), `"ask"` (interactive approval), or a list of whitelisted command names. With `"all"`, both `run_command` and `run_shell_command` are available. Ask and whitelist modes expose only `run_command`. |

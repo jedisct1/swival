@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from swival.tools import MAX_OUTPUT_BYTES
 from swival.fetch import (
-    MAX_OUTPUT_BYTES,
     MAX_RESPONSE_SIZE,
     _RedirectError,
     _check_url_safety,

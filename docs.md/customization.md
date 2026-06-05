@@ -28,6 +28,8 @@ model = "qwen/qwen3-coder-next"
 # system_prompt = "..."                 # replaces the built-in system prompt
 # no_system_prompt = false              # omit the system message entirely
 max_turns = 250
+# max_output_lines = 2000               # default line count for file reads
+# max_output_kb = 50                    # tool output size cap in KB (reads, grep, listings, outline, fetch)
 # temperature = 0.3
 # top_p = 0.9
 # seed = 42
@@ -385,3 +387,9 @@ swival --max-context-tokens 65536 "task"
 ```
 
 For LM Studio, this can trigger a model reload. When both `--max-context-tokens` and `--max-output-tokens` are set, `--max-output-tokens` must be less than or equal to context length.
+
+`--max-output-lines` and `--max-output-kb` bound how much tool output reaches the model. The first sets the default number of lines a file read returns (2000), the second the size cap in KB (50) applied to file reads, directory listings, grep, outline, and fetched URLs. Raise them for models with large context windows, lower them for small ones.
+
+```sh
+swival --max-output-lines 500 --max-output-kb 16 "task"
+```

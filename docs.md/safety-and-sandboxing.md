@@ -243,7 +243,7 @@ Binary MIME types are rejected. Response bodies are capped at 5 MB before conver
 
 ## Output Caps
 
-Several hard caps keep the conversation bounded. File reads are limited to 50 KB per call and lines are truncated at 2,000 characters. Directory and grep-style listings are capped at 100 results.
+Several hard caps keep the conversation bounded. File reads are limited to 50 KB per call and lines are truncated at 2,000 characters. Directory and grep-style listings are capped at 100 results. The 50 KB cap (which also bounds listings, grep, outline, and URL fetches) and the default 2000-line read limit can be changed with the `max_output_kb` and `max_output_lines` settings.
 
 Command output is capped at 10 KB inline, with larger output written to `.swival/` (hard-capped at 1 MB) for paginated reads and auto-cleaned after roughly ten minutes.
 

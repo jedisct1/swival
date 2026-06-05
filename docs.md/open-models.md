@@ -22,7 +22,7 @@ These are engineering choices, not marketing claims. Each one exists because a s
 
 **Knowledge that survives compaction.** Thinking notes, todo lists, and snapshot summaries live outside the message history. Even after the most aggressive compaction, the agent still has its reasoning chain, its task list, and what it learned during investigation. This is the single most important thing for small-model reliability: the agent can lose old messages and keep working.
 
-**Bounded tool output.** File reads are capped at 50KB. Grep returns at most 100 matches. Command output over 10KB is saved to a temp file and replaced with a pointer. MCP tool schemas that would eat more than half the context window are dropped at startup. These limits exist specifically so that one unlucky tool call can't blow the budget on a small window.
+**Bounded tool output.** File reads are capped at 50KB by default (tunable with `max_output_kb`). Grep returns at most 100 matches. Command output over 10KB is saved to a temp file and replaced with a pointer. MCP tool schemas that would eat more than half the context window are dropped at startup. These limits exist specifically so that one unlucky tool call can't blow the budget on a small window.
 
 **Forgiving parsers.** Tool-call parsing uses a multi-pass approach. If the model's JSON is slightly broken, Swival tries to recover before giving up. The edit tool uses three-pass matching (exact, line-trimmed, unicode-normalized) so edits still land even when the model's whitespace is off. These are small things individually, but they add up to fewer stalled loops.
 

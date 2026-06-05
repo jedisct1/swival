@@ -778,8 +778,35 @@ def get_tool_schema(name: str) -> dict | None:
 
 
 MAX_OUTPUT_BYTES = 50 * 1024  # 50 KB
+MAX_READ_LINES = 2000
 MAX_LINE_LENGTH = 2000
 BINARY_CHECK_BYTES = 8 * 1024  # 8 KB
+
+
+def set_output_caps(max_lines: int, max_kb: int) -> None:
+    """Set the global tool-output caps: line count for file reads and size in KB.
+
+    Mutates the module-level caps used by read_file, read_multiple_files,
+    list_files, grep, outline, and fetch_url, and keeps the LLM-visible
+    schema defaults in sync.
+    """
+    global MAX_READ_LINES, MAX_OUTPUT_BYTES
+    if max_lines < 1:
+        raise ValueError(f"max_output_lines must be >= 1, got {max_lines}")
+    if max_kb < 1:
+        raise ValueError(f"max_output_kb must be >= 1, got {max_kb}")
+    MAX_READ_LINES = max_lines
+    MAX_OUTPUT_BYTES = max_kb * 1024
+
+    description = f"Maximum number of lines to return. Defaults to {max_lines}."
+    limit_schema = get_tool_schema("read_file")["properties"]["limit"]
+    limit_schema["default"] = max_lines
+    limit_schema["description"] = description
+    batch_schema = get_tool_schema("read_multiple_files")
+    batch_limit = batch_schema["properties"]["files"]["items"]["properties"]["limit"]
+    batch_limit["default"] = max_lines
+    batch_limit["description"] = description
+
 
 CHECKSUM_HEX_LEN = 8
 CHECKSUM_VALUE_RE = re.compile(rf"^[0-9a-f]{{{CHECKSUM_HEX_LEN}}}$")
@@ -1375,7 +1402,7 @@ def _read_file(
     file_path: str,
     base_dir: str,
     offset: int = 1,
-    limit: int = 2000,
+    limit: int | None = None,
     tail: int | None = None,
     extra_read_roots: list[Path] = (),
     extra_write_roots: list[Path] = (),
@@ -1383,6 +1410,8 @@ def _read_file(
     tracker=None,
 ) -> str:
     """Read a file or list a directory."""
+    if limit is None:
+        limit = MAX_READ_LINES
     try:
         resolved = safe_resolve(
             file_path,
@@ -1426,7 +1455,7 @@ def _read_file(
             return f"error: read_file: permission denied listing directory {file_path}: {exc}"
         result = "\n".join(output_parts)
         if truncated:
-            result += "\n[truncated at 50KB]"
+            result += f"\n[truncated at {MAX_OUTPUT_BYTES // 1024}KB]"
         return result
 
     try:
@@ -1494,7 +1523,6 @@ def _read_file(
 
 
 _MAX_READ_FILES = 20
-_READ_FILES_BUDGET = MAX_OUTPUT_BYTES  # total bytes across all files
 
 
 def _format_read_request(offset: int, limit: int, tail: int | None) -> str:
@@ -1660,7 +1688,7 @@ def _read_files(
                 _build_read_multiple_files_section(
                     f"file {i + 1}",
                     "error",
-                    _format_read_request(1, 2000, None),
+                    _format_read_request(1, MAX_READ_LINES, None),
                     f"error: expected object or string, got {type(spec).__name__}",
                 )
             )
@@ -1669,7 +1697,7 @@ def _read_files(
         file_path = spec.get("file_path")
         title = file_path or f"file {i + 1}"
         if not file_path:
-            request = _format_read_request(1, 2000, None)
+            request = _format_read_request(1, MAX_READ_LINES, None)
             sections.append(
                 _build_read_multiple_files_section(
                     title,
@@ -1682,7 +1710,7 @@ def _read_files(
             continue
 
         offset = spec.get("offset", 1)
-        limit = spec.get("limit", 2000)
+        limit = spec.get("limit", MAX_READ_LINES)
         tail = spec.get("tail_lines") or spec.get("tail")
 
         try:
@@ -1692,7 +1720,7 @@ def _read_files(
                 _build_read_multiple_files_section(
                     file_path,
                     "error",
-                    _format_read_request(1, 2000, None),
+                    _format_read_request(1, MAX_READ_LINES, None),
                     "error: offset must be an integer",
                 )
             )
@@ -1705,7 +1733,7 @@ def _read_files(
                 _build_read_multiple_files_section(
                     file_path,
                     "error",
-                    _format_read_request(offset, 2000, None),
+                    _format_read_request(offset, MAX_READ_LINES, None),
                     "error: limit must be an integer",
                 )
             )
@@ -1813,7 +1841,7 @@ def _read_files(
             files_succeeded += 1
 
         section_bytes = len(section.encode("utf-8")) + 2
-        if total_bytes + section_bytes > _READ_FILES_BUDGET:
+        if total_bytes + section_bytes > MAX_OUTPUT_BYTES:
             if not sections:
                 sections.append(section)
                 total_bytes += section_bytes
@@ -3292,7 +3320,7 @@ def dispatch(name: str, args: dict, base_dir: str, **kwargs) -> str:
         except (ValueError, TypeError):
             return "error: offset must be an integer"
         try:
-            limit = int(args.get("limit", 2000))
+            limit = int(args.get("limit", MAX_READ_LINES))
         except (ValueError, TypeError):
             return "error: limit must be an integer"
         tail = args.get("tail_lines") or args.get("tail")
