@@ -2,6 +2,12 @@
 
 All notable user-facing changes to Swival.
 
+## 1.0.29
+
+- `/audit` now tries to inline function definitions alongside their callers, so that more relevant information is packed together and held in the context.
+- On macOS, Swival now keeps the machine awake during turns, so the machine no longer drops into idle sleep in the middle of a long task. The assertion is released as soon as the turn finishes.
+- Command approval prompts (`--commands ask`) are no longer swallowed by the live progress display. The spinner and progress bar are suspended while Swival waits for your answer, so the question and its key hints stay on screen.
+
 ## 1.0.28
 
 - `/audit` gained an adjudication phase that runs between verification and artifact generation. Each verified finding faces a panel of three independent reviewers, each told to refute it from a different angle (reachability, threat model, severity), and only findings confirmed by a majority make it into reports and patches. Survivors get their severity recalibrated down to the realistic worst case, and dropped findings are listed in the README with the reason, so the gap between verified and written counts is always explained.
