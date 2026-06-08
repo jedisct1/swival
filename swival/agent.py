@@ -1073,7 +1073,7 @@ def _scavenge_signal_present(msg, finish_reason, allowed_names) -> bool:
 
 
 def _maybe_scavenge_tool_calls(
-    msg, finish_reason, tools, *, enabled, turn, report, verbose
+    msg, finish_reason, tools, *, turn, report, verbose
 ) -> int:
     """Recover tool calls leaked into the message content channel.
 
@@ -1085,8 +1085,6 @@ def _maybe_scavenge_tool_calls(
     :meth:`ReportCollector.record_scavenged_call`.  Returns the number
     of calls appended.
     """
-    if not enabled:
-        return 0
     allowed = _allowed_tool_names_from_tools(tools)
     if not allowed:
         return 0
@@ -1214,7 +1212,6 @@ def _raise_if_truncated_tool_call(
     report,
     verbose,
     where="",
-    repair_truncated_args: bool = False,
 ):
     """Raise ContextOverflowError when output was truncated by the length cap.
 
@@ -1230,13 +1227,11 @@ def _raise_if_truncated_tool_call(
     discard valid context for no reason.  Clean responses and text-only
     finish_reason='length' also do nothing.
 
-    If ``repair_truncated_args`` is True, attempts to repair unbalanced JSON in
-    tool-call arguments first.  When the repair succeeds for every malformed
-    call, the function returns and the loop continues with the repaired
-    arguments.
+    Attempts to repair unbalanced JSON in tool-call arguments first.  When
+    the repair succeeds for every malformed call, the function returns and
+    the loop continues with the repaired arguments.
     """
-    if repair_truncated_args:
-        _try_repair_truncated_tool_args(msg, turn=turn, report=report, verbose=verbose)
+    _try_repair_truncated_tool_args(msg, turn=turn, report=report, verbose=verbose)
     reason = _classify_tool_call_truncation(msg, finish_reason)
     if reason != TRUNCATED_REASON_LENGTH:
         return
@@ -7568,8 +7563,6 @@ def _run_main(args, report, _write_report, parser):
         command_policy=command_policy,
         metaskills_policy=_metaskills_policy_val,
         enabled_metaskills=set(_metaskill_names or []),
-        repair_truncated_args=getattr(args, "repair_truncated_args", True),
-        scavenge_content_calls=getattr(args, "scavenge_content_calls", True),
         storm_breaker_enabled=getattr(args, "storm_breaker", True),
     )
 
@@ -7995,8 +7988,6 @@ def run_agent_loop(
     metaskills_policy: str = "local",
     enabled_metaskills: set | None = None,
     repl_input_text: str | None = None,
-    repair_truncated_args: bool = True,
-    scavenge_content_calls: bool = True,
     storm_breaker_enabled: bool = True,
     session: object | None = None,
 ) -> tuple[str | None, bool]:
@@ -8397,7 +8388,6 @@ def run_agent_loop(
                     msg,
                     finish_reason,
                     tools,
-                    enabled=scavenge_content_calls,
                     turn=turns + turn_offset,
                     report=report,
                     verbose=verbose,
@@ -8409,7 +8399,6 @@ def run_agent_loop(
                     turn=turns + turn_offset,
                     report=report,
                     verbose=verbose,
-                    repair_truncated_args=repair_truncated_args,
                 )
         except ContextOverflowError as _coe:
             elapsed = time.monotonic() - t0
@@ -8536,7 +8525,6 @@ def run_agent_loop(
                             msg,
                             finish_reason,
                             tools,
-                            enabled=scavenge_content_calls,
                             turn=turns + turn_offset,
                             report=report,
                             verbose=verbose,
@@ -8549,7 +8537,6 @@ def run_agent_loop(
                             report=report,
                             verbose=verbose,
                             where=f"post-{level_name}",
-                            repair_truncated_args=repair_truncated_args,
                         )
                 except ContextOverflowError as _coe:
                     elapsed = time.monotonic() - t0
@@ -8691,7 +8678,6 @@ def run_agent_loop(
                                 msg,
                                 finish_reason,
                                 tools,
-                                enabled=scavenge_content_calls,
                                 turn=turns + turn_offset,
                                 report=report,
                                 verbose=verbose,
@@ -8704,7 +8690,6 @@ def run_agent_loop(
                                 report=report,
                                 verbose=verbose,
                                 where="post-drop-tools",
-                                repair_truncated_args=repair_truncated_args,
                             )
                     except ContextOverflowError:
                         continue
@@ -8796,7 +8781,6 @@ def run_agent_loop(
                                     msg,
                                     finish_reason,
                                     tools,
-                                    enabled=scavenge_content_calls,
                                     turn=turns + turn_offset,
                                     report=report,
                                     verbose=verbose,
@@ -8809,7 +8793,6 @@ def run_agent_loop(
                                     report=report,
                                     verbose=verbose,
                                     where="post-emergency-truncate",
-                                    repair_truncated_args=repair_truncated_args,
                                 )
                         except ContextOverflowError:
                             continue
@@ -11809,8 +11792,6 @@ def repl_loop(
     trace_dir: str | None = None,
     metaskills_policy: str = "local",
     enabled_metaskills: set | None = None,
-    repair_truncated_args: bool = True,
-    scavenge_content_calls: bool = True,
     storm_breaker_enabled: bool = True,
     session: object | None = None,
 ):
@@ -12042,8 +12023,6 @@ def repl_loop(
         turn_offset=turn_offset,
         metaskills_policy=metaskills_policy,
         enabled_metaskills=enabled_metaskills,
-        repair_truncated_args=repair_truncated_args,
-        scavenge_content_calls=scavenge_content_calls,
         storm_breaker_enabled=storm_breaker_enabled,
         session=session,
     )

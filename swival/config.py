@@ -124,16 +124,9 @@ CONFIG_KEYS: dict[str, type | tuple[type, ...]] = {
     "oneshot_commands": bool,
     "trace_dir": str,
     "metaskills": str,
+    "storm_breaker": bool,
+    "flatten_mcp_schemas": bool,
 }
-
-_EXPERIMENTAL_KEYS: frozenset[str] = frozenset(
-    {
-        "repair_truncated_args",
-        "scavenge_content_calls",
-        "storm_breaker",
-        "flatten_mcp_schemas",
-    }
-)
 
 _LIST_OF_STR_KEYS = {
     "allowed_dirs",
@@ -244,8 +237,6 @@ _ARGPARSE_DEFAULTS: dict[str, Any] = {
     "oneshot_commands": False,
     "trace_dir": None,
     "metaskills": "local",
-    "repair_truncated_args": True,
-    "scavenge_content_calls": True,
     "storm_breaker": True,
     "flatten_mcp_schemas": True,
 }
@@ -515,7 +506,6 @@ def _load_single(path: Path, label: str) -> dict:
     profiles = config.pop("profiles", None)
     active_profile = config.pop("active_profile", None)
     audit_section = config.pop("audit", None)
-    experimental_section = config.pop("experimental", None)
 
     # Strip unknown keys after warning (keep only known ones for downstream)
     _validate_config(config, label)
@@ -610,23 +600,6 @@ def _load_single(path: Path, label: str) -> dict:
                     f"{label}: 'audit.patch_max_turns' must be an integer >= 1"
                 )
         known["audit"] = audit_section
-
-    if experimental_section is not None:
-        if not isinstance(experimental_section, dict):
-            raise ConfigError(f"{label}: 'experimental' must be a table")
-        for key, value in experimental_section.items():
-            if key not in _EXPERIMENTAL_KEYS:
-                allowed = ", ".join(sorted(_EXPERIMENTAL_KEYS))
-                raise ConfigError(
-                    f"{label}: unknown key 'experimental.{key}'. "
-                    f"Allowed keys: {allowed}"
-                )
-            if not isinstance(value, bool):
-                raise ConfigError(
-                    f"{label}: 'experimental.{key}' expected bool, "
-                    f"got {type(value).__name__}"
-                )
-            known[key] = value
 
     return known
 
@@ -1179,8 +1152,6 @@ def args_to_session_kwargs(args, base_dir: str) -> dict:
         "lifecycle_fail_closed",
         "command_middleware",
         "trace_dir",
-        "repair_truncated_args",
-        "scavenge_content_calls",
         "storm_breaker",
         "flatten_mcp_schemas",
         "location",
@@ -1412,6 +1383,7 @@ def generate_config(
         "# max_output_lines = 2000         # default line count for file reads",
         "# max_output_kb = 50              # tool output size cap in KB (reads, grep, listings, outline, fetch)",
         "# retries = 5                     # max provider retries on transient network errors (1 = no retry)",
+        "# storm_breaker = true            # suppress a model looping on an identical tool call",
         '# system_prompt = "You are a helpful assistant."',
         "# no_system_prompt = false",
         "",
@@ -1461,6 +1433,7 @@ def generate_config(
         "",
         "# --- MCP ---",
         "# no_mcp = false",
+        "# flatten_mcp_schemas = true     # flatten deeply nested MCP tool schemas for models that choke on them",
         "",
         "# --- Profiles ---",
         "# Named LLM profiles for quick switching with --profile NAME.",

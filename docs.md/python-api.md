@@ -97,8 +97,6 @@ Session(
     location: str | None = None,
     approved_buckets: set[str] | None = None,
     metaskills: str = "local",  # "local", "all", or "off"
-    repair_truncated_args: bool = True,
-    scavenge_content_calls: bool = True,
     storm_breaker: bool = True,
     flatten_mcp_schemas: bool = True,
 )
@@ -141,8 +139,6 @@ All parameters are keyword-only. The important ones:
 | `command_middleware`    | User-defined script to intercept and rewrite shell commands (see [Command Middleware](command-middleware.html)).                                                                                                                                                                       |
 | `aws_profile`           | AWS profile name for the `bedrock` provider.                                                                                                                                                                                                                                           |
 | `approved_buckets`      | Pre-approved command buckets for `commands="ask"` mode (e.g. `{"ls", "git status"}`).                                                                                                                                                                                                  |
-| `repair_truncated_args` | Recover from truncated tool-call JSON by repairing or re-prompting. Default `True`.                                                                                                                                                                                                    |
-| `scavenge_content_calls`| Extract tool-call markup that leaked into assistant text and replay it as a real call. Default `True`.                                                                                                                                                                                 |
 | `storm_breaker`         | Detect repeated identical tool-call failures and inject a corrective hint. Default `True`.                                                                                                                                                                                             |
 | `flatten_mcp_schemas`   | Flatten deeply nested MCP tool schemas to formats small models tolerate better. Default `True`.                                                                                                                                                                                        |
 

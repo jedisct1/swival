@@ -123,8 +123,6 @@ class Session:
         location: str | None = None,
         approved_buckets: set[str] | None = None,
         metaskills: str = "local",
-        repair_truncated_args: bool = True,
-        scavenge_content_calls: bool = True,
         storm_breaker: bool = True,
         flatten_mcp_schemas: bool = True,
     ):
@@ -211,8 +209,6 @@ class Session:
         self.location = location
         self.approved_buckets = approved_buckets
         self.metaskills = metaskills
-        self.repair_truncated_args = repair_truncated_args
-        self.scavenge_content_calls = scavenge_content_calls
         self.storm_breaker = storm_breaker
         self.flatten_mcp_schemas = flatten_mcp_schemas
         self._mcp_flattened_schemas: dict[str, object] = {}
@@ -595,8 +591,6 @@ class Session:
             command_policy=self._command_policy,
             metaskills_policy=self._metaskills_policy,
             enabled_metaskills=set(self._metaskill_names or []),
-            repair_truncated_args=self.repair_truncated_args,
-            scavenge_content_calls=self.scavenge_content_calls,
             storm_breaker_enabled=self.storm_breaker,
             session=self,
         )

@@ -123,29 +123,6 @@ def test_truncation_repair_avoids_compaction(tmp_path, monkeypatch):
     assert compact_spy.call_count == 0
 
 
-def test_truncation_repair_flag_off_discards_and_reprompts(tmp_path, monkeypatch):
-    """With the repair flag off the malformed call can't be salvaged, so it is
-    discarded and the model is re-prompted — never compacted, since malformed
-    arguments are a formatting slip, not a context-window problem."""
-    from swival import agent
-    from unittest.mock import MagicMock
-
-    compact_spy = MagicMock(wraps=agent.compact_messages)
-    monkeypatch.setattr(agent, "compact_messages", compact_spy)
-
-    args = _base_args(tmp_path, repair_truncated_args=False)
-    tc = _make_tool_call("think", "{", call_id="t1")
-    responses = [
-        (_make_message(content="", tool_calls=[tc]), "stop", [], 0, (0, 0)),
-        (_make_message(content="done"), "stop", [], 0, (0, 0)),
-    ]
-
-    captured = _drive_agent(tmp_path, monkeypatch, args, responses)
-    assert compact_spy.call_count == 0
-    users = [m.get("content", "") for m in captured[1] if m.get("role") == "user"]
-    assert any("malformed JSON arguments" in u for u in users)
-
-
 def test_scavenge_recovers_swival_call(tmp_path, monkeypatch):
     """A model that emits a ``<swival:call>`` envelope in content gets the
     call materialized and executed even though ``tool_calls`` is empty."""
@@ -164,22 +141,6 @@ def test_scavenge_recovers_swival_call(tmp_path, monkeypatch):
         if (m.get("role") if isinstance(m, dict) else m.role) == "tool"
     ]
     assert tool_messages, "scavenged call should have produced a tool result"
-
-
-def test_scavenge_flag_off_does_not_recover(tmp_path, monkeypatch):
-    """With the experimental flag off, content-channel calls stay text-only."""
-    args = _base_args(tmp_path, scavenge_content_calls=False)
-    content = '<swival:call id="s1" name="think">{"thought": "scavenged"}</swival:call>'
-    responses = [
-        (_make_message(content=content, tool_calls=None), "stop", [], 0, (0, 0)),
-    ]
-    captured = _drive_agent(tmp_path, monkeypatch, args, responses)
-    tool_messages = [
-        m
-        for m in captured[-1]
-        if (m.get("role") if isinstance(m, dict) else m.role) == "tool"
-    ]
-    assert not tool_messages
 
 
 def test_scavenge_ignores_prose_mentioning_a_tool_name(tmp_path, monkeypatch):

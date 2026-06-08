@@ -965,3 +965,59 @@ class TestMcpSystemPrompt:
 
         text = _format_mcp_tool_info({})
         assert "## MCP Tools" in text
+
+
+class TestFlattenToggle:
+    """The flatten_mcp_schemas toggle gates deep-schema flattening."""
+
+    def _deep_pair(self):
+        params = {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "properties": {
+                        "nested": {
+                            "type": "object",
+                            "properties": {"value": {"type": "string"}},
+                        },
+                    },
+                },
+            },
+        }
+        schema = {
+            "type": "function",
+            "function": {"name": "deep_tool", "parameters": params},
+        }
+        return schema, "deep_tool"
+
+    def test_deep_schema_is_flattening_candidate(self):
+        from swival.tool_call_repair import analyze_schema
+
+        schema, _ = self._deep_pair()
+        assert analyze_schema(schema["function"]["parameters"]).should_flatten
+
+    def test_flatten_enabled_produces_dot_paths(self):
+        mgr = McpManager({}, flatten_schemas=True)
+        schema, original = self._deep_pair()
+
+        ((flat_schema, name),) = mgr._apply_flattening([(schema, original)])
+
+        props = flat_schema["function"]["parameters"]["properties"]
+        assert "config.nested.value" in props
+        assert "config" not in props
+        assert name == original
+        # Side table is recorded so call_tool can re-nest arguments.
+        assert "deep_tool" in mgr._flatten_meta
+
+    def test_flatten_disabled_passes_schema_through(self):
+        mgr = McpManager({}, flatten_schemas=False)
+        schema, original = self._deep_pair()
+
+        result = mgr._apply_flattening([(schema, original)])
+
+        assert result == [(schema, original)]
+        props = result[0][0]["function"]["parameters"]["properties"]
+        assert "config" in props
+        assert "config.nested.value" not in props
+        assert mgr._flatten_meta == {}

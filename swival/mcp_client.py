@@ -344,11 +344,7 @@ class McpManager:
             tool_pairs = [
                 _mcp_tool_to_openai(name, tool) for tool in tools_result.tools
             ]
-            if self._flatten_schemas:
-                tool_pairs = [
-                    self._maybe_flatten_pair(schema, original)
-                    for schema, original in tool_pairs
-                ]
+            tool_pairs = self._apply_flattening(tool_pairs)
             self._tool_schemas[name] = [schema for schema, _original_name in tool_pairs]
             self._tool_original_names[name] = {
                 schema["function"]["name"]: original_name
@@ -397,6 +393,20 @@ class McpManager:
         self._server_tasks.clear()
         self._shutdown_events.clear()
         self._sessions.clear()
+
+    def _apply_flattening(
+        self, tool_pairs: list[tuple[dict, str]]
+    ) -> list[tuple[dict, str]]:
+        """Flatten each (schema, original_name) pair when flattening is enabled.
+
+        Returns the pairs untouched when ``flatten_schemas=False``.
+        """
+        if not self._flatten_schemas:
+            return tool_pairs
+        return [
+            self._maybe_flatten_pair(schema, original)
+            for schema, original in tool_pairs
+        ]
 
     def _maybe_flatten_pair(self, schema: dict, original_name: str) -> tuple[dict, str]:
         """Flatten the tool's parameters if its schema is large or deep.
