@@ -151,7 +151,7 @@ class TestFileOpsOutsideBase:
             str(base),
             files_mode="all",
         )
-        assert result == f"Edited {outside / 'out.txt'}"
+        assert result.splitlines()[0] == f"Edited {outside / 'out.txt'}"
         assert (outside / "out.txt").read_text(encoding="utf-8") == "edited content"
 
     def test_edit_outside_base_dir_blocked(self, setup_dirs):

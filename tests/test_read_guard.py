@@ -168,7 +168,7 @@ class TestEditFileGuard:
         result = _edit_file(
             "exist.txt", "hello", "goodbye", str(tmp_path), tracker=tracker
         )
-        assert result == "Edited exist.txt"
+        assert result.splitlines()[0] == "Edited exist.txt"
         assert (tmp_path / "exist.txt").read_text() == "goodbye world"
 
     def test_edit_tracker_none_allows_all(self, tmp_path):
@@ -177,7 +177,7 @@ class TestEditFileGuard:
         result = _edit_file(
             "exist.txt", "hello", "goodbye", str(tmp_path), tracker=None
         )
-        assert result == "Edited exist.txt"
+        assert result.splitlines()[0] == "Edited exist.txt"
 
 
 # =========================================================================

@@ -130,7 +130,10 @@ TOOLS = [
             "name": "write_file",
             "description": (
                 "Create or overwrite a file with content, or atomically rename "
-                "move_from to file_path (not both). Parent directories are created."
+                "move_from to file_path (not both). Parent directories are created. "
+                "A successful write returns a [checksum=...] trailer for the new "
+                "contents; pass it to a later edit_file to guard against the file "
+                "changing in between."
             ),
             "parameters": {
                 "type": "object",
@@ -161,7 +164,9 @@ TOOLS = [
             "name": "edit_file",
             "description": (
                 "Replace old_string with new_string in an existing file. "
-                "Prefer over write_file for edits."
+                "Prefer over write_file for edits. A successful edit returns a "
+                "fresh [checksum=...] trailer for the file's new contents, so you "
+                "can chain consecutive edits without re-reading."
             ),
             "parameters": {
                 "type": "object",
@@ -197,9 +202,10 @@ TOOLS = [
                     "checksum": {
                         "type": "string",
                         "description": (
-                            "Optional. The checksum trailer reported by your most recent "
-                            "read_file on this path. If supplied, the edit fails unless the "
-                            "file still hashes to that value, catching changes since you read it."
+                            "Optional. The latest checksum trailer reported for this path "
+                            "by read_file, write_file, or a previous edit_file. If supplied, "
+                            "the edit fails unless the file still hashes to that value, "
+                            "catching changes since you last saw it."
                         ),
                     },
                 },
@@ -2064,6 +2070,9 @@ def _write_file(
             shutil.move(str(move_from_original), str(resolved))
         if tracker is not None:
             tracker.record_write(str(resolved))
+        moved_checksum = _compute_checksum(resolved)
+        if moved_checksum is not None:
+            return f"Moved {move_from} -> {file_path}\n[checksum={moved_checksum}]"
         return f"Moved {move_from} -> {file_path}"
 
     # --- Write path ---
@@ -2074,7 +2083,7 @@ def _write_file(
     resolved.write_bytes(data)
     if tracker is not None:
         tracker.record_write(str(resolved))
-    return f"Wrote {len(data)} bytes to {file_path}"
+    return f"Wrote {len(data)} bytes to {file_path}\n[checksum={_hash_bytes(data)}]"
 
 
 def _edit_file(
@@ -2163,6 +2172,9 @@ def _edit_file(
 
             logging.getLogger(__name__).debug("tool_diff failed: %s", exc)
 
+    new_checksum = _compute_checksum(resolved)
+    if new_checksum is not None:
+        return f"Edited {file_path}\n[checksum={new_checksum}]"
     return f"Edited {file_path}"
 
 

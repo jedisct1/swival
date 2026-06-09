@@ -11,6 +11,7 @@ from swival.tools import (
     _edit_file,
     _read_file,
     _read_files,
+    _write_file,
 )
 
 
@@ -227,3 +228,111 @@ class TestComputeFileHash:
 
     def test_missing_file_returns_none(self, tmp_path):
         assert _compute_checksum(tmp_path / "missing.txt") is None
+
+
+class TestEditFileEmitsHash:
+    def test_success_carries_post_edit_checksum(self, tmp_path):
+        p = tmp_path / "f.txt"
+        p.write_text("hello world\n", encoding="utf-8")
+        result = _edit_file(
+            "f.txt", old_string="hello", new_string="goodbye", base_dir=str(tmp_path)
+        )
+        assert result.splitlines()[0] == "Edited f.txt"
+        tag = _extract_checksum(result)
+        assert tag == _expected_checksum(p.read_bytes())
+
+    def test_returned_checksum_matches_disk_bytes(self, tmp_path):
+        p = tmp_path / "f.txt"
+        p.write_text("aaa\nbbb\n", encoding="utf-8")
+        result = _edit_file(
+            "f.txt", old_string="bbb", new_string="BBB", base_dir=str(tmp_path)
+        )
+        assert _extract_checksum(result) == _compute_checksum(p)
+
+    def test_second_edit_with_returned_checksum_succeeds(self, tmp_path):
+        p = tmp_path / "f.txt"
+        p.write_text("one\n", encoding="utf-8")
+        first = _edit_file(
+            "f.txt", old_string="one", new_string="two", base_dir=str(tmp_path)
+        )
+        chained = _extract_checksum(first)
+        second = _edit_file(
+            "f.txt",
+            old_string="two",
+            new_string="three",
+            base_dir=str(tmp_path),
+            checksum=chained,
+        )
+        assert not second.startswith("error:"), second
+        assert p.read_text(encoding="utf-8") == "three\n"
+
+    def test_second_edit_with_stale_pre_edit_checksum_fails(self, tmp_path):
+        p = tmp_path / "f.txt"
+        p.write_text("one\n", encoding="utf-8")
+        pre = _extract_checksum(_read_file("f.txt", str(tmp_path)))
+        _edit_file("f.txt", old_string="one", new_string="two", base_dir=str(tmp_path))
+        second = _edit_file(
+            "f.txt",
+            old_string="two",
+            new_string="three",
+            base_dir=str(tmp_path),
+            checksum=pre,
+        )
+        assert second.startswith("error:")
+        assert "checksum mismatch" in second
+        assert p.read_text(encoding="utf-8") == "two\n"
+
+    def test_replace_all_returns_single_checksum(self, tmp_path):
+        p = tmp_path / "f.txt"
+        p.write_text("x x x\n", encoding="utf-8")
+        result = _edit_file(
+            "f.txt",
+            old_string="x",
+            new_string="y",
+            base_dir=str(tmp_path),
+            replace_all=True,
+        )
+        tags = CHECKSUM_TRAILER_RE.findall(result)
+        assert len(tags) == 1
+        assert tags[0] == _expected_checksum(p.read_bytes())
+        assert p.read_text(encoding="utf-8") == "y y y\n"
+
+    def test_external_write_between_edits_caught(self, tmp_path):
+        p = tmp_path / "f.txt"
+        p.write_text("one\n", encoding="utf-8")
+        first = _edit_file(
+            "f.txt", old_string="one", new_string="two", base_dir=str(tmp_path)
+        )
+        chained = _extract_checksum(first)
+        p.write_text("clobbered\n", encoding="utf-8")
+        second = _edit_file(
+            "f.txt",
+            old_string="two",
+            new_string="three",
+            base_dir=str(tmp_path),
+            checksum=chained,
+        )
+        assert second.startswith("error:")
+        assert "checksum mismatch" in second
+        assert p.read_text(encoding="utf-8") == "clobbered\n"
+
+
+class TestWriteFileEmitsHash:
+    def test_write_carries_checksum(self, tmp_path):
+        result = _write_file("new.txt", "payload\n", str(tmp_path))
+        assert result.splitlines()[0].startswith("Wrote")
+        tag = _extract_checksum(result)
+        assert tag == _expected_checksum(b"payload\n")
+
+    def test_edit_chains_from_write_checksum(self, tmp_path):
+        written = _write_file("new.txt", "alpha\n", str(tmp_path))
+        tag = _extract_checksum(written)
+        result = _edit_file(
+            "new.txt",
+            old_string="alpha",
+            new_string="beta",
+            base_dir=str(tmp_path),
+            checksum=tag,
+        )
+        assert not result.startswith("error:"), result
+        assert (tmp_path / "new.txt").read_text(encoding="utf-8") == "beta\n"

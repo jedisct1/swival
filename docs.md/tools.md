@@ -32,6 +32,8 @@ The batch is limited to 20 files per call. Directories are rejected with an inli
 
 When `move_from` is used and no `content` is provided, Swival moves the source path to the destination path without copying text content. This supports non-text files and symlinks as well. If the destination already exists, the read-before-write guard still applies to that destination, while the source path is exempt because rename does not modify source content.
 
+A successful write ends with a `[checksum=...]` trailer that hashes the bytes just written, the same format `read_file` reports. The model can hand that value straight to a later `edit_file` on the path, so it never has to re-read a file it only just wrote.
+
 ## `edit_file`
 
 `edit_file` is the main incremental editing tool. It replaces `old_string` with `new_string` in an existing file and supports `replace_all` when you intentionally want multiple replacements.
@@ -44,7 +46,9 @@ This is the preferred way to disambiguate repeated matches: the model copies the
 
 A stale `line_number` no longer forces a retry. If the requested line misses every match but `old_string` still resolves to a single location across the three passes, Swival applies the edit there anyway. Matches that merely nest across passes (the exact substring sitting inside its line-trimmed or Unicode-normalized span) count as one location, so this fallback fires whenever the target is genuinely unique. Only when two or more distinct locations remain does the call fail, and then the error lists the actual candidate lines so the model can retry with the right one.
 
-The optional `checksum` parameter guards against editing a file that changed since it was last read. Pass the value from the `[checksum=...]` trailer that `read_file` reported for the path. If the file no longer hashes to that value, the edit fails before touching anything, which catches the case where another process (or a parallel subagent) rewrote the file in between. It is optional: empty or whitespace-only values are treated as no checksum supplied, so weaker models that omit it are not penalized.
+The optional `checksum` parameter guards against editing a file that changed since it was last read. Pass the latest `[checksum=...]` value reported for the path, whether that came from `read_file`, `write_file`, or an earlier `edit_file`. If the file no longer hashes to that value, the edit fails before touching anything, which catches the case where another process (or a parallel subagent) rewrote the file in between. It is optional: empty or whitespace-only values are treated as no checksum supplied, so weaker models that omit it are not penalized.
+
+A successful edit returns a fresh `[checksum=...]` trailer for the file's new contents, computed by hashing the bytes back from disk so it matches exactly what the next checksum check will compute. That lets the model chain several edits to the same file in one turn, feeding each edit's returned checksum into the next, without an intervening `read_file`.
 
 ## `delete_file`
 

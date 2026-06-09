@@ -479,7 +479,7 @@ class TestEditFilePositive:
         """_edit_file still returns 'Edited {path}' regardless of verbose."""
         (tmp_path / "data.txt").write_text("aaa\nbbb\nccc\n", encoding="utf-8")
         result = _edit_file("data.txt", "bbb", "BBB", str(tmp_path), verbose=True)
-        assert result == "Edited data.txt"
+        assert result.splitlines()[0] == "Edited data.txt"
 
     def test_dispatch_edit_quiet_no_diff(self, tmp_path, monkeypatch):
         """dispatch('edit_file', verbose=False) does not call fmt.tool_diff."""
@@ -518,7 +518,7 @@ class TestEditFilePositive:
 
         with patch("swival.fmt.tool_diff", side_effect=RuntimeError("boom")):
             result = _edit_file("data.txt", "bbb", "BBB", str(tmp_path), verbose=True)
-        assert result == "Edited data.txt"
+        assert result.splitlines()[0] == "Edited data.txt"
         assert (tmp_path / "data.txt").read_text() == "aaa\nBBB\nccc\n"
 
 
