@@ -497,6 +497,55 @@ _TOOLS_NOT_SUPPORTED_RE = re.compile(
 
 _HF_NOT_CHAT_MODEL_RE = re.compile(r"not a chat model", re.IGNORECASE)
 
+# Resolved model string the server rejected -> the single model it serves.
+# Lets later call_llm() invocations skip the failing round-trip after an
+# automatic substitution.
+_MODEL_AUTOFIX: dict[str, str] = {}
+
+_MODEL_LIST_LIMIT = 20
+
+
+def _list_server_models(litellm_provider, api_base, api_key):
+    """Ask the provider's models endpoint which models it serves.
+
+    Returns [] when the endpoint is unreachable or the provider has no
+    model-listing support (get_valid_models is non-blocking by design).
+    """
+    from litellm import get_valid_models
+
+    try:
+        return get_valid_models(
+            check_provider_endpoint=True,
+            custom_llm_provider=litellm_provider,
+            api_base=api_base,
+            api_key=api_key,
+        )
+    except Exception:
+        return []
+
+
+def _format_model_not_found(model_id, available):
+    import difflib
+
+    lines = [f"model {model_id!r} was not found on the server.", ""]
+    close = difflib.get_close_matches(model_id, available, n=1, cutoff=0.5)
+    if len(available) > _MODEL_LIST_LIMIT:
+        shown = (
+            difflib.get_close_matches(
+                model_id, available, n=_MODEL_LIST_LIMIT, cutoff=0.3
+            )
+            or available[:_MODEL_LIST_LIMIT]
+        )
+        lines.append(f"The server reports {len(available)} models; closest matches:")
+    else:
+        shown = available
+        lines.append("Available models:")
+    lines += [f"  • {name}" for name in shown]
+    if close:
+        lines += ["", f"Did you mean {close[0]!r}?"]
+    return "\n".join(lines)
+
+
 _TRANSIENT_PATTERNS = re.compile(
     r"Connection reset by peer|Connection refused|timed out"
     r"|RemoteDisconnected|Temporary failure in name resolution"
@@ -4466,6 +4515,7 @@ def call_llm(
     _skip_tool_choice = False
 
     model_str = _resolve_model_str(provider, model_id)
+    model_str = _MODEL_AUTOFIX.get(model_str, model_str)
     if provider == "chatgpt":
         _ensure_chatgpt_responses_model_registered(litellm, model_str)
 
@@ -4675,6 +4725,62 @@ def call_llm(
             else nullcontext()
         )
 
+    def _handle_model_not_found(e):
+        """Recover from a server-side unknown-model error.
+
+        If the server serves exactly one model, switch to it and retry the
+        call. Otherwise raise an AgentError listing the available models.
+        Returns None when the 404 wasn't about the model (list unavailable,
+        or the requested model is actually served).
+        """
+        if not isinstance(e, litellm.NotFoundError):
+            return None
+        litellm_provider = model_str.split("/", 1)[0] if "/" in model_str else None
+        if litellm_provider is None:
+            return None
+        available = _list_server_models(
+            litellm_provider, kwargs.get("api_base"), kwargs.get("api_key")
+        )
+        if not available or model_id in available:
+            return None
+        first_retries = _retries_from_exc(e)
+        if len(available) > 1:
+            ae = AgentError(_format_model_not_found(model_id, available))
+            ae._provider_retries = first_retries
+            _raise_with_retries(ae)
+        replacement = available[0]
+        new_model_str = _resolve_model_str(provider, replacement)
+        _MODEL_AUTOFIX[model_str] = new_model_str
+        fmt.warning(
+            f"Model {model_id!r} not found; the server only serves "
+            f"{replacement!r}, using it instead"
+        )
+        completion_kwargs["model"] = new_model_str
+        if cache_kwargs is not None:
+            cache_kwargs["model"] = new_model_str
+        try:
+            with _identity_context():
+                response, retries2 = _completion_with_retry(
+                    completion_kwargs,
+                    max_retries=max_retries,
+                    verbose=verbose,
+                )
+        except ContextOverflowError as coe2:
+            coe2._provider_retries = first_retries + getattr(
+                coe2, "_provider_retries", 0
+            )
+            raise
+        except Exception as e2:
+            ae = AgentError(
+                f"LLM call failed after switching to model {replacement!r}: {e2}"
+            )
+            ae._provider_retries = first_retries + _retries_from_exc(e2)
+            _raise_with_retries(ae)
+        cache_stats = _log_cache_stats(response, verbose)
+        choice = _pick_best_choice(response.choices)
+        msg, finish_reason = _finalize_choice(choice)
+        return msg, finish_reason, [], first_retries + retries2, cache_stats
+
     try:
         with _identity_context():
             response, retries = _completion_with_retry(
@@ -4821,6 +4927,9 @@ def call_llm(
             )
             tne._provider_retries = _retries_from_exc(e)
             raise tne
+        handled = _handle_model_not_found(e)
+        if handled is not None:
+            return handled
         msg = f"LLM call failed (model: {model_id}): {e}"
         if provider == "bedrock" and _SSO_TOKEN_ERROR_RE.search(msg_text):
             profile = aws_profile or os.environ.get("AWS_PROFILE", "default")
