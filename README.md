@@ -56,7 +56,12 @@ Run `swival --help` for the grouped CLI reference and copy-paste examples.
 uv tool install swival
 ```
 
-On macOS you can also use Homebrew: `brew install swival/tap/swival`
+On macOS you can also use Homebrew. Trust the tap first, then install:
+
+```sh
+brew trust swival/tap
+brew install swival/tap/swival
+```
 
 4. Run:
 

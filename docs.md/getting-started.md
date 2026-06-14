@@ -18,9 +18,10 @@ uv tool install swival
 
 ### Homebrew (macOS)
 
-On macOS you can also install through the Homebrew tap:
+On macOS you can also install through the Homebrew tap. Trust the tap first, then install:
 
 ```sh
+brew trust swival/tap
 brew install swival/tap/swival
 ```
 
