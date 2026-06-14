@@ -108,8 +108,9 @@
 <pre><code class="language-sh">uv tool install swival
 </code></pre>
 <h3 id="homebrew-macos">Homebrew (macOS)</h3>
-<p>On macOS you can also install through the Homebrew tap:</p>
-<pre><code class="language-sh">brew install swival/tap/swival
+<p>On macOS you can also install through the Homebrew tap. Trust the tap first, then install:</p>
+<pre><code class="language-sh">brew trust swival/tap
+brew install swival/tap/swival
 </code></pre>
 <p>This builds from source and pulls in Python 3.13 automatically. The first install takes a while because several dependencies compile native extensions.</p>
 <h2 id="upgrading">Upgrading</h2>
