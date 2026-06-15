@@ -2,6 +2,13 @@
 
 All notable user-facing changes to Swival.
 
+## 1.0.31
+
+- Streaming now shows the model's thinking as it arrives.
+- Significant improvements to context management and compaction have been implemented.
+- When a model isn't found on the server, the error is now actually helpful: it lists the models the server reports, suggests the closest match to what you typed, and, if the server happens to serve exactly one model, quietly switches to it and retries instead of failing.
+- `/audit` and documentation improvements have been made.
+
 ## 1.0.30
 
 - Swival now supports Apple Foundation Models as an LLM backend via `--provider applefm`. Point it at an `fm serve` instance (defaults to `http://127.0.0.1:1976/v1`) and choose `--model system` for the on-device model or `--model pcc` for Private Cloud Compute.
