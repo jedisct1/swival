@@ -67,6 +67,71 @@ Each `--skills-dir` path can point directly at one skill directory that contains
 
 If you do not want skill loading at all, use `--no-skills`.
 
+## Managing Skills From The CLI
+
+The `swival skills` command installs and removes skills so you don't have to copy directories by hand:
+
+```sh
+swival skills add    [--global] [--as NAME] [--ref REF] [--force] <name-or-URL>
+swival skills delete [--global] [--library] <name>
+swival skills list   [--library]
+```
+
+There are three places skills can live. Two are active (the agent discovers them); the third is a staging shelf:
+
+- `.swival/skills/` — active, this project.
+- `~/.config/swival/skills/` — active, every project.
+- `~/.config/swival/plugins/skills/` — the **library**: a shelf of collections you've downloaded but not necessarily turned on. The agent does not load skills from here.
+
+### Adding from a URL
+
+Point `add` at a git repository and Swival clones it (shallowly), looks for a top-level `skills/` directory, and installs the skills it finds. A repository whose `SKILL.md` sits at the root is treated as a single skill.
+
+```sh
+# Install a repo's skills straight into this project
+swival skills add https://github.com/DietrichGebert/ponytail
+
+# Stage them in the global library for later instead
+swival skills add --global https://github.com/DietrichGebert/ponytail
+```
+
+`add --global <URL>` stages into the library — it does **not** switch the skills on. Swival prints the staged names and tells you how to install them. This keeps a review step between "downloaded a third party's repo" and "this code is active in every session". Pin a ref with `--ref <branch|tag|commit>` (or `<URL>#ref`), and rename the staged collection with `--as <name>`.
+
+### Adding by name
+
+Once a collection is in the library, install from it by name:
+
+```sh
+swival skills add deploy            # one skill, into this project
+swival skills add --global deploy   # one skill, into the global active set
+swival skills add ponytail          # a whole collection
+swival skills add ponytail/deploy   # one skill, disambiguated
+```
+
+A bare name that exists in several collections is rejected with the candidates listed — use `collection/skill` to choose. Re-installing an existing skill is skipped unless you pass `--force`.
+
+### Removing
+
+```sh
+swival skills delete deploy             # from .swival/skills/
+swival skills delete --global deploy    # from ~/.config/swival/skills/
+swival skills delete --library ponytail # a staged collection
+swival skills delete --library ponytail/deploy
+```
+
+Plain `delete` never touches the library; `--library` is required for that. Deletion is immediate (no prompt) but prints exactly what it removed.
+
+### Listing
+
+```sh
+swival skills list             # active project + global skills
+swival skills list --library   # staged library collections
+```
+
+### A note on safety
+
+Downloaded skills can carry executable content — helper scripts and `SKILL.star` metaskills. Installing one never runs anything, and external metaskills still require `--metaskills all` before they execute. Swival points out when an installed skill ships a `SKILL.star`. Clones run with credential prompts disabled, redirects refused, and non-git protocols blocked; URLs that resolve to private or internal addresses are refused.
+
 ## How Progressive Disclosure Works
 
 At startup, Swival builds a compact skill catalog that includes names, descriptions, and file paths (for local skills). That catalog is appended to the system prompt under a `## Skills` heading, and the `use_skill` tool is exposed.

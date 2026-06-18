@@ -256,6 +256,22 @@ def global_config_dir() -> Path:
     return Path.home() / ".config" / "swival"
 
 
+def find_project_root(start: Path) -> Path:
+    """Walk start and its parents looking for .git or swival.toml.
+
+    Returns the first directory that contains either, or start if none found.
+    """
+    resolved = start.resolve()
+    current = resolved
+    while True:
+        if (current / ".git").exists() or (current / "swival.toml").exists():
+            return current
+        parent = current.parent
+        if parent == current:
+            return resolved
+        current = parent
+
+
 def _type_name(expected: type | tuple[type, ...]) -> str:
     """Format an expected type spec as a human-readable string."""
     if expected is list:

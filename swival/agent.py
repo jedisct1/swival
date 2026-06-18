@@ -46,6 +46,7 @@ from ._msg import (
     _tool_call_id,
 )
 from .config import _UNSET
+from .config import find_project_root as _find_project_root
 from .report import (
     AgentError,
     ConfigError,
@@ -6049,6 +6050,12 @@ def run_reviewer(
 def build_parser():
     """Build and return the argument parser."""
     help_examples = (
+        "Management commands:\n"
+        "  swival skills add [--global] <name-or-URL>   Install skills from a git URL or the library\n"
+        "  swival skills delete [--global] <name>       Remove an installed skill\n"
+        "  swival skills list [--library]               List installed or staged skills\n"
+        "  (run 'swival skills' for the full skills help)\n"
+        "\n"
         "Examples:\n"
         '  swival --yolo "Refactor the auth module"\n'
         '  swival --files all "Refactor the auth module"\n'
@@ -6743,22 +6750,6 @@ def build_parser():
     return parser
 
 
-def _find_project_root(start: Path) -> Path:
-    """Walk start and its parents looking for .git or swival.toml.
-
-    Returns the first directory that contains either, or start if none found.
-    """
-    resolved = start.resolve()
-    current = resolved
-    while True:
-        if (current / ".git").exists() or (current / "swival.toml").exists():
-            return current
-        parent = current.parent
-        if parent == current:
-            return resolved
-        current = parent
-
-
 def _collect_project_dirs(base_dir: Path, start_dir: Path) -> list[Path]:
     """Return directories from base_dir down to start_dir, inclusive.
 
@@ -6940,6 +6931,13 @@ def main():
         raise SystemExit(143)
 
     signal.signal(signal.SIGTERM, _sigterm_handler)
+
+    # Reserved management verb handled before the task parser, since the task
+    # parser would otherwise treat "skills" as a prompt.
+    if len(sys.argv) >= 2 and sys.argv[1] == "skills":
+        from .skills_cli import run as skills_run
+
+        sys.exit(skills_run(sys.argv[2:]))
 
     parser = build_parser()
     args = parser.parse_args()

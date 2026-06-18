@@ -323,6 +323,26 @@ def _global_skill_dirs() -> list[Path]:
     ]
 
 
+def project_skills_dir(base_dir: str | Path) -> Path:
+    """Active project skill directory: <base_dir>/.swival/skills/."""
+    return Path(base_dir) / ".swival" / "skills"
+
+
+def global_skills_dir() -> Path:
+    """Active global skill directory: ~/.config/swival/skills/."""
+    return config.global_config_dir() / "skills"
+
+
+def skills_library_dir() -> Path:
+    """Staging library for downloaded skill collections.
+
+    Lives at ~/.config/swival/plugins/skills/ and is NOT scanned by
+    discover_skills — it holds collections fetched from URLs until the user
+    installs individual skills into an active location.
+    """
+    return config.global_config_dir() / "plugins" / "skills"
+
+
 def discover_skills(
     base_dir: str,
     extra_dirs: list[str] | None = None,
