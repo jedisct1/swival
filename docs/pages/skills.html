@@ -75,6 +75,7 @@
 <li><a href="llm-filter.html">Outbound LLM Filter</a></li>
 <li><a href="command-middleware.html">Command Middleware</a></li>
 <li><a href="skills.html" class="active">Skills</a></li>
+<li><a href="library.html">The Library</a></li>
 <li><a href="metaskills.html">Metaskills</a></li>
 <li><a href="web-browsing.html">Web Browsing</a></li>
 <li><a href="mcp.html">MCP</a></li>
@@ -155,36 +156,10 @@ swival skills list   [--library]
 <li><code>~/.config/swival/skills/</code> — active, every project.</li>
 <li><code>~/.config/swival/library/skills/</code> — the <strong>library</strong>: a shelf of collections you've downloaded but not necessarily turned on. The agent does not load skills from here.</li>
 </ul>
-<h3 id="adding-from-a-url">Adding from a URL</h3>
-<p>Point <code>add</code> at a git repository and Swival clones it (shallowly), looks for a top-level <code>skills/</code> directory, and installs the skills it finds. A repository whose <code>SKILL.md</code> sits at the root is treated as a single skill.</p>
-<pre><code class="language-sh"># Install a repo's skills straight into this project
-swival skills add https://github.com/DietrichGebert/ponytail
-
-# Stage them in the global library for later instead
-swival skills add --global https://github.com/DietrichGebert/ponytail
+<p>The quickest path is to point <code>add</code> at a git repository, which clones it and installs the skills under its <code>skills/</code> directory straight into the current project:</p>
+<pre><code class="language-sh">swival skills add https://github.com/DietrichGebert/ponytail
 </code></pre>
-<p><code>add --global &lt;URL&gt;</code> stages into the library — it does <strong>not</strong> switch the skills on. Swival prints the staged names and tells you how to install them. This keeps a review step between "downloaded a third party's repo" and "this code is active in every session". Pin a ref with <code>--ref &lt;branch|tag|commit&gt;</code> (or <code>&lt;URL&gt;#ref</code>), and rename the staged collection with <code>--as &lt;name&gt;</code>.</p>
-<h3 id="adding-by-name">Adding by name</h3>
-<p>Once a collection is in the library, install from it by name:</p>
-<pre><code class="language-sh">swival skills add deploy            # one skill, into this project
-swival skills add --global deploy   # one skill, into the global active set
-swival skills add ponytail          # a whole collection
-swival skills add ponytail/deploy   # one skill, disambiguated
-</code></pre>
-<p>A bare name that exists in several collections is rejected with the candidates listed — use <code>collection/skill</code> to choose. Re-installing an existing skill is skipped unless you pass <code>--force</code>.</p>
-<h3 id="removing">Removing</h3>
-<pre><code class="language-sh">swival skills delete deploy             # from .swival/skills/
-swival skills delete --global deploy    # from ~/.config/swival/skills/
-swival skills delete --library ponytail # a staged collection
-swival skills delete --library ponytail/deploy
-</code></pre>
-<p>Plain <code>delete</code> never touches the library; <code>--library</code> is required for that. Deletion is immediate (no prompt) but prints exactly what it removed.</p>
-<h3 id="listing">Listing</h3>
-<pre><code class="language-sh">swival skills list             # active project + global skills
-swival skills list --library   # staged library collections
-</code></pre>
-<h3 id="a-note-on-safety">A note on safety</h3>
-<p>Downloaded skills can carry executable content — helper scripts and <code>SKILL.star</code> metaskills. Installing one never runs anything, and external metaskills still require <code>--metaskills all</code> before they execute. Swival points out when an installed skill ships a <code>SKILL.star</code>. Clones run with credential prompts disabled, redirects refused, and non-git protocols blocked; URLs that resolve to private or internal addresses are refused.</p>
+<p>For the full set of options, including staging downloaded collections for review before activating them, pinning a ref, installing globally, and removing skills, see <a href="library.html">The Library</a>.</p>
 <h2 id="how-progressive-disclosure-works">How Progressive Disclosure Works</h2>
 <p>At startup, Swival builds a compact skill catalog that includes names, descriptions, and file paths (for local skills). That catalog is appended to the system prompt under a <code>## Skills</code> heading, and the <code>use_skill</code> tool is exposed.</p>
 <h3 id="skill-name-mentions-automatic-activation">$skill-name mentions (automatic activation)</h3>
@@ -200,7 +175,7 @@ swival skills list --library   # staged library collections
 <p>A skill directory can also contain a program file (<code>SKILL.star</code>) that turns it into an Agent MetaSKILL — a dynamic workflow that runs bounded loops with nested model calls, command execution, and structured tracing. When a <code>SKILL.star</code> file is present (or the <code>metaskill</code> frontmatter field points to one), Swival exposes the <code>run_metaskill</code> tool alongside <code>use_skill</code>.</p>
 <p>MetaSKILLs use Starlark as their runtime language and expose three host functions: <code>ask()</code>, <code>command()</code>, and <code>trace()</code>. Local metaskills execute by default; external metaskills require <code>--metaskills all</code> or <code>metaskills = "all"</code> in config.</p>
 <p>See the <a href="metaskills.html">Agent MetaSKILLs specification</a> for the full format, host API, budgets, and authoring guide.</p>
-            <nav class="page-nav" aria-label="Page navigation"><a class="nav-prev" href="command-middleware.html"><span class="nav-label">&larr; Previous</span><span class="nav-title">Command Middleware</span></a><a class="nav-next" href="metaskills.html"><span class="nav-label">Next &rarr;</span><span class="nav-title">Metaskills</span></a></nav>
+            <nav class="page-nav" aria-label="Page navigation"><a class="nav-prev" href="command-middleware.html"><span class="nav-label">&larr; Previous</span><span class="nav-title">Command Middleware</span></a><a class="nav-next" href="library.html"><span class="nav-label">Next &rarr;</span><span class="nav-title">The Library</span></a></nav>
         </article>
         <aside class="page-toc" aria-label="On this page">
             <p class="page-toc-title">On this page</p>

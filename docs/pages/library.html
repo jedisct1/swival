@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>The Library — Swival</title>
+    <meta name="description" content="The Library: Staging downloaded skill collections and promoting them into projects">
+    <link rel="canonical" href="https://swival.dev/pages/library.html">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="The Library — Swival">
+    <meta property="og:description" content="The Library: Staging downloaded skill collections and promoting them into projects">
+    <meta property="og:image" content="https://swival.dev/img/og.png">
+    <meta property="og:url" content="https://swival.dev/pages/library.html">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="The Library — Swival">
+    <meta name="twitter:description" content="The Library: Staging downloaded skill collections and promoting them into projects">
+    <meta name="twitter:image" content="https://swival.dev/img/og.png">
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "TechArticle",
+        "headline": "The Library — Swival",
+        "description": "The Library: Staging downloaded skill collections and promoting them into projects",
+        "url": "https://swival.dev/pages/library.html",
+        "publisher": {
+            "@type": "Organization",
+            "name": "Swival",
+            "logo": { "@type": "ImageObject", "url": "https://swival.dev/img/logo.png" }
+        },
+        "isPartOf": {
+            "@type": "WebSite",
+            "name": "Swival",
+            "url": "https://swival.dev/"
+        }
+    }
+    </script>
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="../" class="header-logo">
+                <img src="../img/logo.png" alt="Swival">
+            </a>
+            <nav class="header-nav">
+                <a href="./">Docs</a>
+                <a href="https://github.com/swival/swival">GitHub</a>
+            </nav>
+        </div>
+    </header>
+    <main id="main" class="docs-layout-3col">
+        <aside class="sidebar">
+            <div class="sidebar-section">
+<h4>Basics</h4>
+<ul>
+<li><a href="getting-started.html">Getting Started</a></li>
+<li><a href="usage.html">Usage</a></li>
+<li><a href="tools.html">Tools</a></li>
+<li><a href="audit.html">Security Audit</a></li>
+<li><a href="goal.html">Goals</a></li>
+<li><a href="context-management.html">Context Management</a></li>
+<li><a href="open-models.html">Not Just for Frontier Models</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Configuration & Deployment</h4>
+<ul>
+<li><a href="safety-and-sandboxing.html">Safety & Sandboxing</a></li>
+<li><a href="secrets.html">Secret Encryption</a></li>
+<li><a href="llm-filter.html">Outbound LLM Filter</a></li>
+<li><a href="command-middleware.html">Command Middleware</a></li>
+<li><a href="skills.html">Skills</a></li>
+<li><a href="library.html" class="active">The Library</a></li>
+<li><a href="metaskills.html">Metaskills</a></li>
+<li><a href="web-browsing.html">Web Browsing</a></li>
+<li><a href="mcp.html">MCP</a></li>
+<li><a href="a2a.html">A2A</a></li>
+<li><a href="acp.html">ACP</a></li>
+<li><a href="lifecycle-hooks.html">Lifecycle Hooks</a></li>
+<li><a href="custom-commands.html">Custom Commands</a></li>
+<li><a href="customization.html">Customization</a></li>
+<li><a href="providers.html">Providers</a></li>
+<li><a href="reports.html">Reports</a></li>
+<li><a href="reviews.html">Reviews</a></li>
+<li><a href="agentfs.html">AgentFS</a></li>
+<li><a href="nono.html">nono</a></li>
+</ul>
+</div>
+<div class="sidebar-section">
+<h4>Reference</h4>
+<ul>
+<li><a href="python-api.html">Python API</a></li>
+</ul>
+</div>
+        </aside>
+        <article class="docs-content">
+            <h1 id="the-library">The Library</h1>
+<p>The library is a personal shelf for things you've downloaded but haven't necessarily switched on. It lives under your global config directory at <code>~/.config/swival/library/</code> (or <code>$XDG_CONFIG_HOME/swival/library/</code>), and the agent never loads anything from it directly. You stage a collection there once, look it over, and then install the pieces you actually want into a project or into your global active set.</p>
+<p>Today the library holds skills, under <code>library/skills/</code>. The name was chosen with room to grow: it is meant to become the staging area for other global resources you might pull in from elsewhere and selectively add to a project later. For now this page is about skills, which is the part that exists.</p>
+<h2 id="why-a-staging-shelf">Why A Staging Shelf</h2>
+<p>There are three places a skill can end up. Two are active, meaning the agent discovers and can load them:</p>
+<ul>
+<li><code>.swival/skills/</code> is active in this project only.</li>
+<li><code>~/.config/swival/skills/</code> is active in every project.</li>
+</ul>
+<p>The third is the library:</p>
+<ul>
+<li><code>~/.config/swival/library/skills/</code> is staged, not active. The agent does not see these.</li>
+</ul>
+<p>The split exists so that fetching a third party's repository and turning their instructions loose in every session are two separate, deliberate steps. You can download a collection, read the <code>SKILL.md</code> files at your leisure, and only then promote the ones you trust. Nothing in the library influences a run until you install it somewhere active.</p>
+<p>The library is organized two levels deep: <code>library/skills/&lt;collection&gt;/&lt;skill&gt;/SKILL.md</code>. A collection is just the set of skills that came from one source, named after the repository it was cloned from unless you rename it.</p>
+<h2 id="the-commands">The Commands</h2>
+<pre><code class="language-sh">swival skills add    [--global] [--as NAME] [--ref REF] [--force] &lt;name-or-URL&gt;
+swival skills delete [--global] [--library] &lt;name&gt;
+swival skills list   [--library]
+</code></pre>
+<p>The examples below all use <a href="https://github.com/DietrichGebert/ponytail"><code>DietrichGebert/ponytail</code></a>, a repository whose top-level <code>skills/</code> directory ships six skills (<code>ponytail</code>, <code>ponytail-audit</code>, <code>ponytail-debt</code>, <code>ponytail-gain</code>, <code>ponytail-help</code>, <code>ponytail-review</code>).</p>
+<h2 id="staging-a-collection">Staging A Collection</h2>
+<p>Point <code>add --global</code> at a git repository and Swival shallow-clones it, finds the <code>skills/</code> directory, and copies what it finds into the library. It does not activate anything.</p>
+<pre><code class="language-sh">swival skills add --global https://github.com/DietrichGebert/ponytail
+</code></pre>
+<pre><code>Staged 6 skill(s) into the library (~/.config/swival/library/skills/ponytail):
+  ponytail, ponytail-audit, ponytail-debt, ponytail-gain, ponytail-help, ponytail-review
+Run 'swival skills add ponytail' to install them into this project,
+or 'swival skills add --global ponytail' to install them globally.
+</code></pre>
+<p>The collection takes its name from the repository (<code>ponytail</code>). Override that with <code>--as</code>, which is handy when you want to stage the same repo at two different points in time, or just prefer a shorter name:</p>
+<pre><code class="language-sh">swival skills add --global --as pony https://github.com/DietrichGebert/ponytail
+</code></pre>
+<p>Pin a specific branch, tag, or commit with <code>--ref</code> (or append <code>#ref</code> to the URL). This is the safe way to depend on a third party: a moving <code>main</code> can change under you, a pinned commit cannot.</p>
+<pre><code class="language-sh">swival skills add --global --as pony-stable --ref main https://github.com/DietrichGebert/ponytail
+</code></pre>
+<p>A repository whose <code>SKILL.md</code> sits at the root, rather than under <code>skills/</code>, is treated as a single skill and staged as a one-skill collection.</p>
+<h2 id="listing-what-you-have">Listing What You Have</h2>
+<p><code>list --library</code> shows the staged collections, where each came from, and the skills inside them. If a collection was pinned, the ref is shown after the URL.</p>
+<pre><code class="language-sh">swival skills list --library
+</code></pre>
+<pre><code>skills library (~/.config/swival/library/skills):
+  pony  [https://github.com/DietrichGebert/ponytail]
+    ponytail
+    ponytail-audit
+    ponytail-debt
+    ponytail-gain
+    ponytail-help
+    ponytail-review
+  pony-stable  [https://github.com/DietrichGebert/ponytail @ main]
+    ...
+</code></pre>
+<p>Plain <code>list</code> (no flag) shows the active project and global skills instead, which is the set the agent will actually load.</p>
+<h2 id="promoting-from-the-library">Promoting From The Library</h2>
+<p>Once a collection is staged, install from it by name. Without <code>--global</code> the skill lands in <code>.swival/skills/</code> for the current project; with <code>--global</code> it lands in your global active set.</p>
+<pre><code class="language-sh">swival skills add ponytail-review            # one skill, into this project
+swival skills add --global ponytail-gain     # one skill, active everywhere
+swival skills add ponytail                   # the whole collection, into this project
+</code></pre>
+<p>Installing a single skill reports exactly what moved:</p>
+<pre><code>Installed 1 skill(s) into this project (.swival/skills): ponytail-review
+</code></pre>
+<p>Installing a collection where one skill is already present skips the duplicate and installs the rest:</p>
+<pre><code>⚠ Warning: skill 'ponytail-review' already exists in .swival/skills; use --force to replace
+Installed 5 skill(s) into this project (.swival/skills): ponytail, ponytail-audit, ponytail-debt, ponytail-gain, ponytail-help
+</code></pre>
+<p>Pass <code>--force</code> to overwrite instead of skip:</p>
+<pre><code class="language-sh">swival skills add --force ponytail
+</code></pre>
+<p>If the same skill name exists in more than one staged collection, a bare name is ambiguous and Swival refuses rather than guess:</p>
+<pre><code>Error: skill 'ponytail-review' is ambiguous across collections:
+pony/ponytail-review, pony-stable/ponytail-review; disambiguate with 'collection/skill'
+</code></pre>
+<p>Spell out the collection to resolve it:</p>
+<pre><code class="language-sh">swival skills add pony/ponytail-review
+</code></pre>
+<h2 id="skipping-the-library">Skipping The Library</h2>
+<p>If you already trust a repository and don't want a review step, point <code>add</code> at the URL without <code>--global</code>. Swival clones it and installs straight into the current project, no staging:</p>
+<pre><code class="language-sh">swival skills add https://github.com/DietrichGebert/ponytail
+</code></pre>
+<pre><code>Installed 6 skill(s) into this project (.swival/skills): ponytail, ponytail-audit, ponytail-debt, ponytail-gain, ponytail-help, ponytail-review
+</code></pre>
+<p>This is the shortcut. The staged flow exists for when you want to look before you leap.</p>
+<h2 id="removing-things">Removing Things</h2>
+<p>Plain <code>delete</code> only ever touches active skills, never the library. You address an active skill by name:</p>
+<pre><code class="language-sh">swival skills delete ponytail-debt           # from .swival/skills/
+swival skills delete --global ponytail-gain  # from ~/.config/swival/skills/
+</code></pre>
+<p>To remove something from the library you must say so with <code>--library</code>. You can drop one skill out of a collection, or the whole collection at once:</p>
+<pre><code class="language-sh">swival skills delete --library pony/ponytail-help   # one skill
+swival skills delete --library pony                 # the whole collection
+</code></pre>
+<p>Deletion happens immediately, with no confirmation prompt, but Swival always prints exactly what it removed:</p>
+<pre><code>Removed skill ponytail/ponytail-help from the library
+Removed collection 'pony' from the library
+</code></pre>
+<h2 id="a-note-on-safety">A Note On Safety</h2>
+<p>Cloning and staging never execute anything. Helper scripts and <code>SKILL.star</code> metaskills that ship inside a skill sit inert until you both install the skill and, for external metaskills, pass <code>--metaskills all</code>. Swival flags any installed skill that carries a <code>SKILL.star</code>, so a downloaded metaskill can't quietly become runnable. Clones run with credential prompts disabled, HTTP redirects refused, and non-git protocols blocked, and any URL that resolves to a private or internal address is rejected outright.</p>
+<p>For everything about authoring skills, discovery precedence, and progressive disclosure, see the <a href="skills.html">Skills</a> page. For the metaskill format and host API, see <a href="metaskills.html">Agent MetaSKILLs</a>.</p>
+            <nav class="page-nav" aria-label="Page navigation"><a class="nav-prev" href="skills.html"><span class="nav-label">&larr; Previous</span><span class="nav-title">Skills</span></a><a class="nav-next" href="metaskills.html"><span class="nav-label">Next &rarr;</span><span class="nav-title">Metaskills</span></a></nav>
+        </article>
+        <aside class="page-toc" aria-label="On this page">
+            <p class="page-toc-title">On this page</p>
+            <div class="page-toc-list"></div>
+        </aside>
+    </main>
+    <footer class="site-footer">
+        <div class="footer-inner">
+            <div class="footer-grid">
+                <div class="footer-col">
+                    <img src="../img/logo.png" alt="Swival" class="footer-logo">
+                    <p class="footer-tagline">A coding agent for any model.<br>Free, open-source, and easy to set up.</p>
+                </div>
+                <div class="footer-col">
+                    <h4>Resources</h4>
+                    <ul>
+                        <li><a href="getting-started.html">Getting Started</a></li>
+                        <li><a href="usage.html">Usage</a></li>
+                        <li><a href="tools.html">Tools</a></li>
+                        <li><a href="context-management.html">Context Management</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h4>Guides</h4>
+                    <ul>
+                        <li><a href="providers.html">Providers</a></li>
+                        <li><a href="safety-and-sandboxing.html">Safety &amp; Sandboxing</a></li>
+                        <li><a href="python-api.html">Python API</a></li>
+                        <li><a href="open-models.html">Open Models</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h4>Community</h4>
+                    <ul>
+                        <li><a href="https://github.com/swival/swival">GitHub</a></li>
+                        <li><a href="https://calibra.swival.dev">Calibra</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025&ndash;2026 Swival &middot; MIT License</p>
+            </div>
+        </div>
+    </footer>
+    <button class="back-to-top" aria-label="Back to top">&uarr;</button>
+    <script src="../js/site.js"></script>
+</body>
+</html>

@@ -92,6 +92,11 @@ NAV = [
             ),
             ("skills", "Skills", "Creating and using SKILL.md-based agent skills"),
             (
+                "library",
+                "The Library",
+                "Staging downloaded skill collections and promoting them into projects",
+            ),
+            (
                 "metaskills",
                 "Metaskills",
                 "Portable standard for dynamic SKILL.md workflow programs",
