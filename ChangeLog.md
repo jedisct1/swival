@@ -2,6 +2,13 @@
 
 All notable user-facing changes to Swival.
 
+## 1.0.32
+
+- New `swival skills` command to install, remove, and list agent skills from the command line instead of copying directories by hand. `swival skills add <name-or-URL>` installs into the current project, `--global` into the every-project set, and `swival skills delete` / `swival skills list` round out the management commands.
+- Pointing `add` at a git repository clones it shallowly, finds its top-level `skills/` directory (or a single skill at the repo root), and installs what it finds. You can pin a ref with `--ref <branch|tag|commit>` (or `<URL>#ref`) and rename the collection with `--as <name>`.
+- Downloaded collections land in a staging library at `~/.config/swival/library/skills/`, which the agent does not load from. `add --global <URL>` stages there without switching anything on, keeping a review step between downloading a third party's repo and making it active in every session. Once a collection is staged, install individual skills from it by name (`swival skills add deploy`, or `collection/skill` to disambiguate).
+- Installing a skill never executes anything, and external metaskills still require `--metaskills all` before they run. Swival flags when an installed skill ships a `SKILL.star`, and clones run with credential prompts disabled, redirects refused, non-git protocols blocked, and private or internal addresses refused.
+
 ## 1.0.31
 
 - Streaming now shows the model's thinking as it arrives.
