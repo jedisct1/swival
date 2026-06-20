@@ -2,9 +2,9 @@
 
 All notable user-facing changes to Swival.
 
-## Unreleased
+## 1.0.33
 
-- Metaskill execution is now an optional feature. The Starlark runtime ships as the `metaskills` extra (`pip install 'swival[metaskills]'` or `uv tool install 'swival[metaskills]'`), so the base install no longer pulls it in. Without the extra, Swival still discovers metaskill-bearing skills but treats them as ordinary static skills.
+- Metaskill execution is now an optional installation feature. The Starlark runtime ships as the `metaskills` extra (`pip install 'swival[metaskills]'` or `uv tool install 'swival[metaskills]'`), so the base install no longer pulls it in. Without the extra, Swival still discovers metaskill-bearing skills but treats them as ordinary static skills.
 
 ## 1.0.32
 
