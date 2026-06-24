@@ -429,6 +429,24 @@ def test_list_library(env, capsys):
     assert "ponytail" in out and "deploy" in out
 
 
+def test_unrecognized_arg_shows_subcommand_usage(env, capsys):
+    # A bad flag on a subcommand must surface that subcommand's usage (with its
+    # valid options), not the bare top-level `{add,delete,list}` usage.
+    with pytest.raises(SystemExit):
+        run(["list", "--staged"])
+    err = capsys.readouterr().err
+    assert "usage: swival skills list" in err
+    assert "--library" in err
+
+
+def test_unrecognized_arg_on_delete_shows_its_options(env, capsys):
+    with pytest.raises(SystemExit):
+        run(["delete", "--bogus", "name"])
+    err = capsys.readouterr().err
+    assert "usage: swival skills delete" in err
+    assert "--library" in err
+
+
 # --- SSRF / clone hardening -------------------------------------------------
 
 

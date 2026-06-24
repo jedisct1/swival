@@ -38,7 +38,7 @@ class SkillsCliError(Exception):
 # --- argument parsing -------------------------------------------------------
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def _build_parser() -> tuple[argparse.ArgumentParser, argparse.Action]:
     parser = argparse.ArgumentParser(
         prog="swival skills",
         description="Add, delete, and list agent skills.",
@@ -100,12 +100,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="List staged library collections instead of active skills.",
     )
 
-    return parser
+    return parser, sub
 
 
 def run(argv: list[str]) -> int:
-    parser = _build_parser()
-    args = parser.parse_args(argv)
+    parser, sub = _build_parser()
+    args, extras = parser.parse_known_args(argv)
+    if extras:
+        # argparse reports leftover arguments against the top-level parser,
+        # whose usage line hides each subcommand's own options. Route the error
+        # through the chosen subparser so its usage lists the valid flags.
+        target = sub.choices.get(args.cmd, parser)
+        target.error("unrecognized arguments: " + " ".join(extras))
     try:
         if args.cmd == "add":
             return _cmd_add(args)
