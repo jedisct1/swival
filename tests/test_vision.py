@@ -583,6 +583,15 @@ class TestIsVisionRejection:
     def test_matches_image_url(self):
         assert _is_vision_rejection(AgentError("image_url is not supported"))
 
+    def test_matches_glm_content_type_invalid(self):
+        """GLM rejects the typed content array with this exact message."""
+        assert _is_vision_rejection(
+            AgentError(
+                "litellm.BadRequestError: OpenAIException - "
+                "messages.content.type is invalid, allowed values: ['text']"
+            )
+        )
+
     def test_no_match_does_not_support_generic(self):
         """'does not support' alone (without image/vision keywords) should NOT match."""
         assert not _is_vision_rejection(AgentError("model does not support seed"))

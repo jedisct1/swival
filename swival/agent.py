@@ -163,6 +163,7 @@ _VISION_REJECTION_PATTERNS = (
     "image content",
     "vision",
     "multimodal",
+    "content.type is invalid",
 )
 
 # Canonical prefixes for synthetic user messages injected by the agent loop.
